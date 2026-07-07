@@ -7,7 +7,7 @@ const FPS = 30;
 // The record + vo layers write the real props into the workdir; these defaults
 // only exist so the composition is previewable in the Remotion studio.
 const defaultProps = {
-  timeline: { viewport: { width: 1440, height: 900 }, steps: [], total: 0 },
+  timeline: { viewport: { width: 1600, height: 900 }, steps: [], total: 0 },
   manifest: { segments: [] },
   title: null,
   workdir: "",

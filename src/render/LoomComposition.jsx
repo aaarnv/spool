@@ -15,11 +15,12 @@ const FPS = 30;
 const CANVAS_W = 1920;
 const CANVAS_H = 1080;
 
-// Canvas layout: the recording sits on a card with generous padding, and the
-// bottom strip is reserved for the caption band so captions never cover the UI.
-const PAD_X = 88;
-const PAD_TOP = 52;
-const CAPTION_BAND = 156;
+// Canvas layout: near-full-bleed — the card fills most of the frame with a slim
+// border of canvas, and a compact bottom band keeps captions off the UI.
+// A 16:9 recording viewport (e.g. 1600x900) fills the frame best.
+const PAD_X = 40;
+const PAD_TOP = 24;
+const CAPTION_BAND = 92;
 
 const FONT =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif';
@@ -32,7 +33,7 @@ export const calculateLoomMetadata = ({ props }) => {
 
 // Geometry of the centered card, derived once from the viewport size.
 function cardLayout(viewport) {
-  const vw = viewport?.width ?? 1440;
+  const vw = viewport?.width ?? 1600;
   const vh = viewport?.height ?? 900;
   const availW = CANVAS_W - 2 * PAD_X;
   const availH = CANVAS_H - PAD_TOP - CAPTION_BAND;

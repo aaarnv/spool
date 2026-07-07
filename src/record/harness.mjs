@@ -61,7 +61,7 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   };
   const voDur = steps.map((_, i) => voDurationFor(i));
 
-  const viewport = config.viewport || { width: 1440, height: 900 };
+  const viewport = config.viewport || { width: 1600, height: 900 };
   const browser = await chromium.launch({ headless: !headed });
   const contextOpts = { viewport };
   if (!dry) contextOpts.recordVideo = { dir: workdir, size: viewport };
