@@ -189,8 +189,9 @@ const CaptionBand = ({ phrases, t }) => {
           gap: "0 11px",
           padding: "16px 30px",
           borderRadius: 20,
-          background: "rgba(22,24,30,0.82)",
-          boxShadow: "0 10px 40px rgba(0,0,0,0.28)",
+          background: "rgba(16,16,22,0.86)",
+          border: "1px solid rgba(255,255,255,0.10)",
+          boxShadow: "0 14px 46px rgba(0,0,0,0.42)",
           fontFamily: FONT,
           fontSize: 34,
           lineHeight: 1.15,
@@ -215,35 +216,46 @@ const CaptionBand = ({ phrases, t }) => {
   );
 };
 
-const TitleOverlay = ({ title, frame }) => {
+// The title reads as a subtitle: same bottom-center pill as the captions, a
+// touch larger, and it clears out just before the first caption lands so the two
+// never stack.
+const TitleSubtitle = ({ title, frame, firstCaptionStart }) => {
   if (!title) return null;
   const t = frame / FPS;
-  const opacity = interpolate(t, [0, 0.25, 0.95, 1.2], [0, 1, 1, 0], {
+  const rawEnd = firstCaptionStart != null ? firstCaptionStart - 0.15 : 1.4;
+  const end = Math.max(0.7, Math.min(rawEnd, 1.8));
+  const opacity = interpolate(t, [0, 0.3, end - 0.2, end], [0, 1, 1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
   if (opacity <= 0) return null;
-  const y = interpolate(t, [0, 0.25], [12, 0], {
+  const y = interpolate(t, [0, 0.3], [10, 0], {
     easing: Easing.out(Easing.cubic),
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
   return (
-    <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
+    <AbsoluteFill
+      style={{
+        justifyContent: "flex-end",
+        alignItems: "center",
+        paddingBottom: 44,
+      }}
+    >
       <div
         style={{
           opacity,
           transform: `translateY(${y}px)`,
-          padding: "20px 40px",
-          borderRadius: 18,
-          background: "rgba(18,20,26,0.55)",
-          backdropFilter: "blur(8px)",
+          padding: "18px 34px",
+          borderRadius: 20,
+          background: "rgba(16,16,22,0.86)",
+          border: "1px solid rgba(255,255,255,0.10)",
+          boxShadow: "0 14px 46px rgba(0,0,0,0.42)",
           color: "#fff",
           fontFamily: FONT,
-          fontSize: 56,
+          fontSize: 40,
           fontWeight: 600,
           letterSpacing: "-0.01em",
-          textShadow: "0 4px 24px rgba(0,0,0,0.4)",
         }}
       >
         {title}
@@ -268,9 +280,15 @@ export const LoomComposition = ({ timeline, manifest, title }) => {
   return (
     <AbsoluteFill
       style={{
-        // Very subtle warm neutral gradient — restrained, premium.
-        background:
-          "radial-gradient(120% 120% at 50% 0%, #f4f1ec 0%, #e9e5de 55%, #e2ddd4 100%)",
+        // Screen Studio-style macOS wallpaper: deep indigo base with a soft
+        // magenta glow top-right and a blue glow bottom-left. Muted and smooth
+        // so the card and white captions stay the focus — not a light show.
+        background: [
+          "radial-gradient(90% 80% at 82% 12%, rgba(150,54,124,0.55) 0%, rgba(150,54,124,0) 55%)",
+          "radial-gradient(85% 85% at 12% 92%, rgba(46,58,150,0.50) 0%, rgba(46,58,150,0) 60%)",
+          "radial-gradient(70% 60% at 50% 45%, rgba(88,52,140,0.30) 0%, rgba(88,52,140,0) 70%)",
+          "linear-gradient(155deg, #171432 0%, #241a45 45%, #33184a 100%)",
+        ].join(","),
       }}
     >
       {/* Zoom wrapper: scales the card about the click origin. Captions and the
@@ -291,8 +309,10 @@ export const LoomComposition = ({ timeline, manifest, title }) => {
             borderRadius: 16,
             overflow: "hidden",
             background: "#000",
+            // Deep elevation shadow + a faint light rim so the card separates
+            // from the dark wallpaper.
             boxShadow:
-              "0 2px 6px rgba(30,26,20,0.10), 0 30px 70px -20px rgba(40,34,26,0.38)",
+              "0 0 0 1px rgba(255,255,255,0.06), 0 8px 24px rgba(0,0,0,0.45), 0 40px 90px -24px rgba(0,0,0,0.6)",
           }}
         >
           <OffthreadVideo
@@ -303,7 +323,11 @@ export const LoomComposition = ({ timeline, manifest, title }) => {
         </div>
       </AbsoluteFill>
 
-      <TitleOverlay title={title} frame={frame} />
+      <TitleSubtitle
+        title={title}
+        frame={frame}
+        firstCaptionStart={phrases.length ? phrases[0].start : null}
+      />
       <CaptionBand phrases={phrases} t={t} />
 
       {/* VO: one Audio per segment, placed at its step's start on the timeline. */}

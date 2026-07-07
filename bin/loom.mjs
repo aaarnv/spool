@@ -67,9 +67,10 @@ program
 program
   .command('render <workdir>')
   .description('normalize + Remotion-render the final loom mp4')
-  .action(async (workdir) => {
+  .option('--rate <rate>', 'global playback speed for the final video', '1.25')
+  .action(async (workdir, opts) => {
     const { renderLoom } = await import(join(root, 'src/render/render.mjs'));
-    await renderLoom(resolve(workdir));
+    await renderLoom({ workdir: resolve(workdir), rate: Number(opts.rate) });
   });
 
 program
@@ -94,6 +95,7 @@ program
   .option('--engine <engine>', 'openai | local', 'openai')
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
+  .option('--rate <rate>', 'global playback speed for the final video', '1.25')
   .option('--headed', 'show the browser while recording')
   .action(async (workdir, opts) => {
     const wd = resolve(workdir);
@@ -106,7 +108,7 @@ program
     console.log('── loom record');
     await record({ stepsFile: sf, workdir: wd, headed: !!opts.headed });
     console.log('── loom render');
-    await renderLoom(wd);
+    await renderLoom({ workdir: wd, rate: Number(opts.rate) });
     console.log('── loom share');
     const { shareLoom } = await import(join(root, 'src/share/share.mjs'));
     await shareLoom(wd);
