@@ -159,9 +159,15 @@ from the ../final.mp4 pointer.
 
 ## Render layer inputs
 
-`loom render <workdir>` reads `timeline.json` + `vo/manifest.json`, runs the normalize
-pass (`video.webm` → `video.mp4`, CFR 30fps, H264, yuv420p, +genpts), then renders the
-Remotion `LoomComposition` with `{ workdir-relative props }` to `final.mp4`
-(1920x1080 canvas, recording centered on padded rounded-corner card, VO `<Audio>` at
-`steps[i].start`, captions driven by words.json offset by segment start, zoom eased
-around `clicks`).
+`loom render <workdir> [--rate 1.25]` reads `timeline.json` + `vo/manifest.json`, runs
+the normalize pass (`video.webm` → `video.mp4`, CFR 30fps, H264, yuv420p, +genpts),
+renders the Remotion `LoomComposition` with `{ workdir-relative props }` (1920x1080
+macOS-wallpaper-style gradient canvas, recording on a near-full-bleed rounded card, VO
+`<Audio>` at `steps[i].start`, subtitle-style intro title, captions driven by words.json
+offset by segment start, zoom eased around `clicks`), then applies the global playback
+rate (default **1.25x**, video setpts + pitch-preserved atempo together) → `final.mp4`.
+
+Rate bookkeeping: `final.mp4` runs on a compressed clock; `video.mp4` and all times in
+`timeline.json` / `console.jsonl` stay on the recording clock. `loom share` therefore
+extracts keyframes from `video.mp4` (recording clock) and reports `duration` from
+`final.mp4` plus a top-level `rate` field in `loom.json`.

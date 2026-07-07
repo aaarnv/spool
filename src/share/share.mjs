@@ -90,12 +90,28 @@ export async function shareLoom(workdir) {
     (manifest.segments || []).map((s) => [s.i, s.narration])
   );
 
-  // Choose the best available video for frames + duration.
-  const candidates = ["final.mp4", "video.mp4", "video.webm"];
-  const videoName = candidates.find((n) => existsSync(join(dir, n)));
-  if (!videoName) throw new Error(`share: no video found in ${dir} (need one of ${candidates.join(", ")})`);
-  const videoPath = join(dir, videoName);
-  const videoDur = await duration(videoPath);
+  // Frames come from the pre-speed normalize output (video.mp4), whose clock
+  // matches timeline.json — final.mp4 is time-compressed by `rate`, so pulling
+  // frames from it would land on the wrong moments. Duration, though, is read
+  // from the actual deliverable (final.mp4) so loom.json reports true runtime.
+  const first = (names) => names.find((n) => existsSync(join(dir, n)));
+  const frameName = first(["video.mp4", "video.webm", "final.mp4"]);
+  if (!frameName) throw new Error(`share: no source video in ${dir} (need video.mp4/video.webm/final.mp4)`);
+  const videoPath = join(dir, frameName);
+
+  const durName = first(["final.mp4", "video.mp4", "video.webm"]);
+  const videoDur = await duration(join(dir, durName));
+
+  // Rate the render layer applied (final.mp4 is video.mp4's clock ÷ rate).
+  let rate = 1;
+  if (existsSync(join(dir, "render.json"))) {
+    try {
+      rate = (await readJson(join(dir, "render.json"))).rate ?? 1;
+    } catch {
+      /* keep default */
+    }
+  }
+  const deliverable = existsSync(join(dir, "final.mp4")) ? "final.mp4" : durName;
 
   const shareDir = join(dir, "share");
   const framesDir = join(shareDir, "frames");
@@ -114,13 +130,17 @@ export async function shareLoom(workdir) {
   }
   const { errors, warnings } = tallyConsole(consoleText);
 
+  // Clamp frame times against the FRAME video's own (natural-clock) duration,
+  // which differs from the sped-up final.mp4 duration used for loom.json.
+  const frameDur = frameName === durName ? videoDur : await duration(videoPath);
+
   // One keyframe per step.
   const steps = [];
   for (const step of timeline.steps || []) {
     const nn = String(step.i).padStart(2, "0");
     const rel = `frames/step_${nn}.png`;
     const out = join(shareDir, rel);
-    const t = frameTime(step, videoDur);
+    const t = frameTime(step, frameDur);
     await exec(FFMPEG, [
       "-y",
       "-ss",
@@ -151,8 +171,9 @@ export async function shareLoom(workdir) {
     kind: "agent-loom",
     title: timeline.title || manifest.title || null,
     url: await resolveUrl(dir, timeline),
-    video: `../${videoName}`,
+    video: `../${deliverable}`,
     duration: Math.round(videoDur * 10) / 10,
+    rate,
     voice: { engine: manifest.engine ?? null, voice: manifest.voice ?? null },
     steps,
     console: {
@@ -196,7 +217,7 @@ export async function readLoom(input) {
   const lines = [];
   lines.push(loom.title || "(untitled loom)");
   lines.push(`url:      ${loom.url ?? "(unknown)"}`);
-  lines.push(`duration: ${loom.duration}s`);
+  lines.push(`duration: ${loom.duration}s${loom.rate && loom.rate !== 1 ? ` (${loom.rate}x)` : ""}`);
   lines.push(`voice:    ${loom.voice?.voice ?? "?"} (${loom.voice?.engine ?? "?"})`);
   lines.push("");
   lines.push("steps:");
