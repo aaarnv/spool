@@ -15,7 +15,7 @@ import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.m
 const DEFAULT_INSTRUCTIONS = 'calm, friendly product-walkthrough narrator; conversational, unhurried';
 const round2 = (x) => Math.round(x * 100) / 100;
 
-export async function generateVO({ stepsFile, workdir, engine = 'openai', voice = 'onyx', instructions, speed = 1 } = {}) {
+export async function generateVO({ stepsFile, workdir, engine = 'openai', voice = 'alloy', instructions, speed = 1 } = {}) {
   if (!stepsFile) throw new Error('generateVO: stepsFile required');
   if (!workdir) throw new Error('generateVO: workdir required');
 

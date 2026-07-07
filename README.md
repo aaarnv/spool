@@ -31,8 +31,18 @@ cd <your-project>
 loom init my-feature          # scaffolds loom/my-feature/steps.mjs
 # author the steps: N steps × { name, narration, zoom, run(page, h) }
 loom dry loom/my-feature --headed   # debug the driver cheaply, no VO/video
-loom build loom/my-feature          # vo → record → render → loom/my-feature/final.mp4
+loom build loom/my-feature          # vo → record → render → share → final.mp4 + share/
 ```
+
+## Agent-to-agent sharing (Clips, inverted then completed)
+
+Every build also emits `share/` — a machine-readable bundle so *another agent* can
+consume the loom without watching video: `loom.json` (steps, narration, timings, click
+coords, keyframe paths), `transcript.txt`, one keyframe PNG per step, and
+`console.jsonl` (browser console/pageerror/requestfailed telemetry captured during
+recording). A receiving agent runs `loom read <dir>` for an instant digest, then Reads
+only the frames it cares about — e.g. to review a demoed feature, file bugs from
+console errors, or verify a claimed fix actually renders.
 
 Requirements: node ≥ 20, ffmpeg on PATH, `OPENAI_API_KEY` (or `--engine local` with
 [video-studio](~/Projects/video-studio) installed for free local TTS/whisper).

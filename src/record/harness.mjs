@@ -79,9 +79,22 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
     currentClicks.push({ x: Math.round(x), y: Math.round(y), t: +now().toFixed(3) });
   const h = makeHelpers(page, state, logClick);
 
+  // Browser telemetry captured alongside the recording (→ console.jsonl), so a
+  // consuming agent can debug the app from the loom. Buffered, flushed at the end.
+  const telemetry = [];
+  const trunc = (s) => (typeof s === 'string' && s.length > 2000 ? s.slice(0, 2000) : String(s ?? ''));
+  const logEvent = (e) => telemetry.push({ t: +now().toFixed(3), ...e, text: trunc(e.text) });
+  page.on('console', (msg) => logEvent({ kind: 'console', level: msg.type(), text: msg.text() }));
+  page.on('pageerror', (err) => logEvent({ kind: 'pageerror', text: err && err.message ? err.message : String(err) }));
+  page.on('requestfailed', (req) => {
+    const f = req.failure();
+    logEvent({ kind: 'requestfailed', text: `${req.method()} ${req.url()} ${f ? f.errorText : ''}`.trim() });
+  });
+
   const timeline = {
     version: 1,
     ...(typeof config.title === 'string' && config.title ? { title: config.title } : {}),
+    ...(typeof config.url === 'string' && config.url ? { url: config.url } : {}),
     viewport,
     fps: null,
     video: 'video.webm',
@@ -144,6 +157,11 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   }
 
   await context.close(); // finalizes the video file
+
+  // Always write console.jsonl (empty when nothing fired) so consumers can rely on it.
+  const consolePath = path.join(workdir, 'console.jsonl');
+  await writeFile(consolePath, telemetry.map((e) => JSON.stringify(e)).join('\n') + (telemetry.length ? '\n' : ''));
+  console.log(`[record] wrote ${consolePath} (${telemetry.length} event${telemetry.length === 1 ? '' : 's'})`);
 
   if (!dry) {
     const src = await video.path();
