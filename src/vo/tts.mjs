@@ -15,7 +15,7 @@ import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.m
 const DEFAULT_INSTRUCTIONS = 'calm, friendly product-walkthrough narrator; conversational, unhurried';
 const round2 = (x) => Math.round(x * 100) / 100;
 
-export async function generateVO({ stepsFile, workdir, engine = 'openai', voice = 'onyx', instructions } = {}) {
+export async function generateVO({ stepsFile, workdir, engine = 'openai', voice = 'onyx', instructions, speed = 1 } = {}) {
   if (!stepsFile) throw new Error('generateVO: stepsFile required');
   if (!workdir) throw new Error('generateVO: workdir required');
 
@@ -42,7 +42,7 @@ export async function generateVO({ stepsFile, workdir, engine = 'openai', voice 
     if (engine === 'openai') {
       const rawPath = join(voDir, `seg_${nn}.raw.wav`);
       await writeFile(rawPath, await openaiSpeech(key, narration, voice, instr));
-      await loudnorm(rawPath, wavAbs);
+      await loudnorm(rawPath, wavAbs, speed);
       await rm(rawPath, { force: true });
       // Transcribe the finished (loudnormed) wav so word times are local to it.
       const words = await openaiWordTimestamps({ key, wavBuf: await readFile(wavAbs), prompt: narration });
@@ -100,8 +100,10 @@ async function localSegment(text, voDir, nn, wordsAbs) {
 
 // --- ffmpeg / ffprobe ------------------------------------------------------
 
-async function loudnorm(inPath, outPath) {
-  await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', inPath, '-af', 'loudnorm=I=-16:TP=-1.5', '-ar', '24000', '-ac', '1', outPath]);
+async function loudnorm(inPath, outPath, speed = 1) {
+  // atempo is pitch-preserving; applied before transcription so word times match the final wav
+  const af = speed !== 1 ? `atempo=${speed},loudnorm=I=-16:TP=-1.5` : 'loudnorm=I=-16:TP=-1.5';
+  await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', inPath, '-af', af, '-ar', '24000', '-ac', '1', outPath]);
 }
 
 async function probeDuration(path) {
@@ -124,11 +126,11 @@ function run(cmd, args) {
 
 function parseArgs(argv) {
   const out = {};
-  const map = { '--steps': 'stepsFile', '--workdir': 'workdir', '--engine': 'engine', '--voice': 'voice', '--instructions': 'instructions' };
+  const map = { '--steps': 'stepsFile', '--workdir': 'workdir', '--engine': 'engine', '--voice': 'voice', '--instructions': 'instructions', '--speed': 'speed' };
   for (let i = 0; i < argv.length; i += 2) {
     const key = map[argv[i]];
     if (!key) throw new Error(`unknown flag: ${argv[i]}`);
-    out[key] = argv[i + 1];
+    out[key] = key === 'speed' ? Number(argv[i + 1]) : argv[i + 1];
   }
   return out;
 }

@@ -49,9 +49,10 @@ program
   .description('generate voiceover segments + word timestamps')
   .option('--engine <engine>', 'openai | local', 'openai')
   .option('--voice <voice>', 'TTS voice', 'onyx')
+  .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .action(async (workdir, opts) => {
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
-    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), engine: opts.engine, voice: opts.voice });
+    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
   });
 
 program
@@ -76,6 +77,7 @@ program
   .description('vo → record → render, end to end')
   .option('--engine <engine>', 'openai | local', 'openai')
   .option('--voice <voice>', 'TTS voice', 'onyx')
+  .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--headed', 'show the browser while recording')
   .action(async (workdir, opts) => {
     const wd = resolve(workdir);
@@ -84,7 +86,7 @@ program
     const { record } = await import(join(root, 'src/record/harness.mjs'));
     const { renderLoom } = await import(join(root, 'src/render/render.mjs'));
     console.log('── loom vo');
-    await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice });
+    await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
     console.log('── loom record');
     await record({ stepsFile: sf, workdir: wd, headed: !!opts.headed });
     console.log('── loom render');
