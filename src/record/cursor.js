@@ -88,7 +88,7 @@ export function makeHelpers(page, state, logClick) {
     // point outside the viewport and the click would land on nothing. Scroll it
     // into view first — human-like via the eased wheel, then guarantee with
     // scrollIntoViewIfNeeded (a no-op when the wheel already did it, so no teleport).
-    const vp = page.viewportSize() || { width: 1440, height: 900 };
+    const vp = page.viewportSize() || { width: 1600, height: 900 };
     let box = await locator.boundingBox();
     if (box) {
       const fullyVisible = box.y >= 0 && box.y + box.height <= vp.height;

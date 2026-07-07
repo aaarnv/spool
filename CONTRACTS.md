@@ -23,7 +23,7 @@ loom/<slug>/
 ```js
 export const config = {
   url: "http://localhost:4747",            // required
-  viewport: { width: 1440, height: 900 },  // optional, this is the default
+  viewport: { width: 1600, height: 900 },  // optional, this is the default (16:9 fills the rendered frame best)
   title: "Finishing Lab walkthrough",      // optional, used for title card
   // optional: runs before step 0, recorded but not narrated (login, seeding)
   prep: async (page, h) => {},
@@ -75,7 +75,7 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
   "version": 1,
   "title": "Finishing Lab walkthrough",
   "url": "http://localhost:4747",
-  "viewport": { "width": 1440, "height": 900 },
+  "viewport": { "width": 1600, "height": 900 },
   "fps": null,
   "video": "video.webm",
   "steps": [

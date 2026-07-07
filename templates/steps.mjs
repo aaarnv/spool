@@ -5,7 +5,7 @@
 
 export const config = {
   url: 'http://localhost:3000',
-  viewport: { width: 1440, height: 900 },
+  viewport: { width: 1600, height: 900 },
   title: 'My feature walkthrough',
   // Runs before step 0 — recorded but not narrated. Login, seeding, dismissing banners.
   prep: async (page, h) => {},
