@@ -1,0 +1,29 @@
+import React from "react";
+import { Composition } from "remotion";
+import { LoomComposition, calculateLoomMetadata } from "./LoomComposition.jsx";
+
+const FPS = 30;
+
+// The record + vo layers write the real props into the workdir; these defaults
+// only exist so the composition is previewable in the Remotion studio.
+const defaultProps = {
+  timeline: { viewport: { width: 1440, height: 900 }, steps: [], total: 0 },
+  manifest: { segments: [] },
+  title: null,
+  workdir: "",
+};
+
+export const Root = () => {
+  return (
+    <Composition
+      id="Loom"
+      component={LoomComposition}
+      durationInFrames={FPS} // real value comes from calculateMetadata
+      fps={FPS}
+      width={1920}
+      height={1080}
+      defaultProps={defaultProps}
+      calculateMetadata={calculateLoomMetadata}
+    />
+  );
+};

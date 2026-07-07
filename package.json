@@ -1,0 +1,23 @@
+{
+  "name": "agent-loom",
+  "version": "0.1.0",
+  "description": "Agents record their own Looms: real browser video, AI voiceover, word-synced captions, Remotion-rendered MP4. No human hits record.",
+  "type": "module",
+  "bin": {
+    "loom": "./bin/loom.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.0",
+    "@remotion/cli": "^4.0.0",
+    "@remotion/media-utils": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
+    "commander": "^12.0.0",
+    "playwright": "^1.58.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  }
+}
