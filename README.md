@@ -1,0 +1,59 @@
+# agent-loom
+
+**Agents record their own Looms.** After an agent builds a feature, it drives the app in a
+real browser, records a real continuous video (not screenshot stitching), narrates it with
+AI voice, and renders a designed, captioned MP4 — no human ever hits record.
+
+Inspired by [BuilderIO/agent-native](https://github.com/BuilderIO/agent-native)'s Clips,
+inverted: there a human records and the agent watches; here the agent is the producer.
+
+## How it works
+
+```
+steps.mjs (agent-authored demo script)
+   │
+loom vo      →  vo/seg_NN.wav + word timestamps     OpenAI gpt-4o-mini-tts + whisper-1
+loom record  →  video.webm + timeline.json           Playwright recordVideo, fake cursor,
+   │                                                 human-speed motion, per-step timing
+loom render  →  final.mp4                            Remotion: padded card canvas, click
+                                                     zooms, word-synced captions, VO at
+                                                     exact offsets
+```
+
+Sync is **VO-first**: narration is generated before recording, and the recorder pads each
+step so the screen never outruns the voice; exact step timestamps are logged and the
+renderer places each audio segment at its logged offset.
+
+## Usage (any agent, any project)
+
+```bash
+cd <your-project>
+loom init my-feature          # scaffolds loom/my-feature/steps.mjs
+# author the steps: N steps × { name, narration, zoom, run(page, h) }
+loom dry loom/my-feature --headed   # debug the driver cheaply, no VO/video
+loom build loom/my-feature          # vo → record → render → loom/my-feature/final.mp4
+```
+
+Requirements: node ≥ 20, ffmpeg on PATH, `OPENAI_API_KEY` (or `--engine local` with
+[video-studio](~/Projects/video-studio) installed for free local TTS/whisper).
+
+Setup: `npm install && npm link` in this repo (chromium comes from Playwright's cache,
+`npx playwright install chromium` if missing).
+
+## The steps contract
+
+See [CONTRACTS.md](./CONTRACTS.md) for the full data contracts (steps.mjs shape,
+timeline.json, vo/manifest.json). The only file an agent authors per loom is `steps.mjs`;
+everything else is generated.
+
+## Design notes
+
+- **Capture is an adapter.** v1 = Playwright `recordVideo` (CDP screencast → WebM, ~25fps,
+  headless, zero OS permissions). Planned v2 backend: in-page `getDisplayMedia` +
+  `MediaRecorder` tab capture for native-framerate quality. Same steps contract.
+- **Render is Remotion, not ffmpeg filter graphs.** The recording is composited onto a
+  rounded card with gentle zooms toward logged click coordinates (Screen-Studio style) and
+  captions are rendered as designed React, not burned SRT. The one hand-written ffmpeg video
+  pass (WebM → CFR H264) exists because Remotion seeks VFR VP8 pathologically slowly.
+- **Dry-run first.** `loom dry` drives the steps with no VO or video so the agent can fix
+  selectors/timing before spending TTS calls and render minutes.
