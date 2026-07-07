@@ -48,7 +48,7 @@ program
   .command('vo <workdir>')
   .description('generate voiceover segments + word timestamps')
   .option('--engine <engine>', 'openai | local', 'openai')
-  .option('--voice <voice>', 'TTS voice', 'onyx')
+  .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .action(async (workdir, opts) => {
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
@@ -73,10 +73,26 @@ program
   });
 
 program
+  .command('share <workdir>')
+  .description('write the agent-consumable share/ bundle (loom.json, transcript, keyframes, console log)')
+  .action(async (workdir) => {
+    const { shareLoom } = await import(join(root, 'src/share/share.mjs'));
+    await shareLoom(resolve(workdir));
+  });
+
+program
+  .command('read <dir>')
+  .description('print an agent-oriented digest of a loom (accepts a workdir or its share/ dir)')
+  .action(async (dir) => {
+    const { readLoom } = await import(join(root, 'src/share/share.mjs'));
+    console.log(await readLoom(resolve(dir)));
+  });
+
+program
   .command('build <workdir>')
-  .description('vo → record → render, end to end')
+  .description('vo → record → render → share, end to end')
   .option('--engine <engine>', 'openai | local', 'openai')
-  .option('--voice <voice>', 'TTS voice', 'onyx')
+  .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--headed', 'show the browser while recording')
   .action(async (workdir, opts) => {
@@ -91,7 +107,10 @@ program
     await record({ stepsFile: sf, workdir: wd, headed: !!opts.headed });
     console.log('── loom render');
     await renderLoom(wd);
-    console.log(`\nDone: ${join(wd, 'final.mp4')}`);
+    console.log('── loom share');
+    const { shareLoom } = await import(join(root, 'src/share/share.mjs'));
+    await shareLoom(wd);
+    console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
   });
 
 program.parseAsync();

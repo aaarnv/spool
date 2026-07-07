@@ -51,7 +51,7 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
 ```json
 {
   "engine": "openai",
-  "voice": "onyx",
+  "voice": "alloy",
   "segments": [
     {
       "i": 0,
@@ -74,6 +74,7 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
 {
   "version": 1,
   "title": "Finishing Lab walkthrough",
+  "url": "http://localhost:4747",
   "viewport": { "width": 1440, "height": 900 },
   "fps": null,
   "video": "video.webm",
@@ -96,6 +97,65 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
 - `clicks[].t` is when the click fired; coords are viewport CSS pixels.
 - Invariant: `steps[i].end - steps[i].start >= voDuration + 0.4` (padding), so VO
   segments placed at `steps[i].start` never overlap.
+
+## console.jsonl (loom record → loom share)
+
+Browser telemetry captured during recording, one JSON object per line, times in
+seconds relative to video t=0 (same clock as timeline.json):
+
+```json
+{"t": 3.41, "kind": "console", "level": "error", "text": "Uncaught TypeError: ..."}
+{"t": 5.02, "kind": "pageerror", "text": "ReferenceError: foo is not defined"}
+{"t": 7.80, "kind": "requestfailed", "text": "GET http://localhost:4747/api/x net::ERR_..."}
+```
+
+Levels for kind=console mirror Playwright's msg.type(). Always written (empty file
+when nothing fired) so consumers can rely on its presence.
+
+## share/ bundle (loom share → any consuming agent)
+
+The Clips-style agent-consumable artifact. `loom share <workdir>` (auto-run at the
+end of `loom build`) writes:
+
+```
+loom/<slug>/share/
+├── loom.json          # the single machine-readable index (below)
+├── transcript.txt     # "[mm:ss] narration" per step — cheap skim for an agent
+├── frames/step_NN.png # one keyframe per step (mid-step, post-click when clicks exist)
+└── console.jsonl      # copied from the workdir
+```
+
+`loom.json`:
+
+```json
+{
+  "version": 1,
+  "kind": "agent-loom",
+  "title": "Finishing Lab walkthrough",
+  "url": "http://localhost:4747",
+  "video": "../final.mp4",
+  "duration": 29.0,
+  "voice": { "engine": "openai", "voice": "alloy" },
+  "steps": [
+    {
+      "i": 0,
+      "name": "open-board",
+      "narration": "Here's the finishing lab — every rep gets tracked on this board.",
+      "start": 1.02,
+      "end": 6.10,
+      "clicks": [ { "x": 512, "y": 340, "t": 2.41 } ],
+      "frame": "frames/step_00.png"
+    }
+  ],
+  "console": { "errors": 0, "warnings": 2, "log": "console.jsonl" }
+}
+```
+
+Consumption: `loom read <workdir-or-share-dir>` prints an agent-oriented digest
+(title, url, per-step narration + timings + frame paths, console error summary) so
+a receiving agent can orient in one command and Read only the frames it needs.
+Paths inside loom.json are share-dir-relative; the bundle is self-contained apart
+from the ../final.mp4 pointer.
 
 ## Render layer inputs
 
