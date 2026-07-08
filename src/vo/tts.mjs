@@ -27,12 +27,13 @@ export async function generateVO({ stepsFile, workdir, engine = 'openai', voice 
   const instr = instructions ?? DEFAULT_INSTRUCTIONS;
   const key = engine === 'openai' ? await resolveKey() : null;
 
-  const segments = [];
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    const narration = (step.narration || '').trim();
-    if (!narration) continue; // un-narrated steps get no segment; index i still mirrors the steps array
+  // One job per narrated step. TTS → loudnorm → whisper stay sequential inside a
+  // job; jobs run through a bounded pool so the wall-time is ~total/CONCURRENCY.
+  const jobs = steps
+    .map((step, i) => ({ step, i, narration: (step.narration || '').trim() }))
+    .filter((j) => j.narration); // un-narrated steps get no segment; index i still mirrors the steps array
 
+  async function buildSegment({ step, i, narration }) {
     const nn = String(i).padStart(2, '0');
     const wavRel = `vo/seg_${nn}.wav`;
     const wordsRel = `vo/seg_${nn}.words.json`;
@@ -52,9 +53,22 @@ export async function generateVO({ stepsFile, workdir, engine = 'openai', voice 
     } else {
       throw new Error(`generateVO: unknown engine "${engine}"`);
     }
-
-    segments.push({ i, name: step.name, narration, wav: wavRel, words: wordsRel, duration: round2(await probeDuration(wavAbs)) });
+    return { i, name: step.name, narration, wav: wavRel, words: wordsRel, duration: round2(await probeDuration(wavAbs)) };
   }
+
+  const CONCURRENCY = 4;
+  const results = new Array(jobs.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, async () => {
+      while (true) {
+        const k = next++;
+        if (k >= jobs.length) break;
+        results[k] = await buildSegment(jobs[k]);
+      }
+    })
+  );
+  const segments = results; // jobs were built in step order → manifest stays deterministic
 
   const manifest = { engine, voice, segments };
   await writeFile(join(voDir, 'manifest.json'), JSON.stringify(manifest, null, 2));

@@ -99,7 +99,7 @@ export function makeHelpers(page, state, logClick) {
       }
     }
     await locator.scrollIntoViewIfNeeded().catch(() => {});
-    await page.waitForTimeout(300); // settle so the recording shows a natural stop, not a jump
+    await page.waitForTimeout(120); // settle so the recording shows a natural stop, not a jump
 
     box = await locator.boundingBox();
     if (!box) throw new Error(`${who}: selector not found or not visible: ${target}`);
@@ -114,7 +114,7 @@ export function makeHelpers(page, state, logClick) {
   async function click(target) {
     const { x, y } = await resolvePoint(target, 'click');
     await move(x, y);
-    await page.waitForTimeout(150); // settle before pressing
+    await page.waitForTimeout(60); // settle before pressing
     await page.mouse.down();
     await page.mouse.up();
     logClick(x, y);
@@ -122,7 +122,7 @@ export function makeHelpers(page, state, logClick) {
 
   async function type(selector, text) {
     await click(selector);
-    await page.keyboard.type(text, { delay: 55 });
+    await page.keyboard.type(text, { delay: 35 });
   }
 
   async function hover(target) {

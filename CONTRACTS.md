@@ -46,7 +46,11 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
 `h.move(x,y)`, `h.click(selectorOrPoint)`, `h.type(selector, text)`, `h.hover(selector)`,
 `h.scroll(dy)`, `h.pause(ms)`. All produce smooth, human-speed motion and are logged.
 
-## vo/manifest.json (spool vo → spool record, spool render)
+Pipeline: `spool build` runs **vo and record in parallel** (record no longer waits
+on VO), then render, then share. The capture is at natural interaction speed; the
+renderer retimes each step to fit its narration (see "Render layer inputs").
+
+## vo/manifest.json (spool vo ‖ spool record, → spool render)
 
 ```json
 {
@@ -83,20 +87,21 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
       "i": 0,
       "name": "open-board",
       "start": 1.02,
-      "end": 6.10,
-      "voDuration": 4.32,
+      "end": 2.31,
       "zoom": "auto",
-      "clicks": [ { "x": 512, "y": 340, "t": 2.41 } ]
+      "clicks": [ { "x": 512, "y": 340, "t": 1.60 } ]
     }
   ],
-  "total": 24.8
+  "total": 8.7
 }
 ```
 
-- All times in **seconds relative to video t=0** (context/page creation).
+- All times in **seconds relative to video t=0** (context/page creation), at
+  **natural interaction speed** — steps are not padded to the narration anymore.
+- `steps[i].end` includes a short post-step settle so the step's final UI state is
+  painted and captured (the renderer freeze-holds that last frame).
 - `clicks[].t` is when the click fired; coords are viewport CSS pixels.
-- Invariant: `steps[i].end - steps[i].start >= voDuration + 0.4` (padding), so VO
-  segments placed at `steps[i].start` never overlap.
+- No `voDuration` field: VO is produced in parallel and the renderer retimes.
 
 ## console.jsonl (spool record → spool share)
 
@@ -159,15 +164,30 @@ from the ../final.mp4 pointer.
 
 ## Render layer inputs
 
-`spool render <workdir> [--rate 1.25]` reads `timeline.json` + `vo/manifest.json`, runs
+`spool render <workdir> [--rate 1]` reads `timeline.json` + `vo/manifest.json`, runs
 the normalize pass (`video.webm` → `video.mp4`, CFR 30fps, H264, yuv420p, +genpts),
-renders the Remotion `SpoolComposition` with `{ workdir-relative props }` (1920x1080
-macOS-wallpaper-style gradient canvas, recording on a near-full-bleed rounded card, VO
-`<Audio>` at `steps[i].start`, subtitle-style intro title, captions driven by words.json
-offset by segment start, zoom eased around `clicks`), then applies the global playback
-rate (default **1.25x**, video setpts + pitch-preserved atempo together) → `final.mp4`.
+then renders the Remotion `SpoolComposition` with `{ workdir-relative props }` (1920x1080
+macOS-wallpaper-style gradient canvas, recording on a near-full-bleed rounded card,
+subtitle-style intro title, captions/VO/zoom on the OUTPUT clock below).
 
-Rate bookkeeping: `final.mp4` runs on a compressed clock; `video.mp4` and all times in
-`timeline.json` / `console.jsonl` stay on the recording clock. `spool share` therefore
-extracts keyframes from `video.mp4` (recording clock) and reports `duration` from
-`final.mp4` plus a top-level `rate` field in `spool.json`.
+**Retiming (record-first).** The capture is natural-speed; the renderer maps each step
+onto an output window and concatenates them from t=0:
+
+- `window_i = max(voDuration_i + 0.4, recordedDuration_i)`, `outStart_i = Σ_{k<i} window_k`.
+- Video: the step's recorded slice (`[start_i, end_i]`) plays at **1x** at `outStart_i`,
+  then its **last frame freeze-holds** for the rest of the window (window is a max, so the
+  played portion always fits; video is never sped up). A ~1s tail holds the final frame.
+- Audio: `vo seg_i` is placed at `outStart_i`. Captions offset each segment's word times by
+  `outStart_i`. A click logged at recording time `t` in step `i` maps to `outStart_i + (t − start_i)`.
+
+`--rate` defaults to **1.0** (pacing is narration-driven; dead air in a window is a freeze
+under continuing narration). When `rate ≠ 1` the whole clip is sped up (video setpts +
+pitch-preserved atempo) → `final.mp4`, and `final.mp4` then runs on a compressed clock.
+
+Bookkeeping: `video.mp4` and all times in `timeline.json` / `console.jsonl` stay on the
+**recording** clock; `spool.json` step `start`/`end`/`clicks` and `duration` are on the
+**output** clock. `spool share` extracts keyframes from `video.mp4` (recording clock) but
+reports output-timeline step times, `duration` from `final.mp4`, and a top-level `rate`.
+
+Render is bundle-cached: the Remotion webpack bundle is persisted under the OS tmpdir keyed
+by a hash of `src/render/**` + the remotion version, and reused across builds when unchanged.
