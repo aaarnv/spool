@@ -90,6 +90,16 @@ program
   });
 
 program
+  .command('publish <workdir>')
+  .description('upload the loom + share bundle and get a single shareable watch link')
+  .option('--host <host>', 'watch app origin (default: env LOOM_HOST or ~/.agent-loom.json)')
+  .option('--token <token>', 'publish token (default: env LOOM_PUBLISH_TOKEN or ~/.agent-loom.json)')
+  .action(async (workdir, opts) => {
+    const { publishLoom } = await import(join(root, 'src/publish/publish.mjs'));
+    await publishLoom(resolve(workdir), { host: opts.host, token: opts.token });
+  });
+
+program
   .command('build <workdir>')
   .description('vo → record → render → share, end to end')
   .option('--engine <engine>', 'openai | local', 'openai')
