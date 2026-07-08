@@ -1,4 +1,4 @@
-import { readFile, writeFile, unlink } from "node:fs/promises";
+import { readFile, writeFile, unlink, copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -83,10 +83,20 @@ export async function renderLoom(opts) {
   }
   const enrichedManifest = { ...manifest, segments };
 
+  // Real macOS wallpaper canvas: copy the bundled asset into the workdir
+  // (publicDir) so the composition can staticFile() it. Gradient fallback when absent.
+  let background = null;
+  const bgAsset = join(dirname(dirname(__dirname)), "assets", "bg-sonoma.jpg");
+  if (existsSync(bgAsset)) {
+    await copyFile(bgAsset, join(dir, ".loom-bg.jpg"));
+    background = ".loom-bg.jpg";
+  }
+
   const inputProps = {
     timeline,
     manifest: enrichedManifest,
     title: timeline.title || manifest.title || null,
+    background,
     workdir: dir,
   };
 
