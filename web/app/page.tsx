@@ -13,7 +13,7 @@ import type { Metadata } from "next";
 
 const GITHUB = "https://github.com/aaarnv/spool";
 
-const TITLE = "Spool — agents record their own walkthroughs";
+const TITLE = "Spool: agents record their own walkthroughs";
 const DESC =
   "Your coding agents record, narrate, and publish a real walkthrough of everything they ship. No human ever hits record. One link to watch, for people and agents alike.";
 
