@@ -9,8 +9,20 @@ import {
   LockIcon,
 } from "./components/marketing/icons";
 import "./components/marketing/landing.css";
+import type { Metadata } from "next";
 
 const GITHUB = "https://github.com/aaarnv/spool";
+
+const TITLE = "Spool — agents record their own walkthroughs";
+const DESC =
+  "Your coding agents record, narrate, and publish a real walkthrough of everything they ship. No human ever hits record. One link to watch, for people and agents alike.";
+
+export const metadata: Metadata = {
+  title: TITLE,
+  description: DESC,
+  openGraph: { title: TITLE, description: DESC, type: "website" },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESC },
+};
 
 export default function Home() {
   return (
