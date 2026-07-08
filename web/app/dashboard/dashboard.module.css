@@ -1,0 +1,198 @@
+/* Dashboard styling. Reuses the global palette vars from globals.css so it
+   reads as the same product as the watch page. */
+
+.wrap {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 28px 20px 96px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.brand .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+}
+
+.h1 {
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+.sub {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 26px;
+  line-height: 1.55;
+}
+
+/* --- token panel --- */
+.token {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 18px 18px 20px;
+  margin-bottom: 40px;
+}
+.tokenHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--faint);
+}
+.ghost {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.ghost:hover:not(:disabled) { border-color: #34343b; background: #232327; }
+.ghost:disabled { opacity: 0.6; cursor: default; }
+
+.tokenReveal {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.tokenValue {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.copy {
+  font-family: inherit;
+  font-size: 13px;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 9px;
+  padding: 0 16px;
+  cursor: pointer;
+}
+.tokenHint {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* --- spool grid --- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+.card:hover { border-color: #34343b; transform: translateY(-2px); }
+.card[data-busy="true"] { opacity: 0.5; pointer-events: none; }
+
+.thumb {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cardBody { padding: 13px 14px 14px; }
+.cardTitle {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cardTitle:hover { color: var(--accent); }
+.cardMeta {
+  font-size: 12.5px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+}
+.cardActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 13px;
+}
+.act,
+.actDanger {
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 6px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+.act:hover { border-color: #34343b; background: #232327; }
+.actDanger { color: var(--muted); }
+.actDanger:hover:not(:disabled) {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.4);
+}
+.actDanger:disabled { opacity: 0.6; cursor: default; }
+
+.empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 44px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.empty code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  color: var(--text);
+}

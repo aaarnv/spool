@@ -1,7 +1,11 @@
 import { put } from "@vercel/blob";
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { BLOB_BASE, blobUrl, type Spool } from "../../spool";
+import { db } from "../../../db";
+import { spools as spoolsTable, publishTokens } from "../../../db/schema";
+import { hashToken } from "../../../db/tokens";
 
 export const runtime = "nodejs";
 
@@ -12,6 +16,7 @@ export const runtime = "nodejs";
 // are deterministic (addRandomSuffix:false), so we can rewrite spool.json up front.
 const MAX_STEPS = 200;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
+const LEGACY_OWNER = "aarnav-cli";
 
 const bad = (status: number, error: string) =>
   new Response(JSON.stringify({ error }), {
@@ -24,10 +29,25 @@ const newId = () => randomBytes(16).toString("base64url");
 
 type Body = { spool: Spool; transcript?: string; console?: string };
 
+// Resolve a bearer token to its owner: the legacy global env token maps to
+// LEGACY_OWNER, otherwise look up the hashed per-user token.
+async function resolveOwner(bearer: string): Promise<string | null> {
+  const legacy = process.env.SPOOL_PUBLISH_TOKEN;
+  if (legacy && bearer === legacy) return LEGACY_OWNER;
+  const rows = await db
+    .select({ ownerId: publishTokens.ownerId })
+    .from(publishTokens)
+    .where(eq(publishTokens.tokenHash, hashToken(bearer)))
+    .limit(1);
+  return rows[0]?.ownerId ?? null;
+}
+
 export async function POST(req: Request) {
-  const token = process.env.SPOOL_PUBLISH_TOKEN;
   const auth = req.headers.get("authorization") || "";
-  if (!token || auth !== `Bearer ${token}`) return bad(401, "unauthorized");
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!bearer) return bad(401, "unauthorized");
+  const ownerId = await resolveOwner(bearer);
+  if (!ownerId) return bad(401, "unauthorized");
   if (!BLOB_BASE) return bad(500, "SPOOL_BLOB_BASE not configured");
 
   let body: Body;
@@ -70,6 +90,14 @@ export async function POST(req: Request) {
     write("transcript.txt", body.transcript ?? "", "text/plain"),
     write("console.jsonl", body.console ?? "", "application/x-ndjson"),
   ]);
+
+  // Index the spool for its owner's dashboard.
+  await db.insert(spoolsTable).values({
+    id,
+    ownerId,
+    title: spool.title ?? null,
+    duration: spool.duration ?? null,
+  });
 
   const origin = new URL(req.url).origin;
   return Response.json({ id, url: `${origin}/l/${id}`, uploads: grants });
