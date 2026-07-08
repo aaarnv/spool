@@ -32,7 +32,12 @@ loom init my-feature          # scaffolds loom/my-feature/steps.mjs
 # author the steps: N steps × { name, narration, zoom, run(page, h) }
 loom dry loom/my-feature --headed   # debug the driver cheaply, no VO/video
 loom build loom/my-feature          # vo → record → render → share → final.mp4 + share/
+loom publish loom/my-feature        # → https://<host>/l/<id> — one link, click to watch
 ```
+
+`loom publish` uploads the video + share bundle to the hosted watch app (web/ in this
+repo, deployable to Vercel + Blob) and returns a single unlisted, unguessable link —
+video player, chapters, transcript for humans; raw loom.json on the same page for agents.
 
 ## Agent-to-agent sharing (Clips, inverted then completed)
 
