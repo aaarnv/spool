@@ -3,10 +3,10 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 
-// Resolve host/token from explicit args, then env, then ~/.agent-loom.json.
+// Resolve host/token from explicit args, then env, then ~/.spool.json.
 async function resolveConfig({ host, token } = {}) {
   let cfg = {};
-  const cfgPath = join(homedir(), ".agent-loom.json");
+  const cfgPath = join(homedir(), ".spool.json");
   if (existsSync(cfgPath)) {
     try {
       cfg = JSON.parse(await readFile(cfgPath, "utf8"));
@@ -14,8 +14,8 @@ async function resolveConfig({ host, token } = {}) {
       /* ignore malformed config, fall through to env/args */
     }
   }
-  const h = host || process.env.LOOM_HOST || cfg.host;
-  const t = token || process.env.LOOM_PUBLISH_TOKEN || cfg.token;
+  const h = host || process.env.SPOOL_HOST || cfg.host;
+  const t = token || process.env.SPOOL_PUBLISH_TOKEN || cfg.token;
   return { host: h && h.replace(/\/$/, ""), token: t };
 }
 
@@ -43,34 +43,34 @@ async function uploadFile(path, { pathname, token, contentType }) {
 }
 
 /**
- * Publish a built loom's share bundle to the agent-loom web app.
- * Returns the watch URL. Requires `loom share` to have run first.
+ * Publish a built spool's share bundle to the spool web app.
+ * Returns the watch URL. Requires `spool share` to have run first.
  */
-export async function publishLoom(workdir, opts = {}) {
+export async function publishSpool(workdir, opts = {}) {
   const dir = resolve(workdir);
   const shareDir = join(dir, "share");
-  const loomJson = join(shareDir, "loom.json");
+  const spoolJson = join(shareDir, "spool.json");
   const finalMp4 = join(dir, "final.mp4");
 
-  if (!existsSync(loomJson)) {
-    throw new Error(`no share bundle at ${shareDir} — run \`loom share ${workdir}\` first`);
+  if (!existsSync(spoolJson)) {
+    throw new Error(`no share bundle at ${shareDir} — run \`spool share ${workdir}\` first`);
   }
   if (!existsSync(finalMp4)) {
-    throw new Error(`no final.mp4 in ${dir} — run \`loom render\` first`);
+    throw new Error(`no final.mp4 in ${dir} — run \`spool render\` first`);
   }
 
   const { host, token } = await resolveConfig(opts);
   if (!host || !token) {
     throw new Error(
-      "missing host/token — set LOOM_HOST + LOOM_PUBLISH_TOKEN (env), pass { host, token }, or write ~/.agent-loom.json"
+      "missing host/token — set SPOOL_HOST + SPOOL_PUBLISH_TOKEN (env), pass { host, token }, or write ~/.spool.json"
     );
   }
 
-  const loom = JSON.parse(await readFile(loomJson, "utf8"));
+  const spool = JSON.parse(await readFile(spoolJson, "utf8"));
   const transcriptPath = join(shareDir, "transcript.txt");
   const consolePath = join(shareDir, "console.jsonl");
   const meta = {
-    loom,
+    spool,
     transcript: existsSync(transcriptPath) ? await readFile(transcriptPath, "utf8") : "",
     console: existsSync(consolePath) ? await readFile(consolePath, "utf8") : "",
   };
@@ -110,7 +110,7 @@ if (isMain) {
     console.error("usage: node src/publish/publish.mjs --workdir <dir> [--host <h>] [--token <t>]");
     process.exit(1);
   }
-  publishLoom(workdir, { host: val("--host"), token: val("--token") })
+  publishSpool(workdir, { host: val("--host"), token: val("--token") })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error("[publish] failed:", err.message);

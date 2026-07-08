@@ -10,21 +10,21 @@ const program = new Command();
 const stepsPath = (workdir) => {
   const p = resolve(workdir, 'steps.mjs');
   if (!existsSync(p)) {
-    console.error(`No steps.mjs in ${workdir} — run \`loom init\` or author one (see CONTRACTS.md).`);
+    console.error(`No steps.mjs in ${workdir} — run \`spool init\` or author one (see CONTRACTS.md).`);
     process.exit(1);
   }
   return p;
 };
 
 program
-  .name('loom')
-  .description('Agents record their own Looms: real browser video, AI voiceover, word-synced captions.');
+  .name('spool')
+  .description('Agents record their own spools: real browser video, AI voiceover, word-synced captions.');
 
 program
   .command('init <slug>')
-  .description('scaffold loom/<slug>/steps.mjs in the current project')
+  .description('scaffold spool/<slug>/steps.mjs in the current project')
   .action((slug) => {
-    const workdir = resolve('loom', slug);
+    const workdir = resolve('spool', slug);
     mkdirSync(workdir, { recursive: true });
     const dest = join(workdir, 'steps.mjs');
     if (existsSync(dest)) {
@@ -32,7 +32,7 @@ program
       process.exit(1);
     }
     cpSync(join(root, 'templates', 'steps.mjs'), dest);
-    console.log(`Created ${dest}\nNext: edit the steps, then \`loom dry ${workdir}\` to debug the driver.`);
+    console.log(`Created ${dest}\nNext: edit the steps, then \`spool dry ${workdir}\` to debug the driver.`);
   });
 
 program
@@ -66,37 +66,37 @@ program
 
 program
   .command('render <workdir>')
-  .description('normalize + Remotion-render the final loom mp4')
+  .description('normalize + Remotion-render the final spool mp4')
   .option('--rate <rate>', 'global playback speed for the final video', '1.25')
   .action(async (workdir, opts) => {
-    const { renderLoom } = await import(join(root, 'src/render/render.mjs'));
-    await renderLoom({ workdir: resolve(workdir), rate: Number(opts.rate) });
+    const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
+    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate) });
   });
 
 program
   .command('share <workdir>')
-  .description('write the agent-consumable share/ bundle (loom.json, transcript, keyframes, console log)')
+  .description('write the agent-consumable share/ bundle (spool.json, transcript, keyframes, console log)')
   .action(async (workdir) => {
-    const { shareLoom } = await import(join(root, 'src/share/share.mjs'));
-    await shareLoom(resolve(workdir));
+    const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
+    await shareSpool(resolve(workdir));
   });
 
 program
   .command('read <dir>')
-  .description('print an agent-oriented digest of a loom (accepts a workdir or its share/ dir)')
+  .description('print an agent-oriented digest of a spool (accepts a workdir or its share/ dir)')
   .action(async (dir) => {
-    const { readLoom } = await import(join(root, 'src/share/share.mjs'));
-    console.log(await readLoom(resolve(dir)));
+    const { readSpool } = await import(join(root, 'src/share/share.mjs'));
+    console.log(await readSpool(resolve(dir)));
   });
 
 program
   .command('publish <workdir>')
-  .description('upload the loom + share bundle and get a single shareable watch link')
-  .option('--host <host>', 'watch app origin (default: env LOOM_HOST or ~/.agent-loom.json)')
-  .option('--token <token>', 'publish token (default: env LOOM_PUBLISH_TOKEN or ~/.agent-loom.json)')
+  .description('upload the spool + share bundle and get a single shareable watch link')
+  .option('--host <host>', 'watch app origin (default: env SPOOL_HOST or ~/.spool.json)')
+  .option('--token <token>', 'publish token (default: env SPOOL_PUBLISH_TOKEN or ~/.spool.json)')
   .action(async (workdir, opts) => {
-    const { publishLoom } = await import(join(root, 'src/publish/publish.mjs'));
-    await publishLoom(resolve(workdir), { host: opts.host, token: opts.token });
+    const { publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
+    await publishSpool(resolve(workdir), { host: opts.host, token: opts.token });
   });
 
 program
@@ -112,16 +112,16 @@ program
     const sf = stepsPath(workdir);
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
     const { record } = await import(join(root, 'src/record/harness.mjs'));
-    const { renderLoom } = await import(join(root, 'src/render/render.mjs'));
-    console.log('── loom vo');
+    const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
+    console.log('── spool vo');
     await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
-    console.log('── loom record');
+    console.log('── spool record');
     await record({ stepsFile: sf, workdir: wd, headed: !!opts.headed });
-    console.log('── loom render');
-    await renderLoom({ workdir: wd, rate: Number(opts.rate) });
-    console.log('── loom share');
-    const { shareLoom } = await import(join(root, 'src/share/share.mjs'));
-    await shareLoom(wd);
+    console.log('── spool render');
+    await renderSpool({ workdir: wd, rate: Number(opts.rate) });
+    console.log('── spool share');
+    const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
+    await shareSpool(wd);
     console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
   });
 

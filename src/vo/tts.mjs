@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// src/vo/tts.mjs — the VO layer entry point. Turns a loom's steps.mjs narration
+// src/vo/tts.mjs — the VO layer entry point. Turns a spool's steps.mjs narration
 // into a loudnormed wav per narrated step, plus vo/manifest.json. Word timings
 // live in ./timestamps.mjs. Default path is OpenAI (gpt-4o-mini-tts speech +
 // whisper-1 word timings); `local` is a thin fallback that shells to

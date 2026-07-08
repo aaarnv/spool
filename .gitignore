@@ -1,5 +1,5 @@
 node_modules/
 *.webm
 *.mp4
-loom-test/
+spool-test/
 .DS_Store

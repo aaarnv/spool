@@ -1,10 +1,10 @@
 {
-  "name": "agent-loom",
+  "name": "spool",
   "version": "0.1.0",
-  "description": "Agents record their own Looms: real browser video, AI voiceover, word-synced captions, Remotion-rendered MP4. No human hits record.",
+  "description": "Agents record their own spools: real browser video, AI voiceover, word-synced captions, Remotion-rendered MP4. No human hits record.",
   "type": "module",
   "bin": {
-    "loom": "./bin/loom.mjs"
+    "spool": "./bin/spool.mjs"
   },
   "engines": {
     "node": ">=20"
