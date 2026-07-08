@@ -2,16 +2,16 @@
 
 import { MeshGradient } from "@paper-design/shaders-react";
 
-// Luminous Sonoma-wallpaper palette (sky blue -> teal -> mint -> peach -> coral)
-// so the site and the product's rendered videos read as one brand.
+// Deep, luxurious dark mesh: near-black base with slow indigo/violet/petrol
+// motion and a single warm ember accent. Matches the watch page + dashboard.
 const COLORS = [
-  "#e7f0ff",
-  "#bcd8ff",
-  "#a3ddda",
-  "#c6ecc4",
-  "#ffdcc4",
-  "#ffc3ad",
-  "#dfe1ff",
+  "#05060d",
+  "#0d1030",
+  "#221a55",
+  "#12173a",
+  "#0c3a46",
+  "#45205f",
+  "#b8461d",
 ];
 
 export default function ShaderBackground() {
@@ -20,14 +20,14 @@ export default function ShaderBackground() {
       <MeshGradient
         className="spool-bg__mesh"
         colors={COLORS}
-        distortion={0.85}
-        swirl={0.12}
-        grainOverlay={0.04}
-        speed={0.18}
+        distortion={0.92}
+        swirl={0.24}
+        grainOverlay={0.09}
+        speed={0.14}
         style={{ width: "100%", height: "100%" }}
       />
       <div className="spool-bg__veil" />
-      <div className="spool-bg__dots" />
+      <div className="spool-bg__grain" />
     </div>
   );
 }
