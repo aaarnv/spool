@@ -2,8 +2,6 @@ import { sans, serif } from "./components/marketing/fonts";
 import ShaderBackground from "./components/marketing/ShaderBackground";
 import {
   SpoolMark,
-  TerminalIcon,
-  PlayIcon,
   PlayFill,
   StarIcon,
   LockIcon,
@@ -56,25 +54,15 @@ export default function Home() {
           <section className="spool-hero">
             <h1 className="spool-h1">
               <span className="line">
-                <span className="word">Turn&nbsp;</span>
+                <span className="word">Turn </span>
                 <span className="word">
-                  <span className="spool-chip spool-chip--blue">
-                    <span className="glyph">
-                      <TerminalIcon />
-                    </span>
-                    <span className="txt">agent work</span>
-                  </span>
+                  <span className="mark mark--blue">agent work</span>
                 </span>
-                <span className="word">&nbsp;into</span>
+                <span className="word"> into</span>
               </span>
               <span className="line">
                 <span className="word">
-                  <span className="spool-chip spool-chip--coral">
-                    <span className="glyph">
-                      <PlayIcon />
-                    </span>
-                    <span className="txt">client-ready walkthroughs</span>
-                  </span>
+                  <span className="mark mark--ember">client-ready walkthroughs</span>
                 </span>
               </span>
             </h1>

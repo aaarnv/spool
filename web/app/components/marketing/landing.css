@@ -160,45 +160,37 @@
 .spool-h1 .line:nth-child(1) .word { animation-delay: 0.08s; }
 .spool-h1 .line:nth-child(2) .word { animation-delay: 0.16s; }
 
-/* highlighted word-chips — namespaced to avoid the watch page's .chip */
-.spool-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2em;
-  padding: 0.04em 0.32em 0.08em 0.16em;
-  margin: 0 0.02em;
-  border-radius: 0.26em;
-  font-size: 0.96em;
-  line-height: 0.86;
+/* highlighter marker behind the key phrases — upright words in the headline
+   font, a soft tinted band. box-decoration-break keeps the marker intact when
+   the phrase wraps across lines (mobile). */
+.spool-h1 .mark {
+  padding: 0.02em 0.12em;
+  border-radius: 0.16em;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 100% 0.52em;
   white-space: nowrap;
-  vertical-align: -0.16em;
-
-  box-shadow: 0 16px 40px -20px rgba(0, 0, 0, 0.85);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
-.spool-chip .glyph { display: inline-flex; border-radius: 0.2em; padding: 0.14em; }
-.spool-chip .glyph svg { display: block; width: 0.66em; height: 0.66em; }
-.spool-chip .txt {
-  font-family: var(--serif);
-  font-style: italic;
-  font-weight: 400;
-  line-height: 1;
-  padding-bottom: 0.04em;
+.spool-h1 .mark--blue {
+  background-image: linear-gradient(
+    to top,
+    rgba(120, 150, 255, 0.52) 0%,
+    rgba(120, 150, 255, 0.37) 58%,
+    rgba(120, 150, 255, 0.07) 90%,
+    rgba(120, 150, 255, 0) 100%
+  );
 }
-.spool-chip--blue {
-  background: var(--blue-bg);
-  color: var(--blue);
-  box-shadow: var(--edge-out),
-    0 16px 40px -20px rgba(0, 0, 0, 0.85);
+.spool-h1 .mark--ember {
+  background-image: linear-gradient(
+    to top,
+    rgba(255, 140, 80, 0.48) 0%,
+    rgba(255, 140, 80, 0.34) 58%,
+    rgba(255, 140, 80, 0.06) 90%,
+    rgba(255, 140, 80, 0) 100%
+  );
 }
-.spool-chip--blue .glyph { background: rgba(140, 165, 255, 0.22); }
-.spool-chip--coral {
-  background: var(--ember-bg);
-  color: var(--ember);
-
-  box-shadow: var(--edge-out),
-    0 16px 40px -20px rgba(0, 0, 0, 0.85);
-}
-.spool-chip--coral .glyph { background: rgba(255, 150, 90, 0.22); }
 
 .spool-sub {
   margin: 26px auto 0;
@@ -515,7 +507,7 @@
   .spool-hero { padding-top: 132px; }
   .spool-h1 { font-size: clamp(1.7rem, 8vw, 2.3rem); line-height: 1.16; letter-spacing: -0.03em; }
   .spool-h1 .line { white-space: normal; }
-  .spool-chip { white-space: normal; }
+  .spool-h1 .mark { white-space: normal; }
   .spool-sub { max-width: 40ch; }
   .spool-cta { gap: 10px; }
   .btn-primary, .btn-ghost { width: 100%; max-width: 360px; justify-content: center; }
