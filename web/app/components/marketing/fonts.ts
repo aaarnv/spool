@@ -1,10 +1,10 @@
-import { Schibsted_Grotesk, Instrument_Serif } from "next/font/google";
+import { Instrument_Sans, Instrument_Serif } from "next/font/google";
 
 // Landing-scoped fonts; applied to the .spool-landing wrapper only so the
-// watch page keeps its own system-font stack.
-export const sans = Schibsted_Grotesk({
+// watch page keeps its own system-font stack. Instrument Sans + Serif are one
+// superfamily — the pairing reads intentional, not template-default.
+export const sans = Instrument_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--spool-sans",
   display: "swap",
 });

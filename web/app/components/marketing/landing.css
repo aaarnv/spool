@@ -24,6 +24,10 @@
   --panel: rgba(255, 255, 255, 0.035);
   --panel-line: rgba(255, 255, 255, 0.085);
 
+  /* edge treatment: a crisp 1px inset ring + a 1px black-4% outer lift,
+     replacing flat 1px borders so elements read sharper and more dimensional */
+  --edge-out: 0 1px 2px rgba(0, 0, 0, 0.04);
+
   --sans: var(--spool-sans), ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif;
   --serif: var(--spool-serif), Georgia, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
@@ -93,10 +97,11 @@
   padding: 8px 8px 8px 18px;
   border-radius: 999px;
   background: var(--glass);
-  border: 1px solid var(--glass-line);
   backdrop-filter: blur(20px) saturate(1.3);
   -webkit-backdrop-filter: blur(20px) saturate(1.3);
   box-shadow:
+    inset 0 0 0 1px var(--glass-line),
+    var(--edge-out),
     0 1px 0 rgba(255, 255, 255, 0.08) inset,
     0 16px 40px -16px rgba(0, 0, 0, 0.7);
   animation: spool-drop 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -146,8 +151,8 @@
   margin: 0 auto;
   max-width: 1080px;
   font-weight: 700;
-  font-size: clamp(2.3rem, 4.9vw, 4.2rem);
-  line-height: 1.22;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1.2;
   letter-spacing: -0.038em;
   color: var(--ink);
 }
@@ -182,15 +187,17 @@
 }
 .spool-chip--blue {
   background: var(--blue-bg);
-  border: 1px solid var(--blue-line);
   color: var(--blue);
+  box-shadow: inset 0 0 0 1px var(--blue-line), var(--edge-out),
+    0 16px 40px -20px rgba(0, 0, 0, 0.85);
 }
 .spool-chip--blue .glyph { background: rgba(140, 165, 255, 0.22); }
 .spool-chip--coral {
   background: var(--ember-bg);
-  border: 1px solid var(--ember-line);
   color: var(--ember);
   transform: rotate(0.9deg);
+  box-shadow: inset 0 0 0 1px var(--ember-line), var(--edge-out),
+    0 16px 40px -20px rgba(0, 0, 0, 0.85);
 }
 .spool-chip--coral .glyph { background: rgba(255, 150, 90, 0.22); }
 
@@ -244,7 +251,7 @@
   padding: 15px 22px;
   border-radius: 999px;
   background: var(--glass-2);
-  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 0 0 1px var(--glass-line), var(--edge-out);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   color: var(--ink);
@@ -266,8 +273,9 @@
   border-radius: 16px;
   overflow: hidden;
   background: #0c0d10;
-  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    var(--edge-out),
     0 2px 0 rgba(255, 255, 255, 0.06) inset,
     0 50px 110px -34px rgba(0, 0, 0, 0.9),
     0 12px 50px -22px rgba(120, 90, 255, 0.4);
@@ -279,7 +287,7 @@
   height: 44px;
   padding: 0 16px;
   background: linear-gradient(180deg, #1b1d22, #141519);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
 .spool-window__dots { display: flex; gap: 7px; }
 .spool-window__dots i { width: 11px; height: 11px; border-radius: 999px; display: block; }
@@ -360,7 +368,7 @@
   padding: 30px 30px 32px;
   border-radius: 20px;
   background: var(--panel);
-  border: 1px solid var(--panel-line);
+  box-shadow: inset 0 0 0 1px var(--panel-line), var(--edge-out);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   overflow: hidden;
@@ -374,7 +382,7 @@
   margin-bottom: 20px;
   color: var(--ink);
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 0 0 1px var(--glass-line), var(--edge-out);
 }
 .spool-feat h3 { margin: 0 0 9px; font-size: 1.2rem; font-weight: 650; letter-spacing: -0.02em; }
 .spool-feat p { margin: 0; font-size: 0.98rem; line-height: 1.55; color: var(--muted); }
@@ -391,7 +399,7 @@
   padding: 18px 20px;
   border-radius: 14px;
   background: rgba(4, 5, 12, 0.6);
-  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 0 0 1px var(--glass-line), var(--edge-out);
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.65;
@@ -417,14 +425,14 @@
   padding: 34px 32px 34px;
   border-radius: 22px;
   background: var(--panel);
-  border: 1px solid var(--panel-line);
+  box-shadow: inset 0 0 0 1px var(--panel-line), var(--edge-out);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
 .spool-plan--featured {
   background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 180, 136, 0.34);
-  box-shadow: 0 30px 80px -40px rgba(255, 120, 60, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(255, 180, 136, 0.34), var(--edge-out),
+    0 30px 80px -40px rgba(255, 120, 60, 0.5);
 }
 .spool-plan__tag {
   align-self: flex-start;
@@ -436,8 +444,8 @@
   border-radius: 999px;
   margin-bottom: 20px;
 }
-.spool-plan__tag--os { color: var(--blue); background: var(--blue-bg); border: 1px solid var(--blue-line); }
-.spool-plan__tag--host { color: var(--ember); background: var(--ember-bg); border: 1px solid var(--ember-line); }
+.spool-plan__tag--os { color: var(--blue); background: var(--blue-bg); box-shadow: inset 0 0 0 1px var(--blue-line), var(--edge-out); }
+.spool-plan__tag--host { color: var(--ember); background: var(--ember-bg); box-shadow: inset 0 0 0 1px var(--ember-line), var(--edge-out); }
 .spool-plan h3 { margin: 0 0 6px; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
 .spool-plan__blurb { margin: 0 0 22px; font-size: 0.96rem; color: var(--muted); line-height: 1.5; }
 .spool-plan__price { display: flex; align-items: baseline; gap: 10px; margin-bottom: 24px; }
@@ -462,7 +470,7 @@
   transition: transform 0.16s ease, background 0.16s ease;
 }
 .spool-plan__cta--light { background: #f4f4f8; color: #0a0b12; }
-.spool-plan__cta--ghost { background: var(--glass-2); color: var(--ink); border: 1px solid var(--glass-line); }
+.spool-plan__cta--ghost { background: var(--glass-2); color: var(--ink); box-shadow: inset 0 0 0 1px var(--glass-line), var(--edge-out); }
 .spool-plan__cta:hover { transform: translateY(-2px); }
 
 /* ---------- footer ---------- */
@@ -472,7 +480,7 @@
   max-width: 1140px;
   margin: 128px auto 0;
   padding: 40px 24px 56px;
-  border-top: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -506,7 +514,7 @@
   .spool-nav__links, .spool-nav__cta { display: none; }
   .spool-nav__brand { font-size: 17px; padding-right: 0; }
   .spool-hero { padding-top: 132px; }
-  .spool-h1 { font-size: clamp(1.9rem, 9vw, 2.7rem); line-height: 1.16; letter-spacing: -0.03em; }
+  .spool-h1 { font-size: clamp(1.7rem, 8vw, 2.3rem); line-height: 1.16; letter-spacing: -0.03em; }
   .spool-h1 .line { white-space: normal; }
   .spool-chip { white-space: normal; }
   .spool-sub { max-width: 40ch; }
