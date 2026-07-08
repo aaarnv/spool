@@ -6,7 +6,11 @@ import Player, { type Chapter, type Line } from "./Player";
 // Blob content is immutable per id — cache the spool.json fetch aggressively.
 async function getSpool(id: string): Promise<Spool | null> {
   try {
-    const res = await fetch(blobUrl(id, "spool.json"), { cache: "force-cache" });
+    // Tagged so a delete can revalidate exactly this spool's cached render.
+    const res = await fetch(blobUrl(id, "spool.json"), {
+      cache: "force-cache",
+      next: { tags: [`spool:${id}`] },
+    });
     if (!res.ok) return null;
     return (await res.json()) as Spool;
   } catch {

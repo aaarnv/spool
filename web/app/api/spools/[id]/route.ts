@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { del, list } from "@vercel/blob";
 import { and, eq } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { db } from "../../../../db";
 import { spools as spoolsTable } from "../../../../db/schema";
 
@@ -28,7 +28,7 @@ export async function DELETE(
   if (blobs.length) await del(blobs.map((b) => b.url));
   await db.delete(spoolsTable).where(eq(spoolsTable.id, id));
 
-  // The watch page force-caches spool.json; drop its cached render so /l/<id> 404s.
-  revalidatePath(`/l/${id}`);
+  // The watch page force-caches spool.json under this tag; drop it so /l/<id> 404s.
+  revalidateTag(`spool:${id}`);
   return Response.json({ ok: true });
 }
