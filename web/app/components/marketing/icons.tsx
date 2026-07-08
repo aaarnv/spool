@@ -1,26 +1,9 @@
 // Small inline icons for the landing. Stroke-based, currentColor.
 
 export function SpoolMark({ size = 26 }: { size?: number }) {
-  const id = "spool-grad";
+  // Real brand mark (public/logo.svg): indigo S on a white rounded tile.
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <defs>
-        <linearGradient id={id} x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#4b7bff" />
-          <stop offset="0.5" stopColor="#39b7a6" />
-          <stop offset="1" stopColor="#ff7a4d" />
-        </linearGradient>
-      </defs>
-      {/* spool flanges */}
-      <rect x="6" y="4" width="20" height="3.4" rx="1.7" fill={`url(#${id})`} />
-      <rect x="6" y="24.6" width="20" height="3.4" rx="1.7" fill={`url(#${id})`} />
-      {/* wound thread barrel */}
-      <rect x="10" y="8.4" width="12" height="15.2" rx="2" fill={`url(#${id})`} opacity="0.28" />
-      <line x1="10.6" y1="11.4" x2="21.4" y2="11.4" stroke={`url(#${id})`} strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="10.6" y1="14.7" x2="21.4" y2="14.7" stroke={`url(#${id})`} strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="10.6" y1="18" x2="21.4" y2="18" stroke={`url(#${id})`} strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="10.6" y1="21.3" x2="21.4" y2="21.3" stroke={`url(#${id})`} strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
+    <img src="/logo.svg" width={size} height={size} alt="" aria-hidden="true" style={{ display: "block", borderRadius: size * 0.22 }} />
   );
 }
 

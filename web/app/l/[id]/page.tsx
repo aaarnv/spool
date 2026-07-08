@@ -69,7 +69,7 @@ export default async function WatchPage({
   return (
     <main className="wrap">
       <div className="brand">
-        <span className="dot" />
+        <img src="/logo.svg" width={18} height={18} alt="" style={{ display: "block", borderRadius: 4 }} />
         spool
       </div>
 

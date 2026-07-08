@@ -32,7 +32,7 @@ export default async function DashboardPage() {
     <main className={styles.wrap}>
       <header className={styles.bar}>
         <div className={styles.brand}>
-          <span className={styles.dot} />
+          <img src="/logo.svg" width={18} height={18} alt="" style={{ display: "block", borderRadius: 4 }} />
           spool
         </div>
         <UserButton afterSignOutUrl="/" />
