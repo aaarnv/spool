@@ -1,6 +1,6 @@
 // The record layer: drive a steps.mjs script through a real Chromium session,
 // capture it to video.webm, and emit timeline.json per CONTRACTS.md. VO must
-// already exist (loom vo) so we can pad each step to fit its narration.
+// already exist (spool vo) so we can pad each step to fit its narration.
 
 import { chromium } from 'playwright';
 import { pathToFileURL } from 'url';
@@ -52,7 +52,7 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   if (existsSync(manPath)) {
     voManifest = JSON.parse(await readFile(manPath, 'utf8'));
   } else if (!dry) {
-    throw new Error(`missing ${manPath} — run \`loom vo\` first`);
+    throw new Error(`missing ${manPath} — run \`spool vo\` first`);
   }
   const voDurationFor = (i) => {
     if (!voManifest || !Array.isArray(voManifest.segments)) return 0;
@@ -80,7 +80,7 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   const h = makeHelpers(page, state, logClick);
 
   // Browser telemetry captured alongside the recording (→ console.jsonl), so a
-  // consuming agent can debug the app from the loom. Buffered, flushed at the end.
+  // consuming agent can debug the app from the spool. Buffered, flushed at the end.
   const telemetry = [];
   const trunc = (s) => (typeof s === 'string' && s.length > 2000 ? s.slice(0, 2000) : String(s ?? ''));
   const logEvent = (e) => telemetry.push({ t: +now().toFixed(3), ...e, text: trunc(e.text) });

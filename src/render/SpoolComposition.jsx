@@ -26,7 +26,7 @@ const FONT =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif';
 
 // durationInFrames = timeline length + a 1s tail so the last caption/VO can land.
-export const calculateLoomMetadata = ({ props }) => {
+export const calculateSpoolMetadata = ({ props }) => {
   const total = props?.timeline?.total ?? 0;
   return { durationInFrames: Math.max(1, Math.ceil((total + 1) * FPS)) };
 };
@@ -264,7 +264,7 @@ const TitleSubtitle = ({ title, frame, firstCaptionStart }) => {
   );
 };
 
-export const LoomComposition = ({ timeline, manifest, title, background }) => {
+export const SpoolComposition = ({ timeline, manifest, title, background }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;

@@ -7,15 +7,15 @@
 // Injected via context.addInitScript — re-runs on every new document (full loads
 // and the initial page of an SPA), so it must be self-contained and idempotent.
 export const CURSOR_INIT_SCRIPT = `(() => {
-  if (window.__agentLoomCursor) return;
-  window.__agentLoomCursor = { x: -100, y: -100 };
+  if (window.__spoolCursor) return;
+  window.__spoolCursor = { x: -100, y: -100 };
 
   let root = null, arrow = null;
 
   function build() {
-    if (!document.body || document.getElementById('__agentLoomCursorRoot')) return;
+    if (!document.body || document.getElementById('__spoolCursorRoot')) return;
     root = document.createElement('div');
-    root.id = '__agentLoomCursorRoot';
+    root.id = '__spoolCursorRoot';
     root.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;margin:0;padding:0;z-index:2147483647;pointer-events:none;';
 
     arrow = document.createElement('div');
@@ -25,7 +25,7 @@ export const CURSOR_INIT_SCRIPT = `(() => {
     root.appendChild(arrow);
     document.body.appendChild(root);
 
-    const p = window.__agentLoomCursor;
+    const p = window.__spoolCursor;
     arrow.style.transform = 'translate3d(' + (p.x - 1) + 'px,' + (p.y - 1) + 'px,0)';
   }
 
@@ -43,8 +43,8 @@ export const CURSOR_INIT_SCRIPT = `(() => {
 
   // Listen in the capture phase so page handlers can't stop us seeing the event.
   document.addEventListener('mousemove', (e) => {
-    window.__agentLoomCursor.x = e.clientX;
-    window.__agentLoomCursor.y = e.clientY;
+    window.__spoolCursor.x = e.clientX;
+    window.__spoolCursor.y = e.clientY;
     if (arrow) arrow.style.transform = 'translate3d(' + (e.clientX - 1) + 'px,' + (e.clientY - 1) + 'px,0)';
   }, true);
   document.addEventListener('mousedown', (e) => { ripple(e.clientX, e.clientY); }, true);

@@ -1,24 +1,24 @@
-# agent-loom data contracts (v1)
+# spool data contracts (v1)
 
-Every layer communicates only through these files inside a per-loom **workdir**
-(conventionally `<project>/loom/<slug>/`). If you change a format, bump it here first.
+Every layer communicates only through these files inside a per-spool **workdir**
+(conventionally `<project>/spool/<slug>/`). If you change a format, bump it here first.
 
 ## Workdir layout
 
 ```
-loom/<slug>/
+spool/<slug>/
 ├── steps.mjs            # agent-authored demo script (the only human/agent-written file)
 ├── vo/
-│   ├── manifest.json    # written by `loom vo`
+│   ├── manifest.json    # written by `spool vo`
 │   ├── seg_00.wav       # 24kHz mono, loudnormed -16 LUFS
 │   └── seg_00.words.json
-├── video.webm           # written by `loom record` (raw Playwright capture)
-├── timeline.json        # written by `loom record`
-├── video.mp4            # written by `loom render` (normalize pass, CFR 30fps H264)
-└── final.mp4            # written by `loom render` (the deliverable)
+├── video.webm           # written by `spool record` (raw Playwright capture)
+├── timeline.json        # written by `spool record`
+├── video.mp4            # written by `spool render` (normalize pass, CFR 30fps H264)
+└── final.mp4            # written by `spool render` (the deliverable)
 ```
 
-## steps.mjs (authored per loom)
+## steps.mjs (authored per spool)
 
 ```js
 export const config = {
@@ -46,7 +46,7 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
 `h.move(x,y)`, `h.click(selectorOrPoint)`, `h.type(selector, text)`, `h.hover(selector)`,
 `h.scroll(dy)`, `h.pause(ms)`. All produce smooth, human-speed motion and are logged.
 
-## vo/manifest.json (loom vo → loom record, loom render)
+## vo/manifest.json (spool vo → spool record, spool render)
 
 ```json
 {
@@ -68,7 +68,7 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
 `seg_NN.words.json`: `[{ "word": "Here's", "start": 0.0, "end": 0.31 }, ...]`
 (times are local to that segment's wav; seconds, float).
 
-## timeline.json (loom record → loom render)
+## timeline.json (spool record → spool render)
 
 ```json
 {
@@ -98,7 +98,7 @@ Helper API passed as `h` (implemented in src/record/cursor.js):
 - Invariant: `steps[i].end - steps[i].start >= voDuration + 0.4` (padding), so VO
   segments placed at `steps[i].start` never overlap.
 
-## console.jsonl (loom record → loom share)
+## console.jsonl (spool record → spool share)
 
 Browser telemetry captured during recording, one JSON object per line, times in
 seconds relative to video t=0 (same clock as timeline.json):
@@ -112,25 +112,25 @@ seconds relative to video t=0 (same clock as timeline.json):
 Levels for kind=console mirror Playwright's msg.type(). Always written (empty file
 when nothing fired) so consumers can rely on its presence.
 
-## share/ bundle (loom share → any consuming agent)
+## share/ bundle (spool share → any consuming agent)
 
-The Clips-style agent-consumable artifact. `loom share <workdir>` (auto-run at the
-end of `loom build`) writes:
+The agent-consumable artifact. `spool share <workdir>` (auto-run at the
+end of `spool build`) writes:
 
 ```
-loom/<slug>/share/
-├── loom.json          # the single machine-readable index (below)
+spool/<slug>/share/
+├── spool.json         # the single machine-readable index (below)
 ├── transcript.txt     # "[mm:ss] narration" per step — cheap skim for an agent
 ├── frames/step_NN.png # one keyframe per step (mid-step, post-click when clicks exist)
 └── console.jsonl      # copied from the workdir
 ```
 
-`loom.json`:
+`spool.json`:
 
 ```json
 {
   "version": 1,
-  "kind": "agent-loom",
+  "kind": "spool",
   "title": "Finishing Lab walkthrough",
   "url": "http://localhost:4747",
   "video": "../final.mp4",
@@ -151,23 +151,23 @@ loom/<slug>/share/
 }
 ```
 
-Consumption: `loom read <workdir-or-share-dir>` prints an agent-oriented digest
+Consumption: `spool read <workdir-or-share-dir>` prints an agent-oriented digest
 (title, url, per-step narration + timings + frame paths, console error summary) so
 a receiving agent can orient in one command and Read only the frames it needs.
-Paths inside loom.json are share-dir-relative; the bundle is self-contained apart
+Paths inside spool.json are share-dir-relative; the bundle is self-contained apart
 from the ../final.mp4 pointer.
 
 ## Render layer inputs
 
-`loom render <workdir> [--rate 1.25]` reads `timeline.json` + `vo/manifest.json`, runs
+`spool render <workdir> [--rate 1.25]` reads `timeline.json` + `vo/manifest.json`, runs
 the normalize pass (`video.webm` → `video.mp4`, CFR 30fps, H264, yuv420p, +genpts),
-renders the Remotion `LoomComposition` with `{ workdir-relative props }` (1920x1080
+renders the Remotion `SpoolComposition` with `{ workdir-relative props }` (1920x1080
 macOS-wallpaper-style gradient canvas, recording on a near-full-bleed rounded card, VO
 `<Audio>` at `steps[i].start`, subtitle-style intro title, captions driven by words.json
 offset by segment start, zoom eased around `clicks`), then applies the global playback
 rate (default **1.25x**, video setpts + pitch-preserved atempo together) → `final.mp4`.
 
 Rate bookkeeping: `final.mp4` runs on a compressed clock; `video.mp4` and all times in
-`timeline.json` / `console.jsonl` stay on the recording clock. `loom share` therefore
+`timeline.json` / `console.jsonl` stay on the recording clock. `spool share` therefore
 extracts keyframes from `video.mp4` (recording clock) and reports `duration` from
-`final.mp4` plus a top-level `rate` field in `loom.json`.
+`final.mp4` plus a top-level `rate` field in `spool.json`.

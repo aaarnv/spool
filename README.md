@@ -1,8 +1,10 @@
-# agent-loom
+# spool
 
-**Agents record their own Looms.** After an agent builds a feature, it drives the app in a
+**Agents record their own spools.** After an agent builds a feature, it drives the app in a
 real browser, records a real continuous video (not screenshot stitching), narrates it with
-AI voice, and renders a designed, captioned MP4 — no human ever hits record.
+AI voice, and renders a designed, captioned MP4 — no human ever hits record. Think of the
+narrated walkthroughs you'd make with screen-recording products like Loom, except the agent
+is the producer.
 
 Inspired by [BuilderIO/agent-native](https://github.com/BuilderIO/agent-native)'s Clips,
 inverted: there a human records and the agent watches; here the agent is the producer.
@@ -12,12 +14,12 @@ inverted: there a human records and the agent watches; here the agent is the pro
 ```
 steps.mjs (agent-authored demo script)
    │
-loom vo      →  vo/seg_NN.wav + word timestamps     OpenAI gpt-4o-mini-tts + whisper-1
-loom record  →  video.webm + timeline.json           Playwright recordVideo, fake cursor,
-   │                                                 human-speed motion, per-step timing
-loom render  →  final.mp4                            Remotion: padded card canvas, click
-                                                     zooms, word-synced captions, VO at
-                                                     exact offsets
+spool vo      →  vo/seg_NN.wav + word timestamps     OpenAI gpt-4o-mini-tts + whisper-1
+spool record  →  video.webm + timeline.json           Playwright recordVideo, fake cursor,
+   │                                                  human-speed motion, per-step timing
+spool render  →  final.mp4                            Remotion: padded card canvas, click
+                                                      zooms, word-synced captions, VO at
+                                                      exact offsets
 ```
 
 Sync is **VO-first**: narration is generated before recording, and the recorder pads each
@@ -28,24 +30,24 @@ renderer places each audio segment at its logged offset.
 
 ```bash
 cd <your-project>
-loom init my-feature          # scaffolds loom/my-feature/steps.mjs
+spool init my-feature          # scaffolds spool/my-feature/steps.mjs
 # author the steps: N steps × { name, narration, zoom, run(page, h) }
-loom dry loom/my-feature --headed   # debug the driver cheaply, no VO/video
-loom build loom/my-feature          # vo → record → render → share → final.mp4 + share/
-loom publish loom/my-feature        # → https://<host>/l/<id> — one link, click to watch
+spool dry spool/my-feature --headed   # debug the driver cheaply, no VO/video
+spool build spool/my-feature          # vo → record → render → share → final.mp4 + share/
+spool publish spool/my-feature        # → https://<host>/l/<id> — one link, click to watch
 ```
 
-`loom publish` uploads the video + share bundle to the hosted watch app (web/ in this
+`spool publish` uploads the video + share bundle to the hosted watch app (web/ in this
 repo, deployable to Vercel + Blob) and returns a single unlisted, unguessable link —
-video player, chapters, transcript for humans; raw loom.json on the same page for agents.
+video player, chapters, transcript for humans; raw spool.json on the same page for agents.
 
 ## Agent-to-agent sharing (Clips, inverted then completed)
 
 Every build also emits `share/` — a machine-readable bundle so *another agent* can
-consume the loom without watching video: `loom.json` (steps, narration, timings, click
+consume the spool without watching video: `spool.json` (steps, narration, timings, click
 coords, keyframe paths), `transcript.txt`, one keyframe PNG per step, and
 `console.jsonl` (browser console/pageerror/requestfailed telemetry captured during
-recording). A receiving agent runs `loom read <dir>` for an instant digest, then Reads
+recording). A receiving agent runs `spool read <dir>` for an instant digest, then Reads
 only the frames it cares about — e.g. to review a demoed feature, file bugs from
 console errors, or verify a claimed fix actually renders.
 
@@ -58,7 +60,7 @@ Setup: `npm install && npm link` in this repo (chromium comes from Playwright's 
 ## The steps contract
 
 See [CONTRACTS.md](./CONTRACTS.md) for the full data contracts (steps.mjs shape,
-timeline.json, vo/manifest.json). The only file an agent authors per loom is `steps.mjs`;
+timeline.json, vo/manifest.json). The only file an agent authors per spool is `steps.mjs`;
 everything else is generated.
 
 ## Design notes
@@ -70,5 +72,5 @@ everything else is generated.
   rounded card with gentle zooms toward logged click coordinates (Screen-Studio style) and
   captions are rendered as designed React, not burned SRT. The one hand-written ffmpeg video
   pass (WebM → CFR H264) exists because Remotion seeks VFR VP8 pathologically slowly.
-- **Dry-run first.** `loom dry` drives the steps with no VO or video so the agent can fix
+- **Dry-run first.** `spool dry` drives the steps with no VO or video so the agent can fix
   selectors/timing before spending TTS calls and render minutes.

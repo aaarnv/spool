@@ -79,10 +79,10 @@ function frameTime(step, videoDur) {
 }
 
 /**
- * Write the agent-consumable share/ bundle for a loom workdir.
+ * Write the agent-consumable share/ bundle for a spool workdir.
  * See CONTRACTS.md "share/ bundle".
  */
-export async function shareLoom(workdir) {
+export async function shareSpool(workdir) {
   const dir = resolve(workdir);
   const timeline = await readJson(join(dir, "timeline.json"));
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
@@ -93,7 +93,7 @@ export async function shareLoom(workdir) {
   // Frames come from the pre-speed normalize output (video.mp4), whose clock
   // matches timeline.json — final.mp4 is time-compressed by `rate`, so pulling
   // frames from it would land on the wrong moments. Duration, though, is read
-  // from the actual deliverable (final.mp4) so loom.json reports true runtime.
+  // from the actual deliverable (final.mp4) so spool.json reports true runtime.
   const first = (names) => names.find((n) => existsSync(join(dir, n)));
   const frameName = first(["video.mp4", "video.webm", "final.mp4"]);
   if (!frameName) throw new Error(`share: no source video in ${dir} (need video.mp4/video.webm/final.mp4)`);
@@ -131,7 +131,7 @@ export async function shareLoom(workdir) {
   const { errors, warnings } = tallyConsole(consoleText);
 
   // Clamp frame times against the FRAME video's own (natural-clock) duration,
-  // which differs from the sped-up final.mp4 duration used for loom.json.
+  // which differs from the sped-up final.mp4 duration used for spool.json.
   const frameDur = frameName === durName ? videoDur : await duration(videoPath);
 
   // One keyframe per step.
@@ -166,9 +166,9 @@ export async function shareLoom(workdir) {
     });
   }
 
-  const loom = {
+  const spool = {
     version: 1,
-    kind: "agent-loom",
+    kind: "spool",
     title: timeline.title || manifest.title || null,
     url: await resolveUrl(dir, timeline),
     video: `../${deliverable}`,
@@ -182,7 +182,7 @@ export async function shareLoom(workdir) {
       log: "console.jsonl",
     },
   };
-  await writeFile(join(shareDir, "loom.json"), JSON.stringify(loom, null, 2) + "\n");
+  await writeFile(join(shareDir, "spool.json"), JSON.stringify(spool, null, 2) + "\n");
 
   // transcript.txt: "[mm:ss] narration" per narrated step, at the step start.
   const transcript = steps
@@ -195,11 +195,11 @@ export async function shareLoom(workdir) {
   return shareDir;
 }
 
-// Resolve a workdir OR a share dir to the directory that holds loom.json.
+// Resolve a workdir OR a share dir to the directory that holds spool.json.
 function findShareDir(input) {
   const d = resolve(input);
-  if (existsSync(join(d, "loom.json"))) return d;
-  if (existsSync(join(d, "share", "loom.json"))) return join(d, "share");
+  if (existsSync(join(d, "spool.json"))) return d;
+  if (existsSync(join(d, "share", "spool.json"))) return join(d, "share");
   return null;
 }
 
@@ -207,21 +207,21 @@ function findShareDir(input) {
  * Read a built share bundle and return an agent-oriented digest string.
  * Accepts a workdir or a share dir.
  */
-export async function readLoom(input) {
+export async function readSpool(input) {
   const shareDir = findShareDir(input);
   if (!shareDir) {
-    throw new Error(`read: no share bundle at ${input} (run \`loom share\` first)`);
+    throw new Error(`read: no share bundle at ${input} (run \`spool share\` first)`);
   }
-  const loom = await readJson(join(shareDir, "loom.json"));
+  const spool = await readJson(join(shareDir, "spool.json"));
 
   const lines = [];
-  lines.push(loom.title || "(untitled loom)");
-  lines.push(`url:      ${loom.url ?? "(unknown)"}`);
-  lines.push(`duration: ${loom.duration}s${loom.rate && loom.rate !== 1 ? ` (${loom.rate}x)` : ""}`);
-  lines.push(`voice:    ${loom.voice?.voice ?? "?"} (${loom.voice?.engine ?? "?"})`);
+  lines.push(spool.title || "(untitled spool)");
+  lines.push(`url:      ${spool.url ?? "(unknown)"}`);
+  lines.push(`duration: ${spool.duration}s${spool.rate && spool.rate !== 1 ? ` (${spool.rate}x)` : ""}`);
+  lines.push(`voice:    ${spool.voice?.voice ?? "?"} (${spool.voice?.engine ?? "?"})`);
   lines.push("");
   lines.push("steps:");
-  for (const s of loom.steps || []) {
+  for (const s of spool.steps || []) {
     const n = (s.clicks || []).length;
     lines.push(
       `  [${mmss(s.start)}–${mmss(s.end)}] ${s.name}: ${s.narration}` +
@@ -230,7 +230,7 @@ export async function readLoom(input) {
   }
 
   // Console summary + first 5 error lines, read from the bundle's own log.
-  const c = loom.console || { errors: 0, warnings: 0 };
+  const c = spool.console || { errors: 0, warnings: 0 };
   lines.push("");
   lines.push(`console:  ${c.errors} error(s), ${c.warnings} warning(s)`);
   const logPath = join(shareDir, c.log || "console.jsonl");
@@ -258,8 +258,8 @@ if (isMain) {
     process.exit(1);
   }
   (async () => {
-    if (!readOnly) await shareLoom(workdir);
-    console.log("\n" + (await readLoom(workdir)));
+    if (!readOnly) await shareSpool(workdir);
+    console.log("\n" + (await readSpool(workdir)));
   })()
     .then(() => process.exit(0))
     .catch((err) => {

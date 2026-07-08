@@ -1,6 +1,6 @@
 import React from "react";
 import { Composition } from "remotion";
-import { LoomComposition, calculateLoomMetadata } from "./LoomComposition.jsx";
+import { SpoolComposition, calculateSpoolMetadata } from "./SpoolComposition.jsx";
 
 const FPS = 30;
 
@@ -16,14 +16,14 @@ const defaultProps = {
 export const Root = () => {
   return (
     <Composition
-      id="Loom"
-      component={LoomComposition}
+      id="Spool"
+      component={SpoolComposition}
       durationInFrames={FPS} // real value comes from calculateMetadata
       fps={FPS}
       width={1920}
       height={1080}
       defaultProps={defaultProps}
-      calculateMetadata={calculateLoomMetadata}
+      calculateMetadata={calculateSpoolMetadata}
     />
   );
 };

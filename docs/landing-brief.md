@@ -31,5 +31,5 @@ not its content or palette. Background style: https://shaders.paper.design/ — 
 - This is the marketing face of an open-source + paid-hosted product; it must look
   designed, not templated. Load the frontend-design skill before building.
 - Real assets only: screenshot the live watch page, embed the real finishing-lab spool.
-- Brand name is **Spool** everywhere (rename from agent-loom happens before this builds).
+- Brand name is **Spool** everywhere.
 - Keep Lighthouse sane: the shader is the only heavy element; everything else is light.

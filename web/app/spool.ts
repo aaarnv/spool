@@ -1,6 +1,6 @@
-// Shape of loom.json (see CONTRACTS.md "share/ bundle"). On the server we rewrite
+// Shape of spool.json (see CONTRACTS.md "share/ bundle"). On the server we rewrite
 // `video` and each step's `frame` from bundle-relative paths to blob URLs before storing.
-export type LoomStep = {
+export type SpoolStep = {
   i: number;
   name: string;
   narration: string;
@@ -10,7 +10,7 @@ export type LoomStep = {
   frame: string;
 };
 
-export type Loom = {
+export type Spool = {
   version: number;
   kind: string;
   title: string | null;
@@ -19,13 +19,13 @@ export type Loom = {
   duration: number;
   rate?: number;
   voice?: { engine: string | null; voice: string | null };
-  steps: LoomStep[];
+  steps: SpoolStep[];
   console?: { errors: number; warnings: number; log: string };
 };
 
 // Public base URL of the Blob store, e.g. https://<id>.public.blob.vercel-storage.com
-// Set at deploy time; used to fetch a loom's stored artifacts by id without SDK auth.
-export const BLOB_BASE = (process.env.LOOM_BLOB_BASE || "").replace(/\/$/, "");
+// Set at deploy time; used to fetch a spool's stored artifacts by id without SDK auth.
+export const BLOB_BASE = (process.env.SPOOL_BLOB_BASE || "").replace(/\/$/, "");
 
 export const blobUrl = (id: string, name: string) => `${BLOB_BASE}/l/${id}/${name}`;
 

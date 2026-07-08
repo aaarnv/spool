@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "agent-loom",
+  title: "spool",
   description: "Shareable walkthrough videos recorded by agents.",
 };
 

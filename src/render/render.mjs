@@ -48,7 +48,7 @@ async function speedUp(src, dst, rate) {
 }
 
 /**
- * Render a loom workdir to <workdir>/final.mp4.
+ * Render a spool workdir to <workdir>/final.mp4.
  *
  * Reads timeline.json + vo/manifest.json, normalizes the capture to CFR H264,
  * then bundles the Remotion project with publicDir=workdir so the composition
@@ -60,7 +60,7 @@ async function speedUp(src, dst, rate) {
  *
  * @param {string|{workdir:string, rate?:number}} opts
  */
-export async function renderLoom(opts) {
+export async function renderSpool(opts) {
   const { workdir, rate = 1.25 } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
   const timeline = await readJson(join(dir, "timeline.json"));
@@ -88,8 +88,8 @@ export async function renderLoom(opts) {
   let background = null;
   const bgAsset = join(dirname(dirname(__dirname)), "assets", "bg-sonoma.jpg");
   if (existsSync(bgAsset)) {
-    await copyFile(bgAsset, join(dir, ".loom-bg.jpg"));
-    background = ".loom-bg.jpg";
+    await copyFile(bgAsset, join(dir, ".spool-bg.jpg"));
+    background = ".spool-bg.jpg";
   }
 
   const inputProps = {
@@ -112,7 +112,7 @@ export async function renderLoom(opts) {
   console.log("[render] selecting composition...");
   const composition = await selectComposition({
     serveUrl,
-    id: "Loom",
+    id: "Spool",
     inputProps,
   });
   console.log(
@@ -147,7 +147,7 @@ export async function renderLoom(opts) {
     await unlink(renderOut).catch(() => {});
   }
 
-  // Stamp the rate so `loom share` can record it and knows final.mp4's clock
+  // Stamp the rate so `spool share` can record it and knows final.mp4's clock
   // differs from timeline.json/video.mp4.
   await writeFile(join(dir, "render.json"), JSON.stringify({ rate: speedUpNeeded ? rate : 1 }, null, 2) + "\n");
 
@@ -167,7 +167,7 @@ if (isMain) {
     console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>]");
     process.exit(1);
   }
-  renderLoom({ workdir, rate })
+  renderSpool({ workdir, rate })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error("[render] failed:", err);
