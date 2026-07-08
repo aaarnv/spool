@@ -57,7 +57,7 @@ program
 
 program
   .command('record <workdir>')
-  .description('record the demo (requires vo/manifest.json for pacing)')
+  .description('record the demo at natural speed (VO not required; renderer retimes)')
   .option('--headed', 'show the browser')
   .action(async (workdir, opts) => {
     const { record } = await import(join(root, 'src/record/harness.mjs'));
@@ -67,7 +67,7 @@ program
 program
   .command('render <workdir>')
   .description('normalize + Remotion-render the final spool mp4')
-  .option('--rate <rate>', 'global playback speed for the final video', '1.25')
+  .option('--rate <rate>', 'global playback speed for the final video', '1')
   .action(async (workdir, opts) => {
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
     await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate) });
@@ -101,11 +101,11 @@ program
 
 program
   .command('build <workdir>')
-  .description('vo → record → render → share, end to end')
+  .description('(vo ‖ record) → render → share, end to end')
   .option('--engine <engine>', 'openai | local', 'openai')
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
-  .option('--rate <rate>', 'global playback speed for the final video', '1.25')
+  .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--headed', 'show the browser while recording')
   .action(async (workdir, opts) => {
     const wd = resolve(workdir);
@@ -113,10 +113,16 @@ program
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
     const { record } = await import(join(root, 'src/record/harness.mjs'));
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
-    console.log('── spool vo');
-    await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
-    console.log('── spool record');
-    await record({ stepsFile: sf, workdir: wd, headed: !!opts.headed });
+    // Record-first, narrate-parallel: VO and capture are independent now, so run
+    // them concurrently. Either rejecting fails the build with that error.
+    console.log('── spool vo ‖ record');
+    const t0 = Date.now();
+    await Promise.all([
+      generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) })
+        .then(() => console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
+      record({ stepsFile: sf, workdir: wd, headed: !!opts.headed })
+        .then(() => console.log(`   record done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
+    ]);
     console.log('── spool render');
     await renderSpool({ workdir: wd, rate: Number(opts.rate) });
     console.log('── spool share');

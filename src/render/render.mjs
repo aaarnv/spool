@@ -1,26 +1,78 @@
-import { readFile, writeFile, unlink, copyFile } from "node:fs/promises";
+import { readFile, writeFile, unlink, copyFile, mkdir, cp, rm, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
+import { cpus, tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
-import { normalize } from "./normalize.mjs";
+import { normalize, h264Encoder } from "./normalize.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(__dirname, "index.mjs");
+const require = createRequire(import.meta.url);
 
 async function readJson(p) {
   return JSON.parse(await readFile(p, "utf8"));
+}
+
+// Cache the Remotion webpack bundle across builds. The compile depends only on
+// src/render/** + the remotion version, so key the cache dir on their hash and
+// reuse it when unchanged; per-spool static assets are synced into its public/
+// folder each render (staticFile resolves against <serveUrl>/public).
+async function srcHash() {
+  const h = createHash("sha1");
+  const files = (await readdir(__dirname)).filter((f) => /\.(mjs|jsx|js)$/.test(f)).sort();
+  for (const f of files) {
+    const s = await stat(join(__dirname, f));
+    h.update(f).update(String(Math.round(s.mtimeMs)));
+  }
+  h.update(require("remotion/package.json").version);
+  return h.digest("hex").slice(0, 16);
+}
+
+async function getServeUrl() {
+  const cacheDir = join(tmpdir(), `spool-remotion-${await srcHash()}`);
+  if (existsSync(join(cacheDir, "index.html"))) {
+    console.log("[render] reusing cached Remotion bundle");
+    return cacheDir;
+  }
+  console.log("[render] bundling Remotion project (cache miss)...");
+  await rm(cacheDir, { recursive: true, force: true }).catch(() => {});
+  const emptyPublic = join(tmpdir(), `spool-empty-public-${process.pid}`);
+  await mkdir(emptyPublic, { recursive: true });
+  const url = await bundle({
+    entryPoint: ENTRY,
+    outDir: cacheDir,
+    publicDir: emptyPublic,
+    onProgress: (p) => {
+      if (p % 25 === 0) console.log(`[render] bundle ${p}%`);
+    },
+  });
+  await rm(emptyPublic, { recursive: true, force: true }).catch(() => {});
+  return url;
+}
+
+// Mirror the spool's staticFile() targets into the cached bundle's public/ dir.
+async function syncPublic(serveUrl, dir, background) {
+  const pub = join(serveUrl, "public");
+  await mkdir(pub, { recursive: true });
+  await cp(join(dir, "video.mp4"), join(pub, "video.mp4"));
+  await rm(join(pub, "vo"), { recursive: true, force: true }).catch(() => {});
+  if (existsSync(join(dir, "vo"))) await cp(join(dir, "vo"), join(pub, "vo"), { recursive: true });
+  if (background) await cp(join(dir, background), join(pub, background));
 }
 
 // Speed the fully-rendered mp4 by `rate` in one pass: video via setpts, audio via
 // atempo (pitch-preserving). Everything (captions, zooms, VO placement) was laid
 // out in Remotion at natural speed, so compressing the whole clip keeps it in sync.
 async function speedUp(src, dst, rate) {
+  const enc = await h264Encoder();
   await exec(FFMPEG, [
     "-y",
     "-i",
@@ -32,11 +84,8 @@ async function speedUp(src, dst, rate) {
     "-map",
     "[a]",
     "-c:v",
-    "libx264",
-    "-crf",
-    "20",
-    "-preset",
-    "medium",
+    enc.name,
+    ...enc.args,
     "-pix_fmt",
     "yuv420p",
     "-c:a",
@@ -54,14 +103,14 @@ async function speedUp(src, dst, rate) {
  * then bundles the Remotion project with publicDir=workdir so the composition
  * can staticFile() the video and per-segment wavs by their workdir-relative
  * paths. Word timings are inlined into the props (the headless render can't
- * read the fs itself). Finally the whole clip is sped up by `rate` (default
- * 1.25) so the deliverable plays at a natural-but-brisk pace; the rate used is
- * stamped into <workdir>/render.json for the share layer.
+ * read the fs itself). Pacing is now narration-driven (each step's window fits
+ * its VO), so `rate` defaults to 1.0; when set it speeds the whole clip and the
+ * rate used is stamped into <workdir>/render.json for the share layer.
  *
  * @param {string|{workdir:string, rate?:number}} opts
  */
 export async function renderSpool(opts) {
-  const { workdir, rate = 1.25 } = typeof opts === "string" ? { workdir: opts } : opts;
+  const { workdir, rate = 1 } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
   const timeline = await readJson(join(dir, "timeline.json"));
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
@@ -100,14 +149,8 @@ export async function renderSpool(opts) {
     workdir: dir,
   };
 
-  console.log("[render] bundling Remotion project...");
-  const serveUrl = await bundle({
-    entryPoint: ENTRY,
-    publicDir: dir,
-    onProgress: (p) => {
-      if (p % 25 === 0) console.log(`[render] bundle ${p}%`);
-    },
-  });
+  const serveUrl = await getServeUrl();
+  await syncPublic(serveUrl, dir, background);
 
   console.log("[render] selecting composition...");
   const composition = await selectComposition({
@@ -132,6 +175,8 @@ export async function renderSpool(opts) {
     audioCodec: "aac",
     outputLocation: renderOut,
     inputProps,
+    concurrency: Math.max(2, cpus().length - 1),
+    x264Preset: "veryfast",
     onProgress: ({ progress }) => {
       const pct = Math.floor(progress * 100);
       if (pct !== lastPct && pct % 5 === 0) {
@@ -162,7 +207,7 @@ if (isMain) {
   const wIdx = argv.indexOf("--workdir");
   const workdir = wIdx >= 0 ? argv[wIdx + 1] : argv[2];
   const rIdx = argv.indexOf("--rate");
-  const rate = rIdx >= 0 ? Number(argv[rIdx + 1]) : 1.25;
+  const rate = rIdx >= 0 ? Number(argv[rIdx + 1]) : 1;
   if (!workdir) {
     console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>]");
     process.exit(1);

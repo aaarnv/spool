@@ -4,6 +4,7 @@ import { readFile, writeFile, copyFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import { pathToFileURL } from "node:url";
+import { buildWindows } from "../render/retime.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -134,13 +135,19 @@ export async function shareSpool(workdir) {
   // which differs from the sped-up final.mp4 duration used for spool.json.
   const frameDur = frameName === durName ? videoDur : await duration(videoPath);
 
+  // spool.json reports the OUTPUT timeline (window-based) — that's the clock a
+  // consuming agent sees in final.mp4. Keyframes, though, are pulled from the
+  // recording-clock frame video, so extraction still uses timeline.steps times.
+  const { windows } = buildWindows(timeline, manifest);
+  const windowByIndex = new Map(windows.map((w) => [w.i, w]));
+
   // One keyframe per step.
   const steps = [];
   for (const step of timeline.steps || []) {
     const nn = String(step.i).padStart(2, "0");
     const rel = `frames/step_${nn}.png`;
     const out = join(shareDir, rel);
-    const t = frameTime(step, frameDur);
+    const t = frameTime(step, frameDur); // recording clock (frame video)
     await exec(FFMPEG, [
       "-y",
       "-ss",
@@ -155,13 +162,14 @@ export async function shareSpool(workdir) {
       "scale=1280:-2",
       out,
     ]);
+    const w = windowByIndex.get(step.i);
     steps.push({
       i: step.i,
       name: step.name,
       narration: narrationByIndex.get(step.i) ?? step.narration ?? "",
-      start: step.start,
-      end: step.end,
-      clicks: step.clicks || [],
+      start: w ? +w.startSec.toFixed(3) : step.start,
+      end: w ? +w.endSec.toFixed(3) : step.end,
+      clicks: w ? w.outClicks : step.clicks || [],
       frame: rel,
     });
   }

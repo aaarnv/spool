@@ -14,17 +14,21 @@ inverted: there a human records and the agent watches; here the agent is the pro
 ```
 steps.mjs (agent-authored demo script)
    │
-spool vo      →  vo/seg_NN.wav + word timestamps     OpenAI gpt-4o-mini-tts + whisper-1
-spool record  →  video.webm + timeline.json           Playwright recordVideo, fake cursor,
-   │                                                  human-speed motion, per-step timing
-spool render  →  final.mp4                            Remotion: padded card canvas, click
-                                                      zooms, word-synced captions, VO at
-                                                      exact offsets
+   ├── spool vo      →  vo/seg_NN.wav + word timestamps   OpenAI gpt-4o-mini-tts + whisper-1
+   │   (in parallel)                                      (bounded concurrency pool)
+   └── spool record  →  video.webm + timeline.json        Playwright recordVideo, fake cursor,
+   │                                                       human-speed motion, natural timing
+spool render  →  final.mp4                                Remotion: retime each step to fit its
+                                                          narration, play its capture at 1x then
+                                                          freeze-hold, click zooms, word-synced
+                                                          captions, VO at each step's offset
 ```
 
-Sync is **VO-first**: narration is generated before recording, and the recorder pads each
-step so the screen never outruns the voice; exact step timestamps are logged and the
-renderer places each audio segment at its logged offset.
+Sync is **record-first, narrate-parallel, retimed-in-render**: the capture runs at natural
+interaction speed while narration is generated concurrently, then the renderer sizes each
+step to `max(narration+pad, recorded)` — playing the recording at 1x and freeze-holding its
+last frame for the remaining dead air under the voice. Nothing is padded during capture, so a
+5-step build drops from ~90s to roughly `max(record, vo) + fast render`.
 
 ## Usage (any agent, any project)
 
@@ -33,7 +37,7 @@ cd <your-project>
 spool init my-feature          # scaffolds spool/my-feature/steps.mjs
 # author the steps: N steps × { name, narration, zoom, run(page, h) }
 spool dry spool/my-feature --headed   # debug the driver cheaply, no VO/video
-spool build spool/my-feature          # vo → record → render → share → final.mp4 + share/
+spool build spool/my-feature          # (vo ‖ record) → render → share → final.mp4 + share/
 spool publish spool/my-feature        # → https://<host>/l/<id> — one link, click to watch
 ```
 

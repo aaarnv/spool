@@ -2,6 +2,7 @@ import React from "react";
 import {
   AbsoluteFill,
   Audio,
+  Freeze,
   OffthreadVideo,
   Sequence,
   Easing,
@@ -10,8 +11,8 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { buildWindows, FPS, TAIL_S } from "./retime.mjs";
 
-const FPS = 30;
 const CANVAS_W = 1920;
 const CANVAS_H = 1080;
 
@@ -25,10 +26,10 @@ const CAPTION_BAND = 92;
 const FONT =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif';
 
-// durationInFrames = timeline length + a 1s tail so the last caption/VO can land.
+// durationInFrames = retimed output windows + a tail so the last caption/VO lands.
 export const calculateSpoolMetadata = ({ props }) => {
-  const total = props?.timeline?.total ?? 0;
-  return { durationInFrames: Math.max(1, Math.ceil((total + 1) * FPS)) };
+  const { totalFrames } = buildWindows(props?.timeline, props?.manifest, FPS);
+  return { durationInFrames: Math.max(1, totalFrames + Math.round(TAIL_S * FPS)) };
 };
 
 // Geometry of the centered card, derived once from the viewport size.
@@ -112,13 +113,12 @@ function getZoom(t, steps, card) {
 }
 
 // Flatten all VO segments into absolute-timed phrases (≤6 words, split on >0.6s
-// gaps). Each word time is offset by its step's start on the timeline.
-function buildPhrases(manifest, steps) {
-  const stepByIndex = new Map(steps.map((s) => [s.i, s]));
+// gaps). Each word time is offset by its step's start on the OUTPUT timeline.
+function buildPhrases(manifest, windows) {
+  const startByIndex = new Map(windows.map((w) => [w.i, w.startSec]));
   const phrases = [];
   for (const seg of manifest.segments || []) {
-    const step = stepByIndex.get(seg.i);
-    const offset = step ? step.start : 0;
+    const offset = startByIndex.get(seg.i) ?? 0;
     const words = (seg.wordsData || []).map((w) => ({
       word: w.word,
       start: offset + w.start,
@@ -264,17 +264,50 @@ const TitleSubtitle = ({ title, frame, firstCaptionStart }) => {
   );
 };
 
+// One step → a play Sequence (its recorded slice at 1x) then, when the window
+// outlasts the capture, a freeze Sequence holding the slice's last frame. The
+// window is a max() so the played portion always fits; video is never sped up.
+function StepVideo({ w, isLast }) {
+  const src = staticFile("video.mp4");
+  const fill = { width: "100%", height: "100%", objectFit: "cover" };
+  const tail = isLast ? Math.round(TAIL_S * FPS) : 0;
+  const freezeFrames = w.windowFrames - w.recFrames + tail;
+  const lastMediaFrame = Math.max(0, w.outF - 1);
+  return (
+    <>
+      <Sequence from={w.startF} durationInFrames={w.recFrames}>
+        <OffthreadVideo src={src} trimBefore={w.inF} trimAfter={w.outF} muted style={fill} />
+      </Sequence>
+      {freezeFrames > 0 ? (
+        <Sequence from={w.startF + w.recFrames} durationInFrames={freezeFrames}>
+          <Freeze frame={0}>
+            <OffthreadVideo src={src} trimBefore={lastMediaFrame} muted style={fill} />
+          </Freeze>
+        </Sequence>
+      ) : null}
+    </>
+  );
+}
+
 export const SpoolComposition = ({ timeline, manifest, title, background }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
 
-  const steps = timeline?.steps || [];
   const card = cardLayout(timeline?.viewport);
-  const zoom = getZoom(t, steps, card);
+  const { windows } = React.useMemo(
+    () => buildWindows(timeline, manifest || { segments: [] }, fps),
+    [timeline, manifest, fps]
+  );
+  // getZoom expects {zoom,clicks,start,end}; feed it output-clock values.
+  const zoomSteps = React.useMemo(
+    () => windows.map((w) => ({ zoom: w.zoom, clicks: w.outClicks, start: w.startSec, end: w.endSec })),
+    [windows]
+  );
+  const zoom = getZoom(t, zoomSteps, card);
   const phrases = React.useMemo(
-    () => buildPhrases(manifest || { segments: [] }, steps),
-    [manifest, steps]
+    () => buildPhrases(manifest || { segments: [] }, windows),
+    [manifest, windows]
   );
 
   return (
@@ -322,11 +355,9 @@ export const SpoolComposition = ({ timeline, manifest, title, background }) => {
               "0 0 0 1px rgba(255,255,255,0.06), 0 8px 24px rgba(0,0,0,0.45), 0 40px 90px -24px rgba(0,0,0,0.6)",
           }}
         >
-          <OffthreadVideo
-            src={staticFile("video.mp4")}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            muted
-          />
+          {windows.map((w, idx) => (
+            <StepVideo key={w.i} w={w} isLast={idx === windows.length - 1} />
+          ))}
         </div>
       </AbsoluteFill>
 
@@ -337,10 +368,10 @@ export const SpoolComposition = ({ timeline, manifest, title, background }) => {
       />
       <CaptionBand phrases={phrases} t={t} />
 
-      {/* VO: one Audio per segment, placed at its step's start on the timeline. */}
+      {/* VO: one Audio per segment, placed at its step's start on the OUTPUT timeline. */}
       {(manifest?.segments || []).map((seg) => {
-        const step = steps.find((s) => s.i === seg.i);
-        const start = step ? step.start : 0;
+        const w = windows.find((x) => x.i === seg.i);
+        const start = w ? w.startSec : 0;
         const dur = Math.ceil((seg.duration || 0) * fps) + 2;
         return (
           <Sequence
