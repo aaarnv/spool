@@ -264,7 +264,7 @@ const TitleSubtitle = ({ title, frame, firstCaptionStart }) => {
   );
 };
 
-export const LoomComposition = ({ timeline, manifest, title }) => {
+export const LoomComposition = ({ timeline, manifest, title, background }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const t = frame / fps;
@@ -280,9 +280,7 @@ export const LoomComposition = ({ timeline, manifest, title }) => {
   return (
     <AbsoluteFill
       style={{
-        // Screen Studio-style macOS wallpaper: deep indigo base with a soft
-        // magenta glow top-right and a blue glow bottom-left. Muted and smooth
-        // so the card and white captions stay the focus — not a light show.
+        // Gradient fallback when no wallpaper asset was staged into the workdir.
         background: [
           "radial-gradient(90% 80% at 82% 12%, rgba(150,54,124,0.55) 0%, rgba(150,54,124,0) 55%)",
           "radial-gradient(85% 85% at 12% 92%, rgba(46,58,150,0.50) 0%, rgba(46,58,150,0) 60%)",
@@ -291,6 +289,15 @@ export const LoomComposition = ({ timeline, manifest, title }) => {
         ].join(","),
       }}
     >
+      {background ? (
+        // Real macOS wallpaper (staged by render.mjs into publicDir).
+        <AbsoluteFill>
+          <img
+            src={staticFile(background)}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        </AbsoluteFill>
+      ) : null}
       {/* Zoom wrapper: scales the card about the click origin. Captions and the
           background stay outside it so only the recording zooms. */}
       <AbsoluteFill

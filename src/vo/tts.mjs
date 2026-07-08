@@ -12,7 +12,7 @@ import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.mjs';
 
-const DEFAULT_INSTRUCTIONS = 'calm, friendly product-walkthrough narrator; conversational, unhurried';
+const DEFAULT_INSTRUCTIONS = 'an experienced engineer walking a client through their product; confident, familiar, precise — the voice of someone who built this and knows it deeply, never a first-time viewer';
 const round2 = (x) => Math.round(x * 100) / 100;
 
 export async function generateVO({ stepsFile, workdir, engine = 'openai', voice = 'alloy', instructions, speed = 1 } = {}) {

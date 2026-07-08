@@ -11,10 +11,12 @@ export const config = {
   prep: async (page, h) => {},
 };
 
+// Narration voice: the engineer who built this, updating a client — assume
+// familiarity ("the dashboard now does X"), never first-time discovery ("this is X").
 export const steps = [
   {
     name: 'landing',
-    narration: "Here's the app — this is where the new feature lives.",
+    narration: "Quick update on the build — the new flow is live on the dashboard.",
     zoom: 'none',
     run: async (page, h) => {
       await h.pause(800);
@@ -22,7 +24,7 @@ export const steps = [
   },
   {
     name: 'open-feature',
-    narration: 'Clicking in, you can see it working end to end.',
+    narration: "It's wired end to end now: validation, save, and the result lands here.",
     zoom: 'auto',
     run: async (page, h) => {
       // await h.click('text=Open');
