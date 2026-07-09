@@ -89,7 +89,7 @@ program
 program
   .command('vo <workdir>')
   .description('generate voiceover segments + word timestamps')
-  .option('--engine <engine>', 'openai | local', 'openai')
+  .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .action(async (workdir, opts) => {
@@ -120,7 +120,7 @@ program
 program
   .command('finish <workdir>')
   .description('vo → render → share on an existing live/recorded session (no re-record)')
-  .option('--engine <engine>', 'openai | local', 'openai')
+  .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
@@ -166,7 +166,7 @@ program
 program
   .command('build <workdir>')
   .description('(vo ‖ record) → render → share, end to end')
-  .option('--engine <engine>', 'openai | local', 'openai')
+  .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')

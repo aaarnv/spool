@@ -1,11 +1,10 @@
 import { put } from "@vercel/blob";
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
 import { BLOB_BASE, blobUrl, type Spool } from "../../spool";
 import { db } from "../../../db";
-import { spools as spoolsTable, publishTokens } from "../../../db/schema";
-import { hashToken } from "../../../db/tokens";
+import { spools as spoolsTable } from "../../../db/schema";
+import { resolveOwner } from "../../../db/owner";
 
 export const runtime = "nodejs";
 
@@ -16,7 +15,6 @@ export const runtime = "nodejs";
 // are deterministic (addRandomSuffix:false), so we can rewrite spool.json up front.
 const MAX_STEPS = 200;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
-const LEGACY_OWNER = "aarnav-cli";
 
 const bad = (status: number, error: string) =>
   new Response(JSON.stringify({ error }), {
@@ -28,19 +26,6 @@ const bad = (status: number, error: string) =>
 const newId = () => randomBytes(16).toString("base64url");
 
 type Body = { spool: Spool; transcript?: string; console?: string };
-
-// Resolve a bearer token to its owner: the legacy global env token maps to
-// LEGACY_OWNER, otherwise look up the hashed per-user token.
-async function resolveOwner(bearer: string): Promise<string | null> {
-  const legacy = process.env.SPOOL_PUBLISH_TOKEN;
-  if (legacy && bearer === legacy) return LEGACY_OWNER;
-  const rows = await db
-    .select({ ownerId: publishTokens.ownerId })
-    .from(publishTokens)
-    .where(eq(publishTokens.tokenHash, hashToken(bearer)))
-    .limit(1);
-  return rows[0]?.ownerId ?? null;
-}
 
 export async function POST(req: Request) {
   const auth = req.headers.get("authorization") || "";
