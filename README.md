@@ -84,8 +84,8 @@ recording). A receiving agent runs `spool read <dir>` for an instant digest, the
 only the frames it cares about — e.g. to review a demoed feature, file bugs from
 console errors, or verify a claimed fix actually renders.
 
-Requirements: node ≥ 20, ffmpeg on PATH, `OPENAI_API_KEY` (or `--engine local` with
-[video-studio](~/Projects/video-studio) installed for free local TTS/whisper).
+Requirements: node ≥ 20, ffmpeg on PATH, `OPENAI_API_KEY` (env, the project's `.env`, or `openaiKey` in `~/.spool.json`;
+or `--engine local` with a `SPOOL_VO_SH` script for free local TTS/whisper).
 
 Setup: `npm install && npm link` in this repo (chromium comes from Playwright's cache,
 `npx playwright install chromium` if missing).
