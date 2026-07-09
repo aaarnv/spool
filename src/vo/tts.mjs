@@ -90,19 +90,23 @@ async function openaiSpeech(key, text, voice, instructions) {
 
 async function resolveKey() {
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
-  const envPath = join(homedir(), 'Projects/life-dashboard/.env');
+  // Fallbacks: the target project's .env, then the shared CLI config (~/.spool.json).
   try {
-    const m = (await readFile(envPath, 'utf8')).match(/^\s*OPENAI_API_KEY\s*=\s*(.+)$/m);
+    const m = (await readFile(join(process.cwd(), '.env'), 'utf8')).match(/^\s*OPENAI_API_KEY\s*=\s*(.+)$/m);
     if (m) return m[1].trim().replace(/^["']|["']$/g, '');
+  } catch { /* try next source */ }
+  try {
+    const cfg = JSON.parse(await readFile(join(homedir(), '.spool.json'), 'utf8'));
+    if (cfg.openaiKey) return cfg.openaiKey;
   } catch { /* fall through to the error below */ }
-  throw new Error(`OPENAI_API_KEY not found in env or ${envPath}`);
+  throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
 }
 
 // --- local fallback (video-studio vo.sh: Higgs TTS + whisper) --------------
 
 async function localSegment(text, voDir, nn, wordsAbs) {
-  const voSh = join(homedir(), 'Projects/video-studio/scripts/vo.sh');
-  if (!existsSync(voSh)) throw new Error(`local engine needs ${voSh} (not found)`);
+  const voSh = process.env.SPOOL_VO_SH || join(homedir(), 'Projects/video-studio/scripts/vo.sh');
+  if (!existsSync(voSh)) throw new Error(`local engine needs a vo.sh (set SPOOL_VO_SH; looked at ${voSh})`);
   // vo.sh writes <base>.wav (already loudnormed 24kHz mono) + <base>_words.json ([[start,end,text],…]).
   const base = join(voDir, `seg_${nn}`); // => base.wav is exactly our seg_NN.wav
   await run('bash', [voSh, text, base]);
