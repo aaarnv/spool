@@ -84,6 +84,35 @@ renderer retimes each step to fit its narration (see "Render layer inputs").
 `seg_NN.words.json`: `[{ "word": "Here's", "start": 0.0, "end": 0.31 }, ...]`
 (times are local to that segment's wav; seconds, float).
 
+## Hosted VO API (`spool vo --engine hosted` → `POST {host}/api/vo`)
+
+The hosted engine lets a CLI user generate voice with no OpenAI key of their own — the
+web app calls OpenAI (gpt-4o-mini-tts + whisper-1) on the server. Auth reuses the
+`spool publish` bearer token (per-user `spk_` token or the legacy global token).
+
+Request: `POST {host}/api/vo`, `Authorization: Bearer <token>`, JSON body:
+
+```json
+{ "text": "narration for one step (≤ 1200 chars)",
+  "voice": "alloy",                       // optional, defaults to the CLI's default voice
+  "instructions": "voice-direction (≤ 2000 chars)" }   // optional
+```
+
+Response `200`:
+
+```json
+{ "audio": "<base64 wav>",               // raw gpt-4o-mini-tts wav (NOT loudnormed)
+  "words": [{ "word": "Here", "start": 0.0, "end": 0.34 }],  // whisper-1 word times, local to the raw wav
+  "usage": { "remainingToday": 297 } }
+```
+
+The CLI writes the wav, runs the **same local loudnorm** pass as the direct engine, and
+(when `--speed ≠ 1`) applies `atempo` locally and scales the returned word times by
+`1/speed` — so timing truth is identical to the direct OpenAI path. Errors: `401`
+(bad/missing token), `400`/`413` (missing/oversized `text`), `429` (per-user daily cap,
+env `VO_DAILY_CAP`, default 300 — the JSON `error` carries the message), `502` (upstream
+TTS failure). Node runtime; a ~10s wav base64 is ~1–2MB, within the function body cap.
+
 ## timeline.json (spool record → spool render)
 
 ```json
