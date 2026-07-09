@@ -95,7 +95,7 @@ export default function Home() {
                 </span>
                 <span className="spool-window__url">
                   <LockIcon size={12} />
-                  spool.dev/l/<b>finishing-lab</b>
+                  spoolkit.dev/l/<b>finishing-lab</b>
                 </span>
                 <span className="spool-window__live">
                   <i />
