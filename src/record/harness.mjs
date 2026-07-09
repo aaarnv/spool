@@ -1,6 +1,7 @@
-// The record layer: drive a steps.mjs script through a real Chromium session,
-// capture it to video.webm, and emit timeline.json per CONTRACTS.md. VO must
-// already exist (spool vo) so we can pad each step to fit its narration.
+// The record layer: drive a steps.mjs script through a real Chromium session at
+// natural interaction speed, capture it to video.webm, and emit timeline.json per
+// CONTRACTS.md. Record-first: VO is generated in parallel and the renderer retimes
+// each step into a window that fits its narration, so nothing is padded here.
 
 import { chromium } from 'playwright';
 import { pathToFileURL } from 'url';
@@ -8,9 +9,12 @@ import { mkdir, rename, writeFile, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { CURSOR_INIT_SCRIPT, makeHelpers } from './cursor.js';
+import { PAD_S } from '../render/retime.mjs';
 
 const SETTLE_MS = 1000; // after goto, let first paint/layout settle
-const PAD_S = 0.4; // per-contract minimum slack past voDuration
+// After a step's interactions, let the resulting UI paint and the screencast
+// emit it before we cut — the last frame is what the renderer freeze-holds.
+const STEP_SETTLE_MS = 250;
 
 function validate(mod, stepsFile) {
   const { config, steps } = mod;
@@ -46,20 +50,18 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   workdir = path.resolve(workdir);
   await mkdir(workdir, { recursive: true });
 
-  // VO durations drive step padding. Required for a real record; optional in dry.
+  // VO is produced in parallel (record no longer waits on or pads to it). A
+  // manifest may already exist though; if so, dry reports an informational compare.
   const manPath = path.join(workdir, 'vo', 'manifest.json');
   let voManifest = null;
   if (existsSync(manPath)) {
     voManifest = JSON.parse(await readFile(manPath, 'utf8'));
-  } else if (!dry) {
-    throw new Error(`missing ${manPath} — run \`spool vo\` first`);
   }
   const voDurationFor = (i) => {
-    if (!voManifest || !Array.isArray(voManifest.segments)) return 0;
+    if (!voManifest || !Array.isArray(voManifest.segments)) return null;
     const seg = voManifest.segments.find((s) => s.i === i) || voManifest.segments[i];
-    return seg && typeof seg.duration === 'number' ? seg.duration : 0;
+    return seg && typeof seg.duration === 'number' ? seg.duration : null;
   };
-  const voDur = steps.map((_, i) => voDurationFor(i));
 
   const viewport = config.viewport || { width: 1600, height: 900 };
   const browser = await chromium.launch({ headless: !headed });
@@ -122,14 +124,9 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
       curName = step.name;
       currentClicks = [];
       const start = now();
-      console.log(`[record] step ${i} "${step.name}" start t=${start.toFixed(2)}s vo=${voDur[i].toFixed(2)}s`);
+      console.log(`[record] step ${i} "${step.name}" start t=${start.toFixed(2)}s`);
       await step.run(page, h);
-
-      if (!dry) {
-        const target = voDur[i] + PAD_S;
-        const remaining = target - (now() - start);
-        if (remaining > 0) await page.waitForTimeout(Math.ceil(remaining * 1000));
-      }
+      await page.waitForTimeout(STEP_SETTLE_MS); // capture the settled end state
 
       const end = now();
       timeline.steps.push({
@@ -137,7 +134,6 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
         name: step.name,
         start: +start.toFixed(3),
         end: +end.toFixed(3),
-        voDuration: voDur[i],
         zoom: step.zoom ?? 'auto',
         clicks: currentClicks,
       });
@@ -172,12 +168,12 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   } else {
     const out = path.join(workdir, 'timeline.dry.json');
     await writeFile(out, JSON.stringify(timeline, null, 2) + '\n');
-    console.log('\n[record] dry timing report:');
+    console.log('\n[record] dry timing report (natural interaction speed, no padding):');
     for (const s of timeline.steps) {
       const dur = s.end - s.start;
-      const need = s.voDuration + PAD_S;
-      const flag = dur < need ? `  (needs ${(need - dur).toFixed(2)}s more pad)` : '';
-      console.log(`  ${String(s.i).padStart(2)} ${s.name.padEnd(24)} run=${dur.toFixed(2)}s  vo+pad=${need.toFixed(2)}s${flag}`);
+      const vo = voDurationFor(s.i); // null unless a manifest already exists
+      const compare = vo != null ? `  vo+pad=${(vo + PAD_S).toFixed(2)}s → window=${Math.max(vo + PAD_S, dur).toFixed(2)}s` : '';
+      console.log(`  ${String(s.i).padStart(2)} ${s.name.padEnd(24)} run=${dur.toFixed(2)}s${compare}`);
     }
     console.log(`[record] wrote ${out} (total ${timeline.total.toFixed(2)}s)`);
   }
