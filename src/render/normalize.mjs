@@ -24,6 +24,21 @@ export async function h264Encoder() {
   return _encoder;
 }
 
+// Is `file` already constant-frame-rate H264? (OS captures are; browser webm is VFR VP8.)
+async function isCfrH264(file) {
+  try {
+    const { stdout } = await exec(FFPROBE, [
+      "-v", "error", "-select_streams", "v:0",
+      "-show_entries", "stream=codec_name,r_frame_rate,avg_frame_rate",
+      "-of", "default=noprint_wrappers=1:nokey=1", file,
+    ]);
+    const [codec, rfr, afr] = stdout.trim().split("\n");
+    return codec === "h264" && rfr && rfr === afr && rfr !== "0/0";
+  } catch {
+    return false;
+  }
+}
+
 async function duration(file) {
   const { stdout } = await exec(FFPROBE, [
     "-v",
@@ -48,9 +63,22 @@ async function duration(file) {
  * dropped (-an) — the VO is muxed in later by the renderer.
  */
 export async function normalize(workdir) {
-  const src = join(workdir, "video.webm");
+  // video.webm (browser recordVideo) or capture.mp4 (OS avfoundation capture).
+  const webm = join(workdir, "video.webm");
+  const capMp4 = join(workdir, "capture.mp4");
+  const src = existsSync(webm) ? webm : existsSync(capMp4) ? capMp4 : null;
   const out = join(workdir, "video.mp4");
-  if (!existsSync(src)) throw new Error(`normalize: missing ${src}`);
+  if (!src) throw new Error(`normalize: missing capture (video.webm or capture.mp4) in ${workdir}`);
+
+  // Already CFR H264 (OS capture): remux to the staticFile target instead of
+  // re-encoding. Playwright's VFR VP8 webm still needs the full re-encode below.
+  if (await isCfrH264(src)) {
+    console.log(`[normalize] ${src} -> ${out} (copy, already CFR H264)`);
+    await exec(FFMPEG, ["-y", "-i", src, "-c", "copy", "-an", "-movflags", "+faststart", out]);
+    const d = await duration(out);
+    console.log(`[normalize] out=${d.toFixed(2)}s (remuxed)`);
+    return { out, duration: d };
+  }
 
   const enc = await h264Encoder();
   console.log(`[normalize] ${src} -> ${out} (${enc.name})`);

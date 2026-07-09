@@ -16,11 +16,18 @@ const DEFAULT_INSTRUCTIONS = 'an experienced engineer walking a client through t
 const round2 = (x) => Math.round(x * 100) / 100;
 
 export async function generateVO({ stepsFile, workdir, engine = 'openai', voice = 'alloy', instructions, speed = 1 } = {}) {
-  if (!stepsFile) throw new Error('generateVO: stepsFile required');
   if (!workdir) throw new Error('generateVO: workdir required');
 
-  const mod = await import(pathToFileURL(resolve(stepsFile)).href);
-  const steps = mod.steps || [];
+  // Narration source: a steps.mjs snapshot (scripted/browser) when present, else
+  // the session's timeline.json per-step narration (OS sessions have no steps.mjs).
+  let steps;
+  if (stepsFile && existsSync(resolve(stepsFile))) {
+    const mod = await import(pathToFileURL(resolve(stepsFile)).href);
+    steps = mod.steps || [];
+  } else {
+    const tl = JSON.parse(await readFile(join(workdir, 'timeline.json'), 'utf8'));
+    steps = (tl.steps || []).map((s) => ({ name: s.name, narration: s.narration || '' }));
+  }
   const voDir = join(workdir, 'vo');
   await mkdir(voDir, { recursive: true });
 

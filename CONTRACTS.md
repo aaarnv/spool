@@ -117,6 +117,13 @@ renderer retimes each step to fit its narration (see "Render layer inputs").
 - `steps[i].narration` is present on **live/recorded** sessions (v1-compatible additive
   field) so the session is self-describing; `spool finish` reads it if the `steps.mjs`
   snapshot is missing. Scripted `spool record` omits it (narration lives in `steps.mjs`).
+- **OS target** (`spool live --target os`) sets `target: "os"`, `video: "capture.mp4"`
+  (already CFR H264 — `normalize` remuxes it instead of re-encoding), `viewport` = the
+  capture pixel dims (arbitrary, not 1600x900; the renderer letterboxes it onto the card),
+  and a `capture: { device, input:{width,height}, fps }` block. There's no `url` and no
+  `page` driver. A step's `zoom` is `"none"` (default) or `{x,y[,scale]}` in **capture-pixel
+  coords** (the renderer uses it like a click point); `clicks` is `[]` unless a zoom point is
+  given, in which case it carries that single point.
 
 ## Live control protocol (spool live → HTTP control server)
 
@@ -163,8 +170,36 @@ export const steps = [
 ```
 
 `spool finish <dir>` runs vo → render → share on that session (no re-record); `spool build`
-detects a live/recorded session (video.webm + timeline.json + a live-generated or absent
-steps.mjs) and behaves like `finish` instead of re-recording.
+detects a live/recorded session (video.webm **or capture.mp4** + timeline.json + a
+live-generated or absent steps.mjs) and behaves like `finish` instead of re-recording.
+
+## Live control protocol — OS target (spool live --target os → HTTP control server)
+
+`spool live <dir> --target os [--title <t>] [--display <idx>] [--window <name>]` starts a
+macOS full-display `ffmpeg avfoundation` capture (real cursor, 30fps CFR H264, long edge
+capped at 2560) and serves the same 127.0.0.1 ephemeral-port JSON API. It prints the same
+one stdout line (`{"port":N,"session":"<dir>"}`). Recording start is anchored once the output
+file is confirmed growing, then a ~1.5s settle precedes step 0 (t=0 is accurate to within a
+few hundred ms; freeze-hold retiming forgives the slack). There is **no `page`**, so `/js` is
+replaced by `/sh`; the agent drives the desktop out-of-band (osascript/cliclick/its own tools)
+between `/step` calls.
+
+| Method + path | Body | Returns |
+|---|---|---|
+| `POST /step` | `{ name, narration, zoom? }` | `{ ok, index, name }` — closes the previous step (250ms settle + a `screencapture` keyframe) and opens a new one. `narration` required. `zoom` = `"none"` (default) or `{x,y[,scale]}` in capture-pixel coords. |
+| `POST /sh` | `{ cmd }` | `{ ok, exitCode, stdout }` — runs `cmd` via `bash -lc`, returns stdout (truncated 4k), and appends `{t, kind:"sh", cmd, exitCode, stdoutHead}` to `console.jsonl`. A convenience logger, not required — the agent may act entirely out-of-band. |
+| `GET /status` | — | `{ ok, target:"os", elapsed, completed, current }`. |
+| `POST /end` | `{ discard? }` | `{ ok, dir, steps, total }` — closes the final step, SIGINTs ffmpeg and waits for the moov atom to finalize, writes the outputs below, then exits. `discard:true` drops the take. |
+
+5-minute idle timeout finalizes as if `/end` were called. On `/end` (non-discard) the dir gets:
+`capture.mp4` + `timeline.json` (contract above, `target:"os"`), `console.jsonl` (the `/sh`
+log), `keyframes/step_NN.png` (one per step, live `screencapture` at each step close), and a
+**`steps.os.md`** snapshot — a human/agent-readable session record (per-step name + narration
++ the `/sh` commands run). There's no `steps.mjs` (no page driver to reproduce); `spool finish`
+sources narration straight from `timeline.json`.
+
+`--window` (single-window capture) is **not implemented** — it falls back to full-display
+capture with a stderr notice.
 
 ## console.jsonl (spool record → spool share)
 
