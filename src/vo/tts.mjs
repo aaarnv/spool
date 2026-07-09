@@ -15,7 +15,7 @@ import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.m
 const DEFAULT_INSTRUCTIONS = 'an experienced engineer walking a client through their product; confident, familiar, precise — the voice of someone who built this and knows it deeply, never a first-time viewer';
 const round2 = (x) => Math.round(x * 100) / 100;
 
-export async function generateVO({ stepsFile, workdir, engine = 'openai', voice = 'alloy', instructions, speed = 1 } = {}) {
+export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', instructions, speed = 1 } = {}) {
   if (!workdir) throw new Error('generateVO: workdir required');
 
   // Narration source: a steps.mjs snapshot (scripted/browser) when present, else
@@ -32,7 +32,10 @@ export async function generateVO({ stepsFile, workdir, engine = 'openai', voice 
   await mkdir(voDir, { recursive: true });
 
   const instr = instructions ?? DEFAULT_INSTRUCTIONS;
+  engine = await resolveEngine(engine);
   const key = engine === 'openai' ? await resolveKey() : null;
+  if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
+  const hosted = engine === 'hosted' ? await resolveHosted() : null;
 
   // One job per narrated step. TTS → loudnorm → whisper stay sequential inside a
   // job; jobs run through a bounded pool so the wall-time is ~total/CONCURRENCY.
@@ -55,6 +58,15 @@ export async function generateVO({ stepsFile, workdir, engine = 'openai', voice 
       // Transcribe the finished (loudnormed) wav so word times are local to it.
       const words = await openaiWordTimestamps({ key, wavBuf: await readFile(wavAbs), prompt: narration });
       await writeFile(wordsAbs, JSON.stringify(words));
+    } else if (engine === 'hosted') {
+      const rawPath = join(voDir, `seg_${nn}.raw.wav`);
+      const { audio, words } = await hostedSpeech(hosted, narration, voice, instr);
+      await writeFile(rawPath, Buffer.from(audio, 'base64'));
+      await loudnorm(rawPath, wavAbs, speed);
+      await rm(rawPath, { force: true });
+      // Server timings are on the raw wav; atempo scales time linearly, so /speed keeps them true.
+      const scaled = speed !== 1 ? words.map((w) => ({ word: w.word, start: round2(w.start / speed), end: round2(w.end / speed) })) : words;
+      await writeFile(wordsAbs, JSON.stringify(scaled));
     } else if (engine === 'local') {
       await localSegment(narration, voDir, nn, wordsAbs);
     } else {
@@ -95,9 +107,10 @@ async function openaiSpeech(key, text, voice, instructions) {
   return Buffer.from(await res.arrayBuffer());
 }
 
+// Resolve an OpenAI key from env, the target project's .env, then ~/.spool.json.
+// Returns null when none is set (the caller decides whether that's fatal).
 async function resolveKey() {
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
-  // Fallbacks: the target project's .env, then the shared CLI config (~/.spool.json).
   try {
     const m = (await readFile(join(process.cwd(), '.env'), 'utf8')).match(/^\s*OPENAI_API_KEY\s*=\s*(.+)$/m);
     if (m) return m[1].trim().replace(/^["']|["']$/g, '');
@@ -105,8 +118,62 @@ async function resolveKey() {
   try {
     const cfg = JSON.parse(await readFile(join(homedir(), '.spool.json'), 'utf8'));
     if (cfg.openaiKey) return cfg.openaiKey;
-  } catch { /* fall through to the error below */ }
-  throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
+  } catch { /* no key anywhere */ }
+  return null;
+}
+
+// Resolve hosted VO {host, token} from env, then ~/.spool.json; null if incomplete.
+async function resolveHosted() {
+  let host = process.env.SPOOL_HOST;
+  let token = process.env.SPOOL_PUBLISH_TOKEN;
+  if (!host || !token) {
+    try {
+      const cfg = JSON.parse(await readFile(join(homedir(), '.spool.json'), 'utf8'));
+      host = host || cfg.host;
+      token = token || cfg.token;
+    } catch { /* no config */ }
+  }
+  return host && token ? { host: host.replace(/\/$/, ''), token } : null;
+}
+
+// Pick the engine: explicit wins; else a local key → openai; else hosted config → hosted.
+async function resolveEngine(explicit) {
+  if (explicit) return explicit;
+  if (await resolveKey()) return 'openai';
+  if (await resolveHosted()) return 'hosted';
+  throw new Error(
+    'no VO engine available — set OPENAI_API_KEY (env, ./.env, or "openaiKey" in ~/.spool.json), ' +
+      'add host+token to ~/.spool.json for hosted voice, or pass --engine local with SPOOL_VO_SH'
+  );
+}
+
+// --- hosted VO (spool web app: OpenAI without the user's own key) -----------
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// POST narration to {host}/api/vo → { audio: base64 wav, words: [{word,start,end}] }.
+async function hostedSpeech({ host, token }, text, voice, instructions) {
+  const res = await hostedFetch(`${host}/api/vo`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voice, instructions }),
+  });
+  const json = await res.json();
+  return { audio: json.audio, words: json.words || [] };
+}
+
+// Retry 5xx once with backoff; surface the server's error (incl. 429 daily cap).
+async function hostedFetch(url, opts, attempt = 0) {
+  const res = await fetch(url, opts);
+  if (res.ok) return res;
+  const body = await res.text().catch(() => '');
+  if (res.status >= 500 && attempt < 1) {
+    await sleep(1500 * (attempt + 1));
+    return hostedFetch(url, opts, attempt + 1);
+  }
+  let msg = body;
+  try { msg = JSON.parse(body).error || body; } catch { /* non-json body */ }
+  throw new Error(`hosted VO ${res.status}: ${msg}`);
 }
 
 // --- local fallback (video-studio vo.sh: Higgs TTS + whisper) --------------

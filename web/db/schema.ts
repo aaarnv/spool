@@ -1,4 +1,4 @@
-import { pgTable, text, real, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, real, integer, timestamp, primaryKey } from "drizzle-orm/pg-core";
 
 // One row per published spool. owner_id is a Clerk user id, or "aarnav-cli" for
 // the legacy global token so existing CLI publishes still get indexed.
@@ -18,5 +18,17 @@ export const publishTokens = pgTable("publish_tokens", {
   label: text("label"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Per-owner daily hosted-VO call counter, keyed by (owner_id, day) so the
+// abuse cap is a single upserted counter row per day.
+export const voUsage = pgTable(
+  "vo_usage",
+  {
+    ownerId: text("owner_id").notNull(),
+    day: text("day").notNull(), // YYYY-MM-DD (UTC)
+    count: integer("count").notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.ownerId, t.day] }) })
+);
 
 export type SpoolRow = typeof spools.$inferSelect;

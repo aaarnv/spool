@@ -8,6 +8,13 @@
       "when": 1783493051083,
       "tag": "0000_demonic_eternity",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783578730889,
+      "tag": "0001_noisy_scarecrow",
+      "breakpoints": true
     }
   ]
 }
