@@ -57,6 +57,27 @@ spool publish spool/my-feature             # → https://<host>/l/<id>
 names/narration/zoom, and the js snippets that succeeded — so the take is reproducible and
 editable as a scripted spool later.
 
+**Live (OS target)** — capture the whole macOS desktop instead of a browser tab, for demos
+that leave the browser (native apps, the terminal, multiple windows). Same control protocol,
+no `page` driver — you drive the desktop yourself (osascript/cliclick/your own tools) between
+steps and use `/sh` to run terminal-visible commands:
+
+```bash
+spool live spool/my-demo --target os --title "…"   # ffmpeg avfoundation full-display capture
+curl -sX POST 127.0.0.1:$PORT/step -d '{"name":"open","narration":"…","zoom":"none"}'
+# … drive the desktop out-of-band, then optionally log terminal commands …
+curl -sX POST 127.0.0.1:$PORT/sh   -d '{"cmd":"ls src/record"}'   # returns + logs stdout/exit
+curl -sX POST 127.0.0.1:$PORT/end                                  # capture.mp4 + timeline.json + steps.os.md
+spool finish spool/my-demo
+```
+
+Arrange your desktop first (hide unrelated windows, bring the app you're demoing to the
+front — the capture is the whole display). `zoom` defaults to `"none"` on the OS target;
+pass `{"x":…,"y":…}` (capture-pixel coords) to zoom toward a point. **Screen Recording
+permission** is required: if capture comes back black, spool fails fast telling you to grant
+it to your terminal in System Settings → Privacy & Security → Screen Recording, then restart
+the terminal. Optional: `--display <idx>` picks which screen (default: the first).
+
 **Scripted** — reproducible; author the driver up front:
 
 ```bash
@@ -98,9 +119,11 @@ everything else is generated.
 
 ## Design notes
 
-- **Capture is an adapter.** v1 = Playwright `recordVideo` (CDP screencast → WebM, ~25fps,
-  headless, zero OS permissions). Planned v2 backend: in-page `getDisplayMedia` +
-  `MediaRecorder` tab capture for native-framerate quality. Same steps contract.
+- **Capture is an adapter.** `--target browser` (default) = Playwright `recordVideo` (CDP
+  screencast → WebM, ~25fps, headless, zero OS permissions). `--target os` = macOS
+  full-display `ffmpeg avfoundation` capture (real cursor, 30fps CFR H264, long edge capped
+  at 2560), which needs Screen Recording permission. Both emit the same timeline/render
+  contract; the OS target adds `target:"os"` + `capture.mp4` and drops the `page` driver.
 - **Render is Remotion, not ffmpeg filter graphs.** The recording is composited onto a
   rounded card with gentle zooms toward logged click coordinates (Screen-Studio style) and
   captions are rendered as designed React, not burned SRT. The one hand-written ffmpeg video
