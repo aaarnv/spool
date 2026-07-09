@@ -4,3 +4,4 @@ node_modules/
 spool-test/
 .DS_Store
 .claude/
+tasks/
