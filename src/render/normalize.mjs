@@ -7,6 +7,23 @@ const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
 const FFPROBE = process.env.FFPROBE || "ffprobe";
 
+// Detect the fastest good H264 encoder once per process: Apple's hardware
+// VideoToolbox when present (with a high bitrate so quality stays faithful),
+// else libx264 at -preset veryfast (down from medium). Shared with render.mjs.
+let _encoder;
+export async function h264Encoder() {
+  if (_encoder) return _encoder;
+  try {
+    const { stdout } = await exec(FFMPEG, ["-hide_banner", "-encoders"]);
+    _encoder = /h264_videotoolbox/.test(stdout)
+      ? { name: "h264_videotoolbox", args: ["-b:v", "12M", "-maxrate", "16M"] }
+      : { name: "libx264", args: ["-crf", "20", "-preset", "veryfast"] };
+  } catch {
+    _encoder = { name: "libx264", args: ["-crf", "20", "-preset", "veryfast"] };
+  }
+  return _encoder;
+}
+
 async function duration(file) {
   const { stdout } = await exec(FFPROBE, [
     "-v",
@@ -35,7 +52,8 @@ export async function normalize(workdir) {
   const out = join(workdir, "video.mp4");
   if (!existsSync(src)) throw new Error(`normalize: missing ${src}`);
 
-  console.log(`[normalize] ${src} -> ${out}`);
+  const enc = await h264Encoder();
+  console.log(`[normalize] ${src} -> ${out} (${enc.name})`);
   await exec(FFMPEG, [
     "-y",
     "-fflags",
@@ -45,11 +63,8 @@ export async function normalize(workdir) {
     "-vf",
     "fps=30,format=yuv420p",
     "-c:v",
-    "libx264",
-    "-crf",
-    "20",
-    "-preset",
-    "medium",
+    enc.name,
+    ...enc.args,
     "-movflags",
     "+faststart",
     "-an",
