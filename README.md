@@ -84,8 +84,15 @@ recording). A receiving agent runs `spool read <dir>` for an instant digest, the
 only the frames it cares about — e.g. to review a demoed feature, file bugs from
 console errors, or verify a claimed fix actually renders.
 
-Requirements: node ≥ 20, ffmpeg on PATH, `OPENAI_API_KEY` (env, the project's `.env`, or `openaiKey` in `~/.spool.json`;
-or `--engine local` with a `SPOOL_VO_SH` script for free local TTS/whisper).
+Requirements: node ≥ 20, ffmpeg on PATH, and a voiceover engine. The engine auto-resolves:
+
+- **your own key** — `OPENAI_API_KEY` (env, the project's `.env`, or `openaiKey` in `~/.spool.json`); or
+- **hosted (zero-key)** — just the `host` + `token` you already put in `~/.spool.json` for `spool publish`.
+  Voice runs on the hosted app with no OpenAI key of your own — the same dashboard token covers both
+  publishing and voice (subject to a fair-use daily cap); or
+- **local (free)** — `--engine local` with a `SPOOL_VO_SH` script for local TTS/whisper.
+
+Force one with `--engine openai|hosted|local`; omit it to auto-detect in that order.
 
 Setup: `npm install && npm link` in this repo (chromium comes from Playwright's cache,
 `npx playwright install chromium` if missing).
