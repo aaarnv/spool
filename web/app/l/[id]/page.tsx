@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import { eq } from "drizzle-orm";
 import { blobUrl, mmss, type Spool } from "../../spool";
+import { db } from "../../../db";
+import { spools as spoolsTable } from "../../../db/schema";
 import Player, { type Chapter, type Line } from "./Player";
+import EditPanel from "./EditPanel";
 
 // Blob content is immutable per id — cache the spool.json fetch aggressively.
 async function getSpool(id: string): Promise<Spool | null> {
@@ -40,6 +45,20 @@ export default async function WatchPage({
   const { id } = await params;
   const spool = await getSpool(id);
   if (!spool) notFound();
+
+  // Owner-only edit affordance: match the signed-in Clerk user to the spool's owner.
+  const { userId } = await auth();
+  let isOwner = false;
+  let hasSources = false;
+  if (userId) {
+    const [row] = await db
+      .select({ ownerId: spoolsTable.ownerId, hasSources: spoolsTable.hasSources })
+      .from(spoolsTable)
+      .where(eq(spoolsTable.id, id))
+      .limit(1);
+    isOwner = !!row && row.ownerId === userId;
+    hasSources = !!row?.hasSources;
+  }
 
   // Step times in spool.json are on the recording clock; final.mp4 runs at
   // recording-clock ÷ rate. Convert every seek/label to the final.mp4 clock.
@@ -83,6 +102,8 @@ export default async function WatchPage({
       </p>
 
       <Player src={spool.video} poster={poster} chapters={chapters} lines={lines} />
+
+      {isOwner && <EditPanel spoolId={id} hasSources={hasSources} videoSrc={spool.video} />}
 
       <details className="agents">
         <summary>

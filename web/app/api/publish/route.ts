@@ -25,7 +25,20 @@ const bad = (status: number, error: string) =>
 // 22-char base64url id from 16 random bytes: unguessable, URL-safe, no padding.
 const newId = () => randomBytes(16).toString("base64url");
 
-type Body = { spool: Spool; transcript?: string; console?: string };
+// Optional render sources (EDIT-CONTRACT.md §Blob layout). Small JSON artifacts
+// ride inline in this request and are written server-side; the big binaries
+// (source video + per-segment wavs) get scoped client-upload grants like final.mp4.
+type Sources = {
+  timeline: unknown;
+  render: unknown;
+  vo?: { manifest: unknown; words?: Record<string, unknown> };
+  segments?: number[]; // seg indices needing a seg_NN.wav upload grant
+  hasVideo?: boolean; // default true — grant a src/video.mp4 upload
+};
+
+type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources };
+
+const segName = (n: number) => `seg_${String(n).padStart(2, "0")}`;
 
 export async function POST(req: Request) {
   const auth = req.headers.get("authorization") || "";
@@ -70,11 +83,37 @@ export async function POST(req: Request) {
   // Small, authoritative files written server-side (all well under the body cap).
   const write = (name: string, data: string, contentType: string) =>
     put(`l/${id}/${name}`, data, { access: "public", addRandomSuffix: false, contentType });
-  await Promise.all([
+  const writes = [
     write("spool.json", JSON.stringify(spool, null, 2), "application/json"),
     write("transcript.txt", body.transcript ?? "", "text/plain"),
     write("console.jsonl", body.console ?? "", "application/x-ndjson"),
-  ]);
+  ];
+
+  // Render sources (optional): write the JSON artifacts here, grant uploads for
+  // the binaries. Absence leaves this an old-style, non-editable publish.
+  const src = body.sources;
+  const hasSources = !!src;
+  if (src) {
+    const writeSrc = (name: string, data: string, contentType: string) =>
+      put(`spools/${id}/src/${name}`, data, { access: "public", addRandomSuffix: false, contentType });
+    writes.push(writeSrc("timeline.json", JSON.stringify(src.timeline ?? null), "application/json"));
+    writes.push(writeSrc("render.json", JSON.stringify(src.render ?? null), "application/json"));
+    if (src.vo) {
+      writes.push(writeSrc("vo/manifest.json", JSON.stringify(src.vo.manifest ?? null), "application/json"));
+      for (const [seg, words] of Object.entries(src.vo.words ?? {})) {
+        writes.push(writeSrc(`vo/${segName(Number(seg))}.words.json`, JSON.stringify(words), "application/json"));
+      }
+    }
+    if (src.hasVideo !== false) {
+      const p = `spools/${id}/src/video.mp4`;
+      grants.push({ pathname: p, contentType: "video/mp4", token: await mintToken(p, "video/mp4") });
+    }
+    for (const seg of src.segments ?? []) {
+      const p = `spools/${id}/src/vo/${segName(seg)}.wav`;
+      grants.push({ pathname: p, contentType: "audio/wav", token: await mintToken(p, "audio/wav") });
+    }
+  }
+  await Promise.all(writes);
 
   // Index the spool for its owner's dashboard.
   await db.insert(spoolsTable).values({
@@ -82,6 +121,7 @@ export async function POST(req: Request) {
     ownerId,
     title: spool.title ?? null,
     duration: spool.duration ?? null,
+    hasSources,
   });
 
   const origin = new URL(req.url).origin;
