@@ -109,6 +109,7 @@ export async function publishSpool(workdir, opts = {}) {
     transcript: existsSync(transcriptPath) ? await readFile(transcriptPath, "utf8") : "",
     console: existsSync(consolePath) ? await readFile(consolePath, "utf8") : "",
     ...(sources ? { sources } : {}),
+    hasPreview: existsSync(join(shareDir, "preview.gif")),
   };
 
   const res = await fetch(`${host}/api/publish`, {
@@ -119,7 +120,7 @@ export async function publishSpool(workdir, opts = {}) {
   if (!res.ok) {
     throw new Error(`publish failed: ${res.status} ${res.statusText} ${await res.text().catch(() => "")}`);
   }
-  const { url, uploads } = await res.json();
+  const { url, uploads, previewUrl } = await res.json();
 
   // One grant per big binary: published final.mp4/frames (l/<id>/*) plus source
   // video.mp4 + seg wavs (spools/<id>/src/*) when the spool was published editable.
@@ -133,7 +134,44 @@ export async function publishSpool(workdir, opts = {}) {
   if (sources) console.error(`[publish] editable: uploaded sources (${sources.segments.length} vo seg[s], ${sourceGrants} binary grant[s])`);
 
   console.log(url);
+
+  if (opts.pr) await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) => console.error(`[publish] PR comment failed: ${e.message}`));
   return url;
+}
+
+// Post the watch link as a PR comment via gh. pr === true ⇒ gh resolves the
+// current branch's PR; a number/URL targets one explicitly. Never fails publish.
+export async function commentOnPR(url, spool, pr, previewUrl) {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  await run("gh", ["--version"]).catch(() => {
+    throw new Error("gh CLI not found on PATH");
+  });
+
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const steps = (spool.steps || [])
+    .map((s) => `| ${mmss(s.start)} | ${s.name} |`)
+    .join("\n");
+  const body = [
+    `### 🎬 Walkthrough: ${spool.title || "spool"}`,
+    "",
+    // GIF preview when available: GitHub renders it inline; clicking opens the watch page.
+    ...(previewUrl ? [`[![watch the walkthrough](${previewUrl})](${url})`, ""] : []),
+    `**Watch:** ${url} (${Math.round(spool.duration)}s, narrated)`,
+    "",
+    "| at | step |",
+    "|---|---|",
+    steps,
+    "",
+    `<sub>Recorded and narrated by the agent that shipped this change, via [spool](https://spoolkit.dev). Agents can review without watching: \`spool read\` the share bundle linked on the watch page.</sub>`,
+  ].join("\n");
+
+  const args = ["pr", "comment"];
+  if (pr !== true) args.push(String(pr));
+  args.push("--body", body);
+  const { stdout } = await run("gh", args);
+  console.error(`[publish] PR comment: ${stdout.trim() || "posted"}`);
 }
 
 // Direct CLI: node src/publish/publish.mjs --workdir <dir> [--host <h>] [--token <t>]

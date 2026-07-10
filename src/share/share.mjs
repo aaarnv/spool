@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, writeFile, copyFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, copyFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -172,6 +172,21 @@ export async function shareSpool(workdir) {
       clicks: w ? w.outClicks : step.clicks || [],
       frame: rel,
     });
+  }
+
+  // preview.gif: the step keyframes cycled (~1.1s each, 640w) — embeddable where
+  // video players aren't (GitHub PR comments render GIFs; an MP4 link doesn't).
+  if (steps.length) {
+    const gifOut = join(shareDir, "preview.gif");
+    const concatList = steps.map((s) => `file '${join(shareDir, s.frame)}'\nduration 1.1`).join("\n");
+    const listPath = join(shareDir, ".preview-frames.txt");
+    await writeFile(listPath, concatList + "\n");
+    await exec(FFMPEG, [
+      "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+      "-vf", "scale=640:-2,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer",
+      "-loop", "0", gifOut,
+    ]).catch((e) => console.error(`[share] preview.gif skipped: ${e.message}`));
+    await rm(listPath, { force: true }).catch(() => {});
   }
 
   const spool = {

@@ -86,6 +86,7 @@ spool init my-feature                  # scaffolds spool/my-feature/steps.mjs
 spool dry spool/my-feature --headed    # debug the driver cheaply, no VO/video
 spool build spool/my-feature           # (vo ‖ record) → render → share → final.mp4 + share/
 spool publish spool/my-feature         # → https://<host>/l/<id> — one link, click to watch
+spool publish spool/my-feature --pr    # …and comment the link on the branch's GitHub PR
 ```
 
 (`spool build` on a live/recorded session skips recording and finishes it, so `build` works
