@@ -106,4 +106,4 @@ spools get sent to clients; the narrator owns this codebase and speaks with that
   anything visible. Raw `page.*` is fine for waits/assertions.
 - `zoom: "auto"` zooms toward clicks in that step; use `"none"` for full-page context steps.
 - End steps in a settled state (`waitForSelector`), not mid-animation.
-- Full contract: `~/Projects/spool/CONTRACTS.md`.
+- Full contract: `CONTRACTS.md` in the spool repo.
