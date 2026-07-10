@@ -65,13 +65,21 @@ async function buildSources(dir) {
     vo: { manifest, words },
     segments,
     hasVideo: true,
+    // The resolved canvas image the render composited (preset, macOS wallpaper, or
+    // custom file). Ships to spools/{id}/src/bg.jpg so the Linux worker can re-render
+    // with the same canvas without the source machine's fonts/wallpapers.
+    hasBg: has(".spool-bg.jpg"),
   };
 }
 
 // Map a returned upload grant to its local file. Source grants (spools/{id}/src/*)
 // resolve against the workdir; published grants (l/{id}/*) against final.mp4/share.
 function grantLocalPath(pathname, { dir, shareDir, finalMp4 }) {
-  if (pathname.includes("/src/")) return join(dir, pathname.replace(/^spools\/[^/]+\/src\//, ""));
+  if (pathname.includes("/src/")) {
+    const rel = pathname.replace(/^spools\/[^/]+\/src\//, "");
+    // src/bg.jpg is staged in the workdir as the hidden .spool-bg.jpg.
+    return join(dir, rel === "bg.jpg" ? ".spool-bg.jpg" : rel);
+  }
   const rel = pathname.replace(/^l\/[^/]+\//, "");
   return rel === "final.mp4" ? finalMp4 : join(shareDir, rel);
 }

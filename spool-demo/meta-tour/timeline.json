@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "title": "Spool, demoed by Spool",
+  "url": "https://spoolkit.dev",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "fps": null,
+  "video": "video.webm",
+  "steps": [
+    {
+      "i": 0,
+      "name": "the-pitch",
+      "start": 33.798,
+      "end": 38.474,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "This is Spool. When an agent ships a feature, it records a real walkthrough in the browser, narrates it, and hands you one link. No human ever hits record."
+    },
+    {
+      "i": 1,
+      "name": "how-it-works",
+      "start": 38.474,
+      "end": 42.83,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "Under the hood it is record first. The agent drives the app once at natural speed, narration generates in parallel, and the renderer fits every step to the voice."
+    },
+    {
+      "i": 2,
+      "name": "a-published-spool",
+      "start": 42.83,
+      "end": 46.187,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "Here is a published spool. A real continuous recording on a designed canvas, with word-synced captions baked in."
+    },
+    {
+      "i": 3,
+      "name": "chapters",
+      "start": 46.187,
+      "end": 49.005,
+      "zoom": "auto",
+      "clicks": [
+        {
+          "x": 707,
+          "y": 754,
+          "t": 46.745
+        }
+      ],
+      "narration": "Chapters come free from the step structure. Click one and the player jumps straight to that moment."
+    },
+    {
+      "i": 4,
+      "name": "transcript",
+      "start": 49.005,
+      "end": 51.477,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "The full transcript rides along, timestamped per step."
+    },
+    {
+      "i": 5,
+      "name": "receipts-for-agents",
+      "start": 51.477,
+      "end": 54.504,
+      "zoom": "auto",
+      "clicks": [
+        {
+          "x": 436,
+          "y": 797,
+          "t": 51.838
+        }
+      ],
+      "narration": "It is not just for humans. Every spool ships machine-readable receipts, so another agent can review the demo, verify what changed, and file bugs without watching a single frame."
+    },
+    {
+      "i": 6,
+      "name": "edited-from-the-web",
+      "start": 54.504,
+      "end": 58.175,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "One more thing. The video on this page was edited after publishing. We re-voiced the intro and cut a step from the site itself, and the cloud pipeline re-rendered it in three minutes. That is Spool today."
+    }
+  ],
+  "total": 58.175
+}

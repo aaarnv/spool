@@ -7,6 +7,15 @@ import { fileURLToPath } from 'url';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const program = new Command();
 
+// `--bg list` on any render-capable command prints the background listing and skips
+// the work. Returns true when it handled the request.
+async function maybeListBackgrounds(opts) {
+  if (opts.bg !== 'list') return false;
+  const { printBackgrounds } = await import(join(root, 'src/render/bg-resolve.mjs'));
+  await printBackgrounds();
+  return true;
+}
+
 const stepsPath = (workdir) => {
   const p = resolve(workdir, 'steps.mjs');
   if (!existsSync(p)) {
@@ -47,7 +56,7 @@ async function finishSession(wd, opts) {
   await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
   console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   console.log('── spool render');
-  await renderSpool({ workdir: wd, rate: Number(opts.rate) });
+  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg });
   console.log('── spool share');
   await shareSpool(wd);
   console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
@@ -127,17 +136,30 @@ program
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
+  .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
   .action(async (workdir, opts) => {
+    if (await maybeListBackgrounds(opts)) return;
     await finishSession(resolve(workdir), opts);
+  });
+
+program
+  .command('backgrounds')
+  .alias('bg')
+  .description('list available backgrounds (repo presets + this machine\'s macOS wallpapers)')
+  .action(async () => {
+    const { printBackgrounds } = await import(join(root, 'src/render/bg-resolve.mjs'));
+    await printBackgrounds();
   });
 
 program
   .command('render <workdir>')
   .description('normalize + Remotion-render the final spool mp4')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
+  .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
   .action(async (workdir, opts) => {
+    if (await maybeListBackgrounds(opts)) return;
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
-    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate) });
+    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg });
   });
 
 program
@@ -174,8 +196,10 @@ program
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
+  .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
   .option('--headed', 'show the browser while recording')
   .action(async (workdir, opts) => {
+    if (await maybeListBackgrounds(opts)) return;
     const wd = resolve(workdir);
     // A live/recorded session is already captured — finish it, don't re-record.
     if (isRecordedSession(wd)) {
@@ -197,7 +221,7 @@ program
         .then(() => console.log(`   record done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
     ]);
     console.log('── spool render');
-    await renderSpool({ workdir: wd, rate: Number(opts.rate) });
+    await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg });
     console.log('── spool share');
     const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
     await shareSpool(wd);

@@ -1,0 +1,7 @@
+[0:00] This is Spool. When an agent ships a feature, it records a real walkthrough in the browser, narrates it, and hands you one link. No human ever hits record.
+[0:11] Under the hood it is record first. The agent drives the app once at natural speed, narration generates in parallel, and the renderer fits every step to the voice.
+[0:22] Here is a published spool. A real continuous recording on a designed canvas, with word-synced captions baked in.
+[0:31] Chapters come free from the step structure. Click one and the player jumps straight to that moment.
+[0:38] The full transcript rides along, timestamped per step.
+[0:42] It is not just for humans. Every spool ships machine-readable receipts, so another agent can review the demo, verify what changed, and file bugs without watching a single frame.
+[0:53] One more thing. The video on this page was edited after publishing. We re-voiced the intro and cut a step from the site itself, and the cloud pipeline re-rendered it in three minutes. That is Spool today.

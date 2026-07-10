@@ -3,6 +3,7 @@ import {
   AbsoluteFill,
   Audio,
   Freeze,
+  Img,
   OffthreadVideo,
   Sequence,
   Easing,
@@ -323,9 +324,11 @@ export const SpoolComposition = ({ timeline, manifest, title, background }) => {
       }}
     >
       {background ? (
-        // Real macOS wallpaper (staged by render.mjs into publicDir).
+        // Real wallpaper canvas (staged by render.mjs into publicDir). Remotion's
+        // <Img> blocks frame capture until it decodes, so it's painted from frame 0
+        // — a native <img> isn't awaited and pops in a few frames late (flicker).
         <AbsoluteFill>
-          <img
+          <Img
             src={staticFile(background)}
             style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />

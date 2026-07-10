@@ -1,0 +1,7 @@
+{"t":0.54,"kind":"console","level":"warning","text":"Clerk: The prop \"afterSignInUrl\" is deprecated and should be replaced with the new \"fallbackRedirectUrl\" or \"forceRedirectUrl\" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props"}
+{"t":0.805,"kind":"console","level":"warning","text":"[.WebGL-0x13400522000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"}
+{"t":0.807,"kind":"console","level":"warning","text":"[.WebGL-0x13400522000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"}
+{"t":0.807,"kind":"console","level":"warning","text":"[.WebGL-0x13400522000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels"}
+{"t":0.807,"kind":"console","level":"warning","text":"[.WebGL-0x13400522000]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"}
+{"t":43.313,"kind":"requestfailed","text":"GET https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com/l/pl9bl6eUjcOaaiaErm7aWg/final.mp4 net::ERR_ABORTED"}
+{"t":43.342,"kind":"console","level":"warning","text":"Clerk: The prop \"afterSignInUrl\" is deprecated and should be replaced with the new \"fallbackRedirectUrl\" or \"forceRedirectUrl\" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props"}

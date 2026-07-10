@@ -294,11 +294,30 @@ from the ../final.mp4 pointer.
 
 ## Render layer inputs
 
-`spool render <workdir> [--rate 1]` reads `timeline.json` + `vo/manifest.json`, runs
-the normalize pass (`video.webm` → `video.mp4`, CFR 30fps, H264, yuv420p, +genpts),
-then renders the Remotion `SpoolComposition` with `{ workdir-relative props }` (1920x1080
-macOS-wallpaper-style gradient canvas, recording on a near-full-bleed rounded card,
-subtitle-style intro title, captions/VO/zoom on the OUTPUT clock below).
+`spool render <workdir> [--rate 1] [--bg <preset|path>]` reads `timeline.json` +
+`vo/manifest.json`, runs the normalize pass (`video.webm` → `video.mp4`, CFR 30fps, H264,
+yuv420p, +genpts), then renders the Remotion `SpoolComposition` with `{ workdir-relative
+props }` (1920x1080 canvas, recording on a near-full-bleed rounded card, subtitle-style
+intro title, captions/VO/zoom on the OUTPUT clock below).
+
+**Background canvas (`--bg`).** The canvas behind the card resolves in this order:
+1. **repo preset** — `graphite` (dark neutral), `paper` (light warm), or `indigo` (brand
+   gradient, the default), each a shipped `assets/bg-<preset>.jpg`;
+2. **macOS wallpaper** — any still under `/System/Library/Desktop Pictures` by name
+   (case-insensitive, spaces→dashes: `sonoma`, `"Sonoma Horizon"`, `sonoma-horizon`).
+   Resolved at RUNTIME on the author's Mac — never shipped (Apple copyright). HEIC is
+   converted to JPG via `sips` and cached under `~/.spool-cache/bg/<name>.jpg`;
+3. **image path** — any file on disk;
+4. **fallback** — the repo default (`indigo`) when a spec resolves to nothing (e.g. a macOS
+   wallpaper name on a non-Mac).
+
+The resolved image is staged into the workdir as `.spool-bg.jpg` and composited full-bleed
+with `objectFit: cover` (via Remotion's `<Img>`, so it's painted from frame 0 — no load
+flicker). The bg name is stamped into `render.json` (`bg` field) alongside `rate`. `spool
+backgrounds` (alias `spool bg`, or `--bg list`) prints the presets + this machine's
+wallpapers. Also available on `spool build`/`spool finish`. On publish the resolved
+`.spool-bg.jpg` uploads as `spools/{id}/src/bg.jpg` so the Linux edit worker can re-render
+the same canvas (see docs/EDIT-CONTRACT.md).
 
 **Retiming (record-first).** The capture is natural-speed; the renderer maps each step
 onto an output window and concatenates them from t=0:

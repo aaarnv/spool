@@ -149,6 +149,11 @@ published before this feature (no sources) show as re-publish-to-edit. Full shap
   rounded card with gentle zooms toward logged click coordinates (Screen-Studio style) and
   captions are rendered as designed React, not burned SRT. The one hand-written ffmpeg video
   pass (WebM → CFR H264) exists because Remotion seeks VFR VP8 pathologically slowly.
+- **Pick a canvas with `--bg`.** `spool render|build|finish --bg <name|path>` sets the
+  background behind the card — a repo preset (`graphite`, `paper`, `indigo` — the default),
+  any macOS system wallpaper by name (e.g. `sonoma`, resolved off this Mac at render time,
+  never shipped), or any image path. `spool backgrounds` lists what's available. Published
+  spools can be re-skinned from the web editor via the `set_bg` op (repo presets only).
 - **Dry-run first (scripted path).** `spool dry` drives the steps with no VO or video so the
   agent can fix selectors/timing before spending TTS calls and render minutes. The live path
   skips this — you drive once and fix fumbles inline (a failed `/js` doesn't kill the take).
