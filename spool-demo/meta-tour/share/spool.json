@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "kind": "spool",
+  "title": "Spool, demoed by Spool",
+  "url": "https://spoolkit.dev",
+  "video": "../final.mp4",
+  "duration": 67.3,
+  "rate": 1,
+  "voice": {
+    "engine": "openai",
+    "voice": "alloy"
+  },
+  "steps": [
+    {
+      "i": 0,
+      "name": "the-pitch",
+      "narration": "This is Spool. When an agent ships a feature, it records a real walkthrough in the browser, narrates it, and hands you one link. No human ever hits record.",
+      "start": 0,
+      "end": 11.233,
+      "clicks": [],
+      "frame": "frames/step_00.png"
+    },
+    {
+      "i": 1,
+      "name": "how-it-works",
+      "narration": "Under the hood it is record first. The agent drives the app once at natural speed, narration generates in parallel, and the renderer fits every step to the voice.",
+      "start": 11.233,
+      "end": 22.3,
+      "clicks": [],
+      "frame": "frames/step_01.png"
+    },
+    {
+      "i": 2,
+      "name": "a-published-spool",
+      "narration": "Here is a published spool. A real continuous recording on a designed canvas, with word-synced captions baked in.",
+      "start": 22.3,
+      "end": 31.267,
+      "clicks": [],
+      "frame": "frames/step_02.png"
+    },
+    {
+      "i": 3,
+      "name": "chapters",
+      "narration": "Chapters come free from the step structure. Click one and the player jumps straight to that moment.",
+      "start": 31.267,
+      "end": 37.533,
+      "clicks": [
+        {
+          "x": 707,
+          "y": 754,
+          "t": 31.825
+        }
+      ],
+      "frame": "frames/step_03.png"
+    },
+    {
+      "i": 4,
+      "name": "transcript",
+      "narration": "The full transcript rides along, timestamped per step.",
+      "start": 37.533,
+      "end": 41.7,
+      "clicks": [],
+      "frame": "frames/step_04.png"
+    },
+    {
+      "i": 5,
+      "name": "receipts-for-agents",
+      "narration": "It is not just for humans. Every spool ships machine-readable receipts, so another agent can review the demo, verify what changed, and file bugs without watching a single frame.",
+      "start": 41.7,
+      "end": 53,
+      "clicks": [
+        {
+          "x": 436,
+          "y": 797,
+          "t": 42.061
+        }
+      ],
+      "frame": "frames/step_05.png"
+    },
+    {
+      "i": 6,
+      "name": "edited-from-the-web",
+      "narration": "One more thing. The video on this page was edited after publishing. We re-voiced the intro and cut a step from the site itself, and the cloud pipeline re-rendered it in three minutes. That is Spool today.",
+      "start": 53,
+      "end": 66.233,
+      "clicks": [],
+      "frame": "frames/step_06.png"
+    }
+  ],
+  "console": {
+    "errors": 1,
+    "warnings": 6,
+    "log": "console.jsonl"
+  }
+}

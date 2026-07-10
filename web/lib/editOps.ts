@@ -8,11 +8,19 @@ export type Op =
   | { op: "set_narration"; i: number; text: string }
   | { op: "set_title"; title: string }
   | { op: "set_zoom"; i: number; zoom: Zoom }
-  | { op: "set_rate"; rate: number };
+  | { op: "set_rate"; rate: number }
+  | { op: "set_bg"; bg: BgPreset };
 
 export const NARRATION_MAX = 600;
 export const RATE_MIN = 0.75;
 export const RATE_MAX = 2;
+
+// Background presets — mirrors src/render/bg-presets.mjs BG_PRESET_NAMES (keep in
+// sync). Only these repo presets are editable from the web (the render worker ships
+// them); macOS wallpapers and custom image paths are CLI-only (the Linux worker
+// can't resolve them, and the original canvas is preserved via src/bg.jpg).
+export const BG_PRESETS = ["graphite", "paper", "indigo"] as const;
+export type BgPreset = (typeof BG_PRESETS)[number];
 
 // JSON schema handed to Claude to force structured output against the vocabulary.
 export const OPS_TOOL_SCHEMA = {
@@ -27,7 +35,7 @@ export const OPS_TOOL_SCHEMA = {
         properties: {
           op: {
             type: "string",
-            enum: ["remove_step", "reorder", "set_narration", "set_title", "set_zoom", "set_rate"],
+            enum: ["remove_step", "reorder", "set_narration", "set_title", "set_zoom", "set_rate", "set_bg"],
           },
           i: { type: "integer", description: "Step index (0-based) for remove_step/set_narration/set_zoom." },
           order: { type: "array", items: { type: "integer" }, description: "Permutation of step indices for reorder." },
@@ -35,6 +43,7 @@ export const OPS_TOOL_SCHEMA = {
           title: { type: "string", description: "New spool title for set_title." },
           zoom: { description: 'For set_zoom: "none", "auto", or {x, y}.' },
           rate: { type: "number", description: "Playback rate for set_rate (0.75-2)." },
+          bg: { type: "string", enum: [...BG_PRESETS], description: "Background preset for set_bg." },
         },
         required: ["op"],
       },
@@ -119,6 +128,13 @@ export function validateOps(
         if (typeof rate !== "number" || rate < RATE_MIN || rate > RATE_MAX)
           return { ok: false, error: `op ${idx}: rate must be within [${RATE_MIN}, ${RATE_MAX}]` };
         out.push({ op, rate });
+        break;
+      }
+      case "set_bg": {
+        const bg = (r as { bg?: unknown }).bg;
+        if (typeof bg !== "string" || !BG_PRESETS.includes(bg as BgPreset))
+          return { ok: false, error: `op ${idx}: bg must be one of ${BG_PRESETS.join(", ")}` };
+        out.push({ op, bg: bg as BgPreset });
         break;
       }
       default:

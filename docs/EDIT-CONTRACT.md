@@ -11,7 +11,8 @@ Existing final video stays wherever publish puts it today. Sources land under:
 ```
 spools/{id}/src/video.mp4          # normalized CFR recording (render input)
 spools/{id}/src/timeline.json      # recording-clock timeline (record contract)
-spools/{id}/src/render.json        # rate etc as used for the published render
+spools/{id}/src/render.json        # rate + bg as used for the published render
+spools/{id}/src/bg.jpg             # resolved canvas image (optional; see Backgrounds)
 spools/{id}/src/vo/manifest.json
 spools/{id}/src/vo/seg_NN.wav
 spools/{id}/src/vo/seg_NN.words.json
@@ -29,7 +30,8 @@ sources: {
   timeline: {...}, render: {...},
   vo: { manifest: {...}, words: { "0": {...}, "1": {...} } },
   segments: [0,1,2],   // → grants for spools/{id}/src/vo/seg_NN.wav
-  hasVideo: true       // → grant for spools/{id}/src/video.mp4
+  hasVideo: true,      // → grant for spools/{id}/src/video.mp4
+  hasBg: true          // → grant for spools/{id}/src/bg.jpg (the resolved canvas)
 }
 ```
 
@@ -65,14 +67,27 @@ edit_jobs:
   {"op":"set_narration","i": 0, "text": "…"},
   {"op":"set_title",    "title": "…"},
   {"op":"set_zoom",     "i": 1, "zoom": "none" | "auto" | {"x":0,"y":0}},
-  {"op":"set_rate",     "rate": 1.25}
+  {"op":"set_rate",     "rate": 1.25},
+  {"op":"set_bg",       "bg": "graphite" | "paper" | "indigo"}
 ]}
 ```
 
 Indices refer to CURRENT step order at job creation; ops apply sequentially
 (remove/reorder shift later indices — the applier processes in array order).
 Validation (web, before job creation): indices in range, order is a permutation,
-rate in [0.75, 2], narration ≤ 600 chars, at least one op.
+rate in [0.75, 2], narration ≤ 600 chars, `bg` one of the three repo presets, at least one op.
+`set_bg` is repo-preset-only through the editor — those gradients ship in the repo/worker
+image (`assets/bg-<preset>.jpg`). macOS system wallpapers and custom image paths are
+CLI-only (`spool render --bg <wallpaper|path>`): they're resolved on the author's machine
+and the resolved pixels ride along as `src/bg.jpg`, so the Linux worker never needs them.
+
+**Background precedence on re-render** (worker): an explicit `set_bg` op (a repo preset)
+wins; else the published `src/bg.jpg` is reused as-is (preserves a macOS wallpaper / custom
+canvas across the re-render); else the `render.json` `bg` tag (a repo preset resolves from
+the image, a macOS-name tag can't and falls back to `DEFAULT_BG` = `indigo`). Spools
+published before this feature have no `src/bg.jpg`, so a re-render falls back to `DEFAULT_BG`
+— but their existing published video already has the original canvas baked in, so only a
+re-render is affected.
 
 ## Web API (spool-web)
 

@@ -36,7 +36,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     "into a structured list of edit operations. Only use the provided ops vocabulary. Step indices " +
     "are 0-based and refer to the CURRENT step order shown in the context. Operations apply in array " +
     "order (remove_step and reorder shift later indices). Keep narration edits under 600 characters and " +
-    "playback rate within 0.75-2. Emit only ops the user actually asked for; if none apply, return an " +
+    "playback rate within 0.75-2. For set_bg (the canvas behind the recording), bg must be one of: " +
+    "graphite (dark neutral), paper (light warm), or indigo (brand gradient, the default). " +
+    "Emit only ops the user actually asked for; if none apply, return an " +
     "empty ops array. In `summary`, write one short human-readable sentence per op, in the same order.\n\n" +
     `Spool context:\n${context}`;
 

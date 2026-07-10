@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { normalize, h264Encoder } from "./normalize.mjs";
+import { resolveBgSource } from "./bg-resolve.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -107,10 +108,10 @@ async function speedUp(src, dst, rate) {
  * its VO), so `rate` defaults to 1.0; when set it speeds the whole clip and the
  * rate used is stamped into <workdir>/render.json for the share layer.
  *
- * @param {string|{workdir:string, rate?:number}} opts
+ * @param {string|{workdir:string, rate?:number, bg?:string|null}} opts
  */
 export async function renderSpool(opts) {
-  const { workdir, rate = 1 } = typeof opts === "string" ? { workdir: opts } : opts;
+  const { workdir, rate = 1, bg = null } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
   const timeline = await readJson(join(dir, "timeline.json"));
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
@@ -132,10 +133,11 @@ export async function renderSpool(opts) {
   }
   const enrichedManifest = { ...manifest, segments };
 
-  // Real macOS wallpaper canvas: copy the bundled asset into the workdir
-  // (publicDir) so the composition can staticFile() it. Gradient fallback when absent.
+  // Wallpaper canvas: resolve the requested bg (preset | macOS wallpaper | path |
+  // default) and copy the source into the workdir (publicDir) so the composition can
+  // staticFile() it. Gradient fallback when the asset is somehow absent.
+  const { source: bgAsset, tag: bgTag } = await resolveBgSource(bg);
   let background = null;
-  const bgAsset = join(dirname(dirname(__dirname)), "assets", "bg-sonoma.jpg");
   if (existsSync(bgAsset)) {
     await copyFile(bgAsset, join(dir, ".spool-bg.jpg"));
     background = ".spool-bg.jpg";
@@ -198,9 +200,9 @@ export async function renderSpool(opts) {
     await unlink(renderOut).catch(() => {});
   }
 
-  // Stamp the rate so `spool share` can record it and knows final.mp4's clock
-  // differs from timeline.json/video.mp4.
-  await writeFile(join(dir, "render.json"), JSON.stringify({ rate: speedUpNeeded ? rate : 1 }, null, 2) + "\n");
+  // Stamp the rate + bg so `spool share`/re-renders know final.mp4's clock differs
+  // from timeline.json/video.mp4 and which canvas was used.
+  await writeFile(join(dir, "render.json"), JSON.stringify({ rate: speedUpNeeded ? rate : 1, bg: bgTag }, null, 2) + "\n");
 
   console.log(`[render] wrote ${finalOut}`);
   return finalOut;
@@ -214,11 +216,13 @@ if (isMain) {
   const workdir = wIdx >= 0 ? argv[wIdx + 1] : argv[2];
   const rIdx = argv.indexOf("--rate");
   const rate = rIdx >= 0 ? Number(argv[rIdx + 1]) : 1;
+  const bIdx = argv.indexOf("--bg");
+  const bg = bIdx >= 0 ? argv[bIdx + 1] : null;
   if (!workdir) {
-    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>]");
+    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>]");
     process.exit(1);
   }
-  renderSpool({ workdir, rate })
+  renderSpool({ workdir, rate, bg })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error("[render] failed:", err);

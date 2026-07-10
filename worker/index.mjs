@@ -66,6 +66,7 @@ async function downloadSources(spoolId, workdir) {
   await downloadTo(url("vo/manifest.json"), join(workdir, "vo/manifest.json"));
   await downloadTo(url("video.mp4"), join(workdir, "video.mp4"));
   await downloadTo(url("render.json"), join(workdir, "render.json")).catch(() => {}); // optional
+  await downloadTo(url("bg.jpg"), join(workdir, "src-bg.jpg")).catch(() => {}); // optional resolved canvas
   const manifest = await readJson(join(workdir, "vo", "manifest.json"));
   for (const seg of manifest.segments || []) {
     if (seg.wav) await downloadTo(url(seg.wav), join(workdir, seg.wav));
@@ -88,7 +89,9 @@ async function processJob(job) {
     // 2. Apply ops to the loaded timeline + manifest.
     const timeline = await readJson(join(workdir, "timeline.json"));
     const manifest = await readJson(join(workdir, "vo", "manifest.json"));
-    const publishedRate = existsSync(join(workdir, "render.json")) ? (await readJson(join(workdir, "render.json"))).rate ?? 1 : 1;
+    const publishedRender = existsSync(join(workdir, "render.json")) ? await readJson(join(workdir, "render.json")) : {};
+    const publishedRate = publishedRender.rate ?? 1;
+    const publishedBg = publishedRender.bg ?? null;
     const edited = applyOps({ timeline, manifest, ops });
 
     // 3. Re-TTS only the changed segments, then patch their fresh durations back in.
@@ -101,8 +104,14 @@ async function processJob(job) {
     await writeFile(join(workdir, "vo", "manifest.json"), JSON.stringify(edited.manifest, null, 2));
 
     // 4. Re-render (windows recompute from the edited timeline+manifest) + re-share.
+    // Background precedence: an explicit set_bg op (a repo preset) wins; otherwise
+    // reuse the published canvas pixels (src/bg.jpg) so macOS wallpapers / custom
+    // images survive re-render on this Linux worker; otherwise the published bg tag
+    // (a repo preset resolves; a macOS-name/absent tag falls back to DEFAULT_BG).
     const rate = edited.rate ?? publishedRate;
-    await renderSpool({ workdir, rate });
+    const srcBg = join(workdir, "src-bg.jpg");
+    const bg = edited.bg ?? (existsSync(srcBg) ? srcBg : publishedBg);
+    await renderSpool({ workdir, rate, bg });
     const shareDir = await shareSpool(workdir);
 
     // 5. Overwrite the published artifacts via per-job upload grants. spool.json's

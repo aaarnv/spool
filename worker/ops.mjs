@@ -5,6 +5,8 @@
 // the vo/seg_<i>.wav on disk + the video.mp4 slice at [start,end]) is preserved
 // through remove/reorder, so the renderer needs no video re-encode.
 
+import { BG_PRESET_NAMES } from "../src/render/bg-presets.mjs";
+
 function assertPos(i, len, op) {
   if (!Number.isInteger(i) || i < 0 || i >= len) throw new Error(`${op}: index ${i} out of range (0..${len - 1})`);
 }
@@ -21,6 +23,7 @@ export function applyOps({ timeline, manifest, ops }) {
   }));
 
   let rate = null; // null ⇒ keep the published rate
+  let bg = null; // null ⇒ keep the published bg
   let title = timeline.title ?? manifest.title ?? null;
 
   for (const op of ops) {
@@ -64,6 +67,12 @@ export function applyOps({ timeline, manifest, ops }) {
         rate = r;
         break;
       }
+      case "set_bg": {
+        // Presets only through the editor — no arbitrary paths/URLs.
+        if (!BG_PRESET_NAMES.includes(op.bg)) throw new Error(`set_bg: "${op.bg}" is not a preset (${BG_PRESET_NAMES.join("|")})`);
+        bg = op.bg;
+        break;
+      }
       default:
         throw new Error(`unknown op "${op.op}"`);
     }
@@ -80,5 +89,5 @@ export function applyOps({ timeline, manifest, ops }) {
   // Re-TTS jobs carry the original recording index (the wav path + pairing key).
   const retts = items.filter((it) => it.retts).map((it) => ({ i: it.step.i, name: it.step.name, narration: it.seg.narration }));
 
-  return { timeline: newTimeline, manifest: newManifest, rate, retts };
+  return { timeline: newTimeline, manifest: newManifest, rate, bg, retts };
 }

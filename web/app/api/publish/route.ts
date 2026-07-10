@@ -34,6 +34,7 @@ type Sources = {
   vo?: { manifest: unknown; words?: Record<string, unknown> };
   segments?: number[]; // seg indices needing a seg_NN.wav upload grant
   hasVideo?: boolean; // default true — grant a src/video.mp4 upload
+  hasBg?: boolean; // grant a src/bg.jpg upload (the resolved canvas image)
 };
 
 type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources; hasPreview?: boolean };
@@ -116,6 +117,10 @@ export async function POST(req: Request) {
     if (src.hasVideo !== false) {
       const p = `spools/${id}/src/video.mp4`;
       grants.push({ pathname: p, contentType: "video/mp4", token: await mintToken(p, "video/mp4") });
+    }
+    if (src.hasBg) {
+      const p = `spools/${id}/src/bg.jpg`;
+      grants.push({ pathname: p, contentType: "image/jpeg", token: await mintToken(p, "image/jpeg") });
     }
     for (const seg of src.segments ?? []) {
       const p = `spools/${id}/src/vo/${segName(seg)}.wav`;
