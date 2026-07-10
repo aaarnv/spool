@@ -1,10 +1,13 @@
 # Deploy from the repo ROOT so the Docker context includes src/:
-#   fly deploy . -c worker/fly.toml
+#   fly deploy . -c worker/fly.toml --dockerfile worker/Dockerfile
+# Secret (set once): EDIT_WORKER_SECRET (same value as the web env). No Blob token —
+# sources are public URLs and outputs use per-job upload grants from the web.
 app = "spool-render"
 primary_region = "syd"
 
 [env]
   SPOOL_HOST = "https://spoolkit.dev"
+  SPOOL_BLOB_BASE = "https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com"
   SPOOL_RENDER_CONCURRENCY = "2"
 
 # No [http_service]: this is a poller with no inbound traffic, so the single

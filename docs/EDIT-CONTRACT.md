@@ -84,20 +84,30 @@ Auth: `Authorization: Bearer ${EDIT_WORKER_SECRET}` (env on both sides).
 
 - `GET /api/edit-jobs/next` → 200 `{job: {id, spoolId, ops}}` (atomically flips
   queued→running) or 204. Worker polls every 5s.
-- `PATCH /api/edit-jobs/{id}` body `{status: done|error, error?}`. On `done` the web
-  row's spool is expected to already have the new final.mp4 in Blob (worker writes
-  Blob directly with BLOB_READ_WRITE_TOKEN) — web revalidates the watch page cache tag.
+- `POST /api/edit-jobs/{id}/uploads` body `{paths: ["l/{spoolId}/final.mp4", …]}` →
+  `{uploads: [{pathname, token, contentType}]}`. Mints short-lived client-upload grants
+  (the publish route's `mintToken` helper) so the worker PUTs outputs straight to Blob
+  without a standing token. Rejects any path outside the job's published prefix
+  `l/{spoolId}/` (403) or a non-running job (409). The web holds the read-write token; the
+  worker never does.
+- `PATCH /api/edit-jobs/{id}` body `{status: done|error, error?}`. On `done` the worker
+  has already overwritten the published final.mp4/spool.json/frames via the grants above,
+  so web just revalidates the watch page cache tag.
 
 ## Worker (worker/ dir in this repo, deployed as Fly app `spool-render`, region syd)
 
 Node 20 + ffmpeg + Remotion-capable chromium deps. Imports the repo's own
 `src/vo/tts.mjs`, `src/render/*` as libraries — no logic duplication. Flow per job:
-download `spools/{id}/src/*` → apply ops to timeline/vo (set_narration ⇒ re-TTS that
-segment via OPENAI_API_KEY + whisper words, exactly the CLI's openai engine path) →
-renderSpool (windows recompute automatically from the edited timeline+manifest) →
-upload new final.mp4 over the published video path (+ regenerate share/spool.json
-fields that changed: steps, narration, durations) → PATCH done.
-Secrets: EDIT_WORKER_SECRET, OPENAI_API_KEY, BLOB_READ_WRITE_TOKEN, SPOOL_HOST.
+download `spools/{id}/src/*` by **public URL** (`SPOOL_BLOB_BASE`, store access is public —
+no token: fixed set then each VO seg named by the manifest) → apply ops to timeline/vo
+(set_narration ⇒ re-TTS that segment via OPENAI_API_KEY + whisper words, exactly the CLI's
+openai engine path) → renderSpool (windows recompute automatically from the edited
+timeline+manifest) → regenerate the share bundle → request upload grants for the changed
+`l/{id}/*` outputs (final.mp4, frames, spool.json with steps/narration/durations rewritten
+to blob URLs, transcript, console) and PUT via the grants → PATCH done.
+Env: EDIT_WORKER_SECRET, OPENAI_API_KEY, SPOOL_HOST, SPOOL_BLOB_BASE (no standing Blob
+token — outputs use per-job grants). `SPOOL_RENDER_CONCURRENCY` caps render concurrency
+(os.cpus() reports host cores in a container, so the default over-subscribes RAM).
 Failure ⇒ PATCH error with a one-line reason; sources are immutable (re-edit = new job
 from the SAME originals + full ops list — jobs are not cumulative in v1; the web UI
 always sends the complete op list relative to the original publish).

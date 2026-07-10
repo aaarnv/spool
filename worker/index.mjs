@@ -6,22 +6,19 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyOps } from "./ops.mjs";
-import { listBlobs, downloadTo, putBlob } from "./blob.mjs";
+import { downloadTo, uploadViaGrant } from "./blob.mjs";
 import { renderSpool } from "../src/render/render.mjs";
 import { shareSpool } from "../src/share/share.mjs";
 import { synthesizeSegment } from "../src/vo/tts.mjs";
 
 const SPOOL_HOST = (process.env.SPOOL_HOST || "").replace(/\/$/, "");
 const SECRET = process.env.EDIT_WORKER_SECRET || "";
-const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN || "";
+const BLOB_BASE = (process.env.SPOOL_BLOB_BASE || "").replace(/\/$/, "");
 const POLL_MS = 5000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const oneLine = (e) => String((e && e.message) || e).split("\n")[0].slice(0, 240);
 const readJson = async (p) => JSON.parse(await readFile(p, "utf8"));
-
-const CT = { ".mp4": "video/mp4", ".png": "image/png", ".json": "application/json", ".txt": "text/plain", ".jsonl": "application/x-ndjson" };
-const ctFor = (name) => CT[name.slice(name.lastIndexOf("."))] || "application/octet-stream";
 
 // GET /api/edit-jobs/next → { job: { id, spoolId, ops } } | 204. Survives the
 // web not being deployed yet (any non-200 ⇒ no job, keep polling).
@@ -47,20 +44,40 @@ async function patchJob(id, body) {
   if (!res.ok) console.warn(`[worker] patch ${id} ${body.status} → ${res.status}`);
 }
 
+// Ask the web for short-lived client-upload grants for the given output pathnames
+// (POST /api/edit-jobs/{id}/uploads). The worker holds no standing Blob token.
+async function requestGrants(id, paths) {
+  const res = await fetch(`${SPOOL_HOST}/api/edit-jobs/${id}/uploads`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+    body: JSON.stringify({ paths }),
+  });
+  if (!res.ok) throw new Error(`uploads grant ${res.status}: ${(await res.text().catch(() => "")).slice(0, 160)}`);
+  return (await res.json()).uploads || [];
+}
+
+// Download the published sources by deterministic public URL (store access: public,
+// so no token). Fixed set first, then each VO segment named by the manifest.
+async function downloadSources(spoolId, workdir) {
+  const url = (rel) => `${BLOB_BASE}/spools/${spoolId}/src/${rel}`;
+  await downloadTo(url("timeline.json"), join(workdir, "timeline.json"));
+  await downloadTo(url("vo/manifest.json"), join(workdir, "vo/manifest.json"));
+  await downloadTo(url("video.mp4"), join(workdir, "video.mp4"));
+  await downloadTo(url("render.json"), join(workdir, "render.json")).catch(() => {}); // optional
+  const manifest = await readJson(join(workdir, "vo", "manifest.json"));
+  for (const seg of manifest.segments || []) {
+    if (seg.wav) await downloadTo(url(seg.wav), join(workdir, seg.wav));
+    if (seg.words) await downloadTo(url(seg.words), join(workdir, seg.words)).catch(() => {});
+  }
+}
+
 async function processJob(job) {
   const { id, spoolId, ops } = job;
   console.log(`[worker] job ${id} spool ${spoolId} (${ops.length} op[s])`);
   const workdir = await mkdtemp(join(tmpdir(), `spool-edit-${spoolId}-`));
   try {
-    // 1. Pull the immutable sources into a fresh workdir. The public blob origin is
-    //    read off the source URLs so we can address the l/<id>/* published paths.
-    const blobs = await listBlobs(`spools/${spoolId}/src/`, BLOB_TOKEN);
-    if (!blobs.length) throw new Error(`no sources at spools/${spoolId}/src/`);
-    const blobBase = new URL(blobs[0].url).origin;
-    for (const b of blobs) {
-      const rel = b.pathname.replace(`spools/${spoolId}/src/`, "");
-      await downloadTo(b.downloadUrl || b.url, join(workdir, rel));
-    }
+    // 1. Pull the immutable sources into a fresh workdir (public URL download).
+    await downloadSources(spoolId, workdir);
 
     // 2. Apply ops to the loaded timeline + manifest.
     const timeline = await readJson(join(workdir, "timeline.json"));
@@ -82,21 +99,31 @@ async function processJob(job) {
     await renderSpool({ workdir, rate });
     const shareDir = await shareSpool(workdir);
 
-    // 5. Overwrite the published artifacts. spool.json's bundle-relative paths are
-    //    rewritten to the deterministic l/<id>/* blob URLs (matching the publish route).
+    // 5. Overwrite the published artifacts via per-job upload grants. spool.json's
+    //    bundle-relative paths are rewritten to the deterministic l/<id>/* blob URLs.
     const spool = await readJson(join(shareDir, "spool.json"));
-    const lUrl = (name) => `${blobBase}/l/${spoolId}/${name}`;
+    const lUrl = (name) => `${BLOB_BASE}/l/${spoolId}/${name}`;
     spool.video = lUrl("final.mp4");
     for (const s of spool.steps) s.frame = lUrl(`frames/step_${String(s.i).padStart(2, "0")}.png`);
 
-    await putBlob(`l/${spoolId}/final.mp4`, await readFile(join(workdir, "final.mp4")), { token: BLOB_TOKEN, contentType: "video/mp4" });
+    // Collect { pathname → bytes }: final.mp4 + frames + regenerated bundle files.
+    const outputs = new Map();
+    outputs.set(`l/${spoolId}/final.mp4`, await readFile(join(workdir, "final.mp4")));
     for (const f of await readdir(join(shareDir, "frames")).catch(() => [])) {
-      await putBlob(`l/${spoolId}/frames/${f}`, await readFile(join(shareDir, "frames", f)), { token: BLOB_TOKEN, contentType: ctFor(f) });
+      outputs.set(`l/${spoolId}/frames/${f}`, await readFile(join(shareDir, "frames", f)));
     }
-    await putBlob(`l/${spoolId}/spool.json`, Buffer.from(JSON.stringify(spool, null, 2)), { token: BLOB_TOKEN, contentType: "application/json" });
+    outputs.set(`l/${spoolId}/spool.json`, Buffer.from(JSON.stringify(spool, null, 2)));
     for (const name of ["transcript.txt", "console.jsonl"]) {
       const p = join(shareDir, name);
-      if (existsSync(p)) await putBlob(`l/${spoolId}/${name}`, await readFile(p), { token: BLOB_TOKEN, contentType: ctFor(name) });
+      if (existsSync(p)) outputs.set(`l/${spoolId}/${name}`, await readFile(p));
+    }
+
+    const grants = await requestGrants(id, [...outputs.keys()]);
+    if (grants.length !== outputs.size) throw new Error(`grant count ${grants.length} ≠ outputs ${outputs.size}`);
+    for (const g of grants) {
+      const buf = outputs.get(g.pathname);
+      if (!buf) throw new Error(`grant for unknown path ${g.pathname}`);
+      await uploadViaGrant(buf, g);
     }
     console.log(`[worker] job ${id} done → ${lUrl("final.mp4")}`);
   } finally {
@@ -108,7 +135,7 @@ let stop = false;
 for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => { stop = true; });
 
 async function main() {
-  for (const [k, v] of [["SPOOL_HOST", SPOOL_HOST], ["EDIT_WORKER_SECRET", SECRET], ["BLOB_READ_WRITE_TOKEN", BLOB_TOKEN]]) {
+  for (const [k, v] of [["SPOOL_HOST", SPOOL_HOST], ["EDIT_WORKER_SECRET", SECRET], ["SPOOL_BLOB_BASE", BLOB_BASE]]) {
     if (!v) throw new Error(`missing env ${k}`);
   }
   console.log(`[worker] polling ${SPOOL_HOST}/api/edit-jobs/next every ${POLL_MS / 1000}s`);
