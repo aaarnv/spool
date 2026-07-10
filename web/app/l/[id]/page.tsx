@@ -5,8 +5,9 @@ import { eq } from "drizzle-orm";
 import { blobUrl, mmss, type Spool } from "../../spool";
 import { db } from "../../../db";
 import { spools as spoolsTable } from "../../../db/schema";
-import Player, { type Chapter, type Line } from "./Player";
-import EditPanel from "./EditPanel";
+import Watch, { type Chapter, type Line } from "./Watch";
+import { sans, serif } from "../../components/marketing/fonts";
+import "./watch.css";
 
 // Blob content is immutable per id — cache the spool.json fetch aggressively.
 async function getSpool(id: string): Promise<Spool | null> {
@@ -86,40 +87,21 @@ export default async function WatchPage({
   const rawUrl = blobUrl(id, "spool.json");
 
   return (
-    <main className="wrap">
-      <div className="brand">
-        <img src="/logo.svg" width={18} height={18} alt="" style={{ display: "block", borderRadius: 4 }} />
-        spool
-      </div>
-
-      <h1 className="title">{spool.title || "Untitled spool"}</h1>
-      <p className="byline">
-        {mmss(spool.duration)}
-        <span className="sep">·</span>
-        recorded by an agent
-        <span className="sep">·</span>
-        spool
-      </p>
-
-      <Player src={spool.video} poster={poster} chapters={chapters} lines={lines} />
-
-      {isOwner && <EditPanel spoolId={id} hasSources={hasSources} videoSrc={spool.video} />}
-
-      <details className="agents">
-        <summary>
-          <span className="caret">›</span>
-          For agents
-        </summary>
-        <div className="body">
-          Machine-readable walkthrough data. <code>spool.json</code> indexes every step
-          (narration, timings, keyframes); <code>console.jsonl</code> is the browser
-          telemetry captured while recording.
-          <div className="links">
-            <a href={rawUrl}>spool.json →</a>
-            <a href={consoleUrl}>console.jsonl →</a>
-          </div>
-        </div>
-      </details>
-    </main>
+    <div className={`${sans.variable} ${serif.variable}`}>
+      <Watch
+        title={spool.title || "Untitled spool"}
+        durationLabel={mmss(spool.duration)}
+        src={spool.video}
+        poster={poster}
+        chapters={chapters}
+        lines={lines}
+        isOwner={isOwner}
+        hasSources={hasSources}
+        spoolId={id}
+        rawUrl={rawUrl}
+        consoleUrl={consoleUrl}
+        signedIn={!!userId}
+      />
+    </div>
   );
 }

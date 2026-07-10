@@ -1,0 +1,214 @@
+/* ==========================================================================
+   Watch page — timeline spine, in Spool's identity: dark canvas, indigo
+   #6d5efc accent, shadows-only edges, Instrument fonts. Sticky player on the
+   left; chapters + narration merge into one annotated, seekable spine on the
+   right. Scoped under .wv.
+   ========================================================================== */
+
+.wv {
+  --wv-sans: var(--spool-sans), var(--font);
+  --wv-serif: var(--spool-serif), Georgia, serif;
+  --wv-accent: #6d5efc;
+  --wv-accent-soft: rgba(109, 94, 252, 0.14);
+  --wv-edge: 0 1px 2px rgba(0, 0, 0, 0.35);
+  min-height: 100vh;
+  font-family: var(--wv-sans);
+  background: radial-gradient(120% 80% at 50% -10%, #12111c 0%, var(--bg) 60%);
+}
+
+/* ---- top bar ---- */
+.wv-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 20px 28px;
+}
+.wv-top-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.wv-top-brand img { display: block; border-radius: 5px; }
+.wv-top-nav { display: flex; align-items: center; gap: 6px; }
+.wv-top-link {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--muted);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.wv-top-link:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.wv-top-cta {
+  color: #0a0a0b;
+  background: #f4f4f8;
+  box-shadow: var(--wv-edge);
+}
+.wv-top-cta:hover { color: #0a0a0b; background: #fff; }
+
+/* ---- caret ---- */
+.wv-caret { color: var(--faint); transition: transform 0.15s ease; display: inline-block; }
+.wv details[open] > summary .wv-caret { transform: rotate(90deg); }
+
+/* ---- shell / head ---- */
+.wv-d-shell { max-width: 1160px; margin: 0 auto; padding: 8px 28px 120px; }
+.wv-d-head { margin: 18px 0 32px; }
+.wv-d-eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--wv-accent);
+  margin-bottom: 12px;
+}
+.wv-d-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin: 0 0 10px;
+  line-height: 1.2;
+}
+.wv-d-byline { font-size: 13.5px; color: var(--muted); margin: 0; }
+
+/* ---- columns: sticky player left, spine right ---- */
+.wv-d-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 44px;
+  align-items: start;
+}
+.wv-d-sticky {
+  position: sticky;
+  top: 26px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.wv-d-stage {
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 30px 70px -28px rgba(0, 0, 0, 0.9),
+    0 0 60px -30px rgba(109, 94, 252, 0.5), var(--wv-edge);
+}
+.wv video { display: block; width: 100%; height: auto; background: #000; }
+
+/* ---- spine: one annotated object; every row seeks ---- */
+.wv-d-spine { list-style: none; margin: 0; padding: 4px 0 0 0; position: relative; }
+.wv-d-spine::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  background: var(--border);
+}
+.wv-d-node { position: relative; }
+.wv-d-node-btn {
+  display: flex;
+  gap: 18px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 14px 12px 14px 0;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+.wv-d-node-btn:hover { background: rgba(255, 255, 255, 0.03); }
+.wv-d-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  box-shadow: 0 0 0 4px var(--bg), inset 0 0 0 1.5px var(--faint);
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+.wv-d-node[data-active="true"] .wv-d-dot {
+  background: var(--wv-accent);
+  box-shadow: 0 0 0 4px var(--bg), 0 0 16px var(--wv-accent);
+}
+.wv-d-node-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.wv-d-node-head { display: flex; align-items: baseline; gap: 12px; }
+.wv-d-node-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.wv-d-node[data-active="true"] .wv-d-node-name { color: var(--wv-accent); }
+.wv-d-node-t { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.wv-d-node-narr { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+
+/* ---- owner edit panel (EditPanel ships its own class contract) ---- */
+.wv-edit { margin: 0; }
+.wv .editpanel { margin-top: 0; }
+.wv .section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  margin: 0 0 12px;
+}
+
+/* ---- for-agents disclosure ---- */
+.wv-agents {
+  border-radius: 12px;
+  box-shadow: var(--wv-edge);
+  background: rgba(255, 255, 255, 0.035);
+  padding: 0 16px;
+}
+.wv-agents summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 14px 0;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wv-agents summary::-webkit-details-marker { display: none; }
+.wv-agents-body {
+  padding: 2px 0 16px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.wv-agents-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+.wv-agents-links { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.wv-agents-links a { color: var(--wv-accent); border-bottom: 1px solid transparent; }
+.wv-agents-links a:hover { border-bottom-color: var(--wv-accent); }
+
+/* ---- responsive ---- */
+@media (max-width: 900px) {
+  .wv-d-cols { grid-template-columns: 1fr; gap: 26px; }
+  .wv-d-sticky { position: static; }
+}
+@media (max-width: 560px) {
+  /* stack the owner edit input so the button never overlaps the textarea */
+  .wv .edit-input { flex-wrap: wrap; }
+  .wv .edit-textarea { flex: 1 1 100%; }
+  .wv-top, .wv-d-shell { padding-left: 18px; padding-right: 18px; }
+  .wv-d-title { font-size: 23px; }
+}
