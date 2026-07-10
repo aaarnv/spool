@@ -1,0 +1,12 @@
+node_modules
+web
+spool-test
+output
+undefined
+.git
+.claude
+tasks
+**/*.webm
+**/*.mp4
+**/final.mp4
+.DS_Store

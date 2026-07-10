@@ -17,10 +17,24 @@ spools/{id}/src/vo/seg_NN.wav
 spools/{id}/src/vo/seg_NN.words.json
 ```
 
-Upload happens inside the existing `spool publish` bearer-token API flow (multipart
-fields added to the current publish request; web stores them and sets
-`spools.has_sources = true`). Spools published before this feature have
-`has_sources = false` and are not editable (UI says re-publish to enable editing).
+Upload happens inside the existing `spool publish` bearer-token API flow, following
+the app's existing split (Vercel functions cap request bodies ~4.5MB, and publish
+already mints client-upload grants for big binaries): the CLI sends a `sources`
+object with the SMALL JSON artifacts inline; web writes those to `spools/{id}/src/*`,
+sets `spools.has_sources = true`, and returns client-upload grants (in the existing
+`uploads` array) for the binaries.
+
+```jsonc
+sources: {
+  timeline: {...}, render: {...},
+  vo: { manifest: {...}, words: { "0": {...}, "1": {...} } },
+  segments: [0,1,2],   // → grants for spools/{id}/src/vo/seg_NN.wav
+  hasVideo: true       // → grant for spools/{id}/src/video.mp4
+}
+```
+
+Spools published before this feature have `has_sources = false` and are not editable
+(UI says re-publish to enable editing).
 
 ## DB (Drizzle, Neon)
 

@@ -68,7 +68,16 @@ export async function normalize(workdir) {
   const capMp4 = join(workdir, "capture.mp4");
   const src = existsSync(webm) ? webm : existsSync(capMp4) ? capMp4 : null;
   const out = join(workdir, "video.mp4");
-  if (!src) throw new Error(`normalize: missing capture (video.webm or capture.mp4) in ${workdir}`);
+  // Edit worker re-render: the published source ships the already-normalized
+  // video.mp4 (the render input) with no raw capture — use it as-is.
+  if (!src) {
+    if (existsSync(out)) {
+      const d = await duration(out);
+      console.log(`[normalize] using existing ${out} (${d.toFixed(2)}s, no raw capture)`);
+      return { out, duration: d };
+    }
+    throw new Error(`normalize: missing capture (video.webm or capture.mp4) in ${workdir}`);
+  }
 
   // Already CFR H264 (OS capture): remux to the staticFile target instead of
   // re-encoding. Playwright's VFR VP8 webm still needs the full re-encode below.

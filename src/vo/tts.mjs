@@ -40,41 +40,10 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
   // One job per narrated step. TTS → loudnorm → whisper stay sequential inside a
   // job; jobs run through a bounded pool so the wall-time is ~total/CONCURRENCY.
   const jobs = steps
-    .map((step, i) => ({ step, i, narration: (step.narration || '').trim() }))
+    .map((step, i) => ({ name: step.name, i, narration: (step.narration || '').trim() }))
     .filter((j) => j.narration); // un-narrated steps get no segment; index i still mirrors the steps array
 
-  async function buildSegment({ step, i, narration }) {
-    const nn = String(i).padStart(2, '0');
-    const wavRel = `vo/seg_${nn}.wav`;
-    const wordsRel = `vo/seg_${nn}.words.json`;
-    const wavAbs = join(workdir, wavRel);
-    const wordsAbs = join(workdir, wordsRel);
-
-    if (engine === 'openai') {
-      const rawPath = join(voDir, `seg_${nn}.raw.wav`);
-      await writeFile(rawPath, await openaiSpeech(key, narration, voice, instr));
-      await loudnorm(rawPath, wavAbs, speed);
-      await rm(rawPath, { force: true });
-      // Transcribe the finished (loudnormed) wav so word times are local to it.
-      const words = await openaiWordTimestamps({ key, wavBuf: await readFile(wavAbs), prompt: narration });
-      await writeFile(wordsAbs, JSON.stringify(words));
-    } else if (engine === 'hosted') {
-      const rawPath = join(voDir, `seg_${nn}.raw.wav`);
-      const { audio, words } = await hostedSpeech(hosted, narration, voice, instr);
-      await writeFile(rawPath, Buffer.from(audio, 'base64'));
-      await loudnorm(rawPath, wavAbs, speed);
-      await rm(rawPath, { force: true });
-      // Server timings are on the raw wav; atempo scales time linearly, so /speed keeps them true.
-      const scaled = speed !== 1 ? words.map((w) => ({ word: w.word, start: round2(w.start / speed), end: round2(w.end / speed) })) : words;
-      await writeFile(wordsAbs, JSON.stringify(scaled));
-    } else if (engine === 'local') {
-      await localSegment(narration, voDir, nn, wordsAbs);
-    } else {
-      throw new Error(`generateVO: unknown engine "${engine}"`);
-    }
-    return { i, name: step.name, narration, wav: wavRel, words: wordsRel, duration: round2(await probeDuration(wavAbs)) };
-  }
-
+  const ctx = { engine, key, hosted, voice, instr, speed, workdir, voDir };
   const CONCURRENCY = 4;
   const results = new Array(jobs.length);
   let next = 0;
@@ -83,7 +52,7 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
       while (true) {
         const k = next++;
         if (k >= jobs.length) break;
-        results[k] = await buildSegment(jobs[k]);
+        results[k] = await buildSegment(ctx, jobs[k]);
       }
     })
   );
@@ -92,6 +61,55 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
   const manifest = { engine, voice, segments };
   await writeFile(join(voDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   return manifest;
+}
+
+// Synthesize one segment's wav + word-times into <workdir>/vo/seg_NN.{wav,words.json}.
+// ctx carries the resolved engine + credentials; job is { i, name, narration }.
+async function buildSegment(ctx, { i, name, narration }) {
+  const { engine, key, hosted, voice, instr, speed, workdir, voDir } = ctx;
+  const nn = String(i).padStart(2, '0');
+  const wavRel = `vo/seg_${nn}.wav`;
+  const wordsRel = `vo/seg_${nn}.words.json`;
+  const wavAbs = join(workdir, wavRel);
+  const wordsAbs = join(workdir, wordsRel);
+
+  if (engine === 'openai') {
+    const rawPath = join(voDir, `seg_${nn}.raw.wav`);
+    await writeFile(rawPath, await openaiSpeech(key, narration, voice, instr));
+    await loudnorm(rawPath, wavAbs, speed);
+    await rm(rawPath, { force: true });
+    // Transcribe the finished (loudnormed) wav so word times are local to it.
+    const words = await openaiWordTimestamps({ key, wavBuf: await readFile(wavAbs), prompt: narration });
+    await writeFile(wordsAbs, JSON.stringify(words));
+  } else if (engine === 'hosted') {
+    const rawPath = join(voDir, `seg_${nn}.raw.wav`);
+    const { audio, words } = await hostedSpeech(hosted, narration, voice, instr);
+    await writeFile(rawPath, Buffer.from(audio, 'base64'));
+    await loudnorm(rawPath, wavAbs, speed);
+    await rm(rawPath, { force: true });
+    // Server timings are on the raw wav; atempo scales time linearly, so /speed keeps them true.
+    const scaled = speed !== 1 ? words.map((w) => ({ word: w.word, start: round2(w.start / speed), end: round2(w.end / speed) })) : words;
+    await writeFile(wordsAbs, JSON.stringify(scaled));
+  } else if (engine === 'local') {
+    await localSegment(narration, voDir, nn, wordsAbs);
+  } else {
+    throw new Error(`generateVO: unknown engine "${engine}"`);
+  }
+  return { i, name, narration, wav: wavRel, words: wordsRel, duration: round2(await probeDuration(wavAbs)) };
+}
+
+// Regenerate a SINGLE segment's wav + words in place (the edit worker's re-TTS path).
+// Resolves its own engine/key exactly like generateVO, so callers need only OPENAI_API_KEY.
+export async function synthesizeSegment({ workdir, i, name, narration, engine, voice = 'alloy', instructions, speed = 1 } = {}) {
+  if (!workdir) throw new Error('synthesizeSegment: workdir required');
+  const voDir = join(workdir, 'vo');
+  await mkdir(voDir, { recursive: true });
+  const instr = instructions ?? DEFAULT_INSTRUCTIONS;
+  engine = await resolveEngine(engine);
+  const key = engine === 'openai' ? await resolveKey() : null;
+  if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
+  const hosted = engine === 'hosted' ? await resolveHosted() : null;
+  return buildSegment({ engine, key, hosted, voice, instr, speed, workdir, voDir }, { i, name, narration: (narration || '').trim() });
 }
 
 // --- OpenAI TTS ------------------------------------------------------------
