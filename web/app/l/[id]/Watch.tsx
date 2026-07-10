@@ -24,8 +24,10 @@ type Props = {
 const pretty = (slug: string) =>
   slug.replace(/[-_]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 
-// The watch page: ultra-sparse single column. The player is the one object;
-// chapters are a quiet centered row, transcript folds away until wanted.
+// The watch page: timeline spine. Sticky player (plus owner edit and agent
+// receipts) on the left; on the right, chapters and narration merge into one
+// annotated spine — the walkthrough's structure IS the navigation. Every
+// spine row seeks the video.
 export default function Watch({
   title,
   durationLabel,
@@ -51,8 +53,10 @@ export default function Watch({
     void v.play().catch(() => {});
   };
 
+  const byStep = new Map(lines.map((l) => [l.i, l.narration]));
+
   return (
-    <div className="wv wv-a">
+    <div className="wv wv-d">
       <header className="wv-top">
         <a className="wv-top-brand" href="/">
           <img src="/logo.svg" width={20} height={20} alt="" />
@@ -76,91 +80,73 @@ export default function Watch({
         </nav>
       </header>
 
-      <main className="wv-a-shell">
-        <div className="wv-a-stage">
-          <video
-            ref={ref}
-            src={src}
-            poster={poster}
-            controls
-            autoPlay
-            muted
-            playsInline
-            preload="metadata"
-          />
-        </div>
-
-        <div className="wv-a-head">
-          <h1 className="wv-a-title">{title}</h1>
-          <p className="wv-a-byline">
-            {durationLabel}
-            <span className="wv-a-dot" />
-            recorded by an agent
+      <main className="wv-d-shell">
+        <div className="wv-d-head">
+          <div className="wv-d-eyebrow">Recorded by an agent</div>
+          <h1 className="wv-d-title">{title}</h1>
+          <p className="wv-d-byline">
+            {durationLabel} · {chapters.length} chapters · one continuous take
           </p>
         </div>
 
-        {chapters.length > 0 && (
-          <nav className="wv-a-chapters">
-            <div className="wv-chapters">
-              {chapters.map((c) => (
-                <button
-                  key={c.i}
-                  className="wv-chip"
-                  data-active={active === c.i}
-                  onClick={() => seek(c.at, c.i)}
-                >
-                  <span className="wv-chip-n">{pretty(c.name)}</span>
-                  <span className="wv-chip-t">{c.label}</span>
-                </button>
-              ))}
+        <div className="wv-d-cols">
+          <div className="wv-d-sticky">
+            <div className="wv-d-stage">
+              <video
+                ref={ref}
+                src={src}
+                poster={poster}
+                controls
+                autoPlay
+                muted
+                playsInline
+                preload="metadata"
+              />
             </div>
-          </nav>
-        )}
 
-        {lines.length > 0 && (
-          <details className="wv-a-fold">
-            <summary>
-              <span className="wv-caret">›</span> Transcript
-            </summary>
-            <div className="wv-a-fold-body">
-              <div className="wv-transcript">
-                {lines.map((l) => (
-                  <button
-                    key={l.i}
-                    className="wv-trow"
-                    onClick={() => seek(l.at, l.i)}
-                  >
-                    <span className="wv-trow-t">{l.label}</span>
-                    <span className="wv-trow-n">{l.narration}</span>
-                  </button>
-                ))}
+            {isOwner && (
+              <div className="wv-edit">
+                <EditPanel spoolId={spoolId} hasSources={hasSources} videoSrc={src} />
               </div>
-            </div>
-          </details>
-        )}
+            )}
 
-        {isOwner && (
-          <div className="wv-edit">
-            <EditPanel spoolId={spoolId} hasSources={hasSources} videoSrc={src} />
+            <details className="wv-agents">
+              <summary>
+                <span className="wv-caret">›</span>
+                For agents
+              </summary>
+              <div className="wv-agents-body">
+                Machine-readable walkthrough data. <code>spool.json</code>{" "}
+                indexes every step (narration, timings, keyframes);{" "}
+                <code>console.jsonl</code> is the browser telemetry captured
+                while recording.
+                <div className="wv-agents-links">
+                  <a href={rawUrl}>spool.json →</a>
+                  <a href={consoleUrl}>console.jsonl →</a>
+                </div>
+              </div>
+            </details>
           </div>
-        )}
 
-        <details className="wv-agents">
-          <summary>
-            <span className="wv-caret">›</span>
-            For agents
-          </summary>
-          <div className="wv-agents-body">
-            Machine-readable walkthrough data. <code>spool.json</code> indexes
-            every step (narration, timings, keyframes);{" "}
-            <code>console.jsonl</code> is the browser telemetry captured while
-            recording.
-            <div className="wv-agents-links">
-              <a href={rawUrl}>spool.json →</a>
-              <a href={consoleUrl}>console.jsonl →</a>
-            </div>
-          </div>
-        </details>
+          <ol className="wv-d-spine">
+            {chapters.map((c) => (
+              <li key={c.i} className="wv-d-node" data-active={active === c.i}>
+                <button className="wv-d-node-btn" onClick={() => seek(c.at, c.i)}>
+                  <span className="wv-d-dot" />
+                  <span className="wv-d-node-body">
+                    <span className="wv-d-node-head">
+                      <span className="wv-d-node-name">{pretty(c.name)}</span>
+                      <span className="wv-d-node-t">{c.label}</span>
+                    </span>
+                    {byStep.get(c.i) && (
+                      <span className="wv-d-node-narr">{byStep.get(c.i)}</span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </div>
       </main>
     </div>
   );

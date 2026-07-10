@@ -1,7 +1,8 @@
 /* ==========================================================================
-   Watch page — ultra-sparse single column, in Spool's identity: dark canvas,
-   indigo #6d5efc accent, shadows-only edges, Instrument fonts. The player is
-   the one object; everything else stays quiet. Scoped under .wv.
+   Watch page — timeline spine, in Spool's identity: dark canvas, indigo
+   #6d5efc accent, shadows-only edges, Instrument fonts. Sticky player on the
+   left; chapters + narration merge into one annotated, seekable spine on the
+   right. Scoped under .wv.
    ========================================================================== */
 
 .wv {
@@ -12,7 +13,7 @@
   --wv-edge: 0 1px 2px rgba(0, 0, 0, 0.35);
   min-height: 100vh;
   font-family: var(--wv-sans);
-  background: var(--bg);
+  background: radial-gradient(120% 80% at 50% -10%, #12111c 0%, var(--bg) 60%);
 }
 
 /* ---- top bar ---- */
@@ -21,9 +22,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  max-width: 760px;
+  max-width: 1160px;
   margin: 0 auto;
-  padding: 22px 24px;
+  padding: 20px 28px;
 }
 .wv-top-brand {
   display: inline-flex;
@@ -56,118 +57,107 @@
 .wv-caret { color: var(--faint); transition: transform 0.15s ease; display: inline-block; }
 .wv details[open] > summary .wv-caret { transform: rotate(90deg); }
 
-/* ---- shell ---- */
-.wv-a-shell {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 26px 24px 120px;
+/* ---- shell / head ---- */
+.wv-d-shell { max-width: 1160px; margin: 0 auto; padding: 8px 28px 120px; }
+.wv-d-head { margin: 18px 0 32px; }
+.wv-d-eyebrow {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--wv-accent);
+  margin-bottom: 12px;
 }
+.wv-d-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin: 0 0 10px;
+  line-height: 1.2;
+}
+.wv-d-byline { font-size: 13.5px; color: var(--muted); margin: 0; }
 
-/* ---- stage ---- */
-.wv-a-stage {
-  border-radius: 16px;
+/* ---- columns: sticky player left, spine right ---- */
+.wv-d-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 44px;
+  align-items: start;
+}
+.wv-d-sticky {
+  position: sticky;
+  top: 26px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.wv-d-stage {
+  border-radius: 14px;
   overflow: hidden;
   background: #000;
-  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9), var(--wv-edge);
+  box-shadow: 0 30px 70px -28px rgba(0, 0, 0, 0.9),
+    0 0 60px -30px rgba(109, 94, 252, 0.5), var(--wv-edge);
 }
 .wv video { display: block; width: 100%; height: auto; background: #000; }
 
-/* ---- head ---- */
-.wv-a-head { text-align: center; margin: 44px 0 40px; }
-.wv-a-title {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-  line-height: 1.18;
-  margin: 0 0 12px;
+/* ---- spine: one annotated object; every row seeks ---- */
+.wv-d-spine { list-style: none; margin: 0; padding: 4px 0 0 0; position: relative; }
+.wv-d-spine::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  background: var(--border);
 }
-.wv-a-byline {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13.5px;
-  color: var(--muted);
-  margin: 0;
-}
-.wv-a-dot { width: 3px; height: 3px; border-radius: 999px; background: var(--faint); }
-
-/* ---- chapters: quiet centered pill row ---- */
-.wv-a-chapters { display: flex; justify-content: center; }
-.wv-chapters {
+.wv-d-node { position: relative; }
+.wv-d-node-btn {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  max-width: 620px;
-}
-.wv-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 9px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  color: var(--text);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.14s ease;
-}
-.wv-chip:hover { background: var(--panel); }
-.wv-chip[data-active="true"] { background: var(--wv-accent-soft); }
-.wv-chip-t { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 12px; }
-.wv-chip[data-active="true"] .wv-chip-t { color: var(--wv-accent); }
-
-/* ---- transcript fold ---- */
-.wv-a-fold {
-  margin: 40px auto 0;
-  max-width: 640px;
-  box-shadow: inset 0 1px 0 var(--border);
-  padding-top: 8px;
-}
-.wv-a-fold summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 16px 0;
-  font-size: 13px;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-}
-.wv-a-fold summary::-webkit-details-marker { display: none; }
-.wv-a-fold-body { padding-bottom: 8px; }
-
-.wv-transcript { display: flex; flex-direction: column; gap: 2px; }
-.wv-trow {
-  display: flex;
-  gap: 14px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  cursor: pointer;
+  gap: 18px;
+  width: 100%;
   text-align: left;
   background: transparent;
   border: none;
   color: inherit;
   font-family: inherit;
-  width: 100%;
-  transition: background 0.14s ease;
+  cursor: pointer;
+  padding: 14px 12px 14px 0;
+  border-radius: 12px;
+  transition: background 0.15s ease;
 }
-.wv-trow:hover { background: var(--panel); }
-.wv-trow-t {
-  color: var(--faint);
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  min-width: 34px;
-  padding-top: 2px;
+.wv-d-node-btn:hover { background: rgba(255, 255, 255, 0.03); }
+.wv-d-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  box-shadow: 0 0 0 4px var(--bg), inset 0 0 0 1.5px var(--faint);
+  transition: box-shadow 0.15s ease, background 0.15s ease;
 }
-.wv-trow-n { font-size: 14px; line-height: 1.55; color: #d6d6db; }
+.wv-d-node[data-active="true"] .wv-d-dot {
+  background: var(--wv-accent);
+  box-shadow: 0 0 0 4px var(--bg), 0 0 16px var(--wv-accent);
+}
+.wv-d-node-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.wv-d-node-head { display: flex; align-items: baseline; gap: 12px; }
+.wv-d-node-name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.wv-d-node[data-active="true"] .wv-d-node-name { color: var(--wv-accent); }
+.wv-d-node-t { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.wv-d-node-narr { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
 
 /* ---- owner edit panel (EditPanel ships its own class contract) ---- */
-.wv-edit { max-width: 640px; margin: 40px auto 0; }
+.wv-edit { margin: 0; }
 .wv .editpanel { margin-top: 0; }
 .wv .section-label {
   font-size: 11px;
@@ -179,11 +169,9 @@
 
 /* ---- for-agents disclosure ---- */
 .wv-agents {
-  max-width: 640px;
-  margin: 20px auto 0;
   border-radius: 12px;
   box-shadow: var(--wv-edge);
-  background: var(--panel);
+  background: rgba(255, 255, 255, 0.035);
   padding: 0 16px;
 }
 .wv-agents summary {
@@ -213,10 +201,14 @@
 .wv-agents-links a:hover { border-bottom-color: var(--wv-accent); }
 
 /* ---- responsive ---- */
+@media (max-width: 900px) {
+  .wv-d-cols { grid-template-columns: 1fr; gap: 26px; }
+  .wv-d-sticky { position: static; }
+}
 @media (max-width: 560px) {
   /* stack the owner edit input so the button never overlaps the textarea */
   .wv .edit-input { flex-wrap: wrap; }
   .wv .edit-textarea { flex: 1 1 100%; }
-  .wv-top, .wv-a-shell { padding-left: 18px; padding-right: 18px; }
-  .wv-a-title { font-size: 24px; }
+  .wv-top, .wv-d-shell { padding-left: 18px; padding-right: 18px; }
+  .wv-d-title { font-size: 23px; }
 }
