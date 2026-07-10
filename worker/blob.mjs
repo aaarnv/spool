@@ -6,7 +6,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const API = process.env.VERCEL_BLOB_API_URL || "https://blob.vercel-storage.com";
-const API_VERSION = "9"; // matches publish.mjs's PUT calls
+const API_VERSION = "10"; // current Blob API; required for x-allow-overwrite to be honored
 
 // Fetch a public blob URL to a local path (creates parent dirs).
 export async function downloadTo(url, destPath) {
@@ -26,6 +26,7 @@ export async function uploadViaGrant(buf, { pathname, token, contentType }) {
       "x-api-version": API_VERSION,
       "x-content-type": contentType,
       "x-add-random-suffix": "0",
+      "x-allow-overwrite": "1", // re-render replaces the published blob in place
       "x-content-length": String(buf.length),
     },
     body: buf,

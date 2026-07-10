@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -8,6 +9,7 @@ import {
   uuid,
   timestamp,
   primaryKey,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // One row per published spool. owner_id is a Clerk user id, or "aarnav-cli" for
@@ -25,18 +27,36 @@ export const spools = pgTable("spools", {
 
 // One row per re-render request. Ops is the validated edit vocabulary (see
 // EDIT-CONTRACT.md); the Fly worker claims queued rows and flips them running→done.
-export const editJobs = pgTable("edit_jobs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  spoolId: text("spool_id")
-    .notNull()
-    .references(() => spools.id),
-  status: text("status").notNull().default("queued"), // queued | running | done | error
-  instruction: text("instruction").notNull().default(""),
-  ops: jsonb("ops").notNull(),
-  error: text("error"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const editJobs = pgTable(
+  "edit_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spoolId: text("spool_id")
+      .notNull()
+      .references(() => spools.id),
+    status: text("status").notNull().default("queued"), // queued | running | done | error
+    instruction: text("instruction").notNull().default(""),
+    ops: jsonb("ops").notNull(),
+    error: text("error"),
+    // Lease-based reliability: a claim stamps a fresh lease_token + expiry; a worker
+    // heartbeats to extend it. An expired running lease is reclaimable (up to 3
+    // attempts). lease_token is NULL only for jobs claimed before this feature.
+    attempts: integer("attempts").notNull().default(0),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    // At most one live (queued|running) job per spool, enforced in the DB so a
+    // confirm race can't double-enqueue (the loser hits this and 409s).
+    oneActivePerSpool: uniqueIndex("edit_jobs_one_active_per_spool")
+      .on(t.spoolId)
+      .where(sql`status in ('queued', 'running')`),
+  })
+);
 
 // Per-user publish tokens. Only the SHA-256 hash is stored; the raw token is
 // shown once at creation and never recoverable.

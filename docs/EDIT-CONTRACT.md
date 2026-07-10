@@ -41,13 +41,19 @@ Spools published before this feature have `has_sources = false` and are not edit
 ```
 spools: + has_sources boolean default false
 edit_jobs:
-  id          uuid pk default random
-  spool_id    text fk -> spools.id
-  status      text: queued | running | done | error
-  instruction text        # the user's natural-language ask (audit)
-  ops         jsonb       # validated ops array (schema below)
-  error       text null
+  id            uuid pk default random
+  spool_id      text fk -> spools.id
+  status        text: queued | running | done | error
+  instruction   text        # the user's natural-language ask (audit)
+  ops           jsonb       # validated ops array (schema below)
+  error         text null
+  attempts      int default 0        # claims so far; 3 → retired to error
+  lease_token   uuid null            # current claim's token (NULL = pre-lease legacy job)
+  lease_expires_at timestamptz null  # a running job past this is reclaimable
+  started_at / finished_at timestamptz null
   created_at / updated_at timestamptz
+-- partial unique index edit_jobs_one_active_per_spool ON (spool_id)
+--   WHERE status IN ('queued','running')  -- ≤1 live job per spool (confirm race → 23505 → 409)
 ```
 
 ## Ops JSON (v1) — the entire edit vocabulary
@@ -82,17 +88,21 @@ rate in [0.75, 2], narration ≤ 600 chars, at least one op.
 
 Auth: `Authorization: Bearer ${EDIT_WORKER_SECRET}` (env on both sides).
 
-- `GET /api/edit-jobs/next` → 200 `{job: {id, spoolId, ops}}` (atomically flips
-  queued→running) or 204. Worker polls every 5s.
-- `POST /api/edit-jobs/{id}/uploads` body `{paths: ["l/{spoolId}/final.mp4", …]}` →
-  `{uploads: [{pathname, token, contentType}]}`. Mints short-lived client-upload grants
-  (the publish route's `mintToken` helper) so the worker PUTs outputs straight to Blob
-  without a standing token. Rejects any path outside the job's published prefix
-  `l/{spoolId}/` (403) or a non-running job (409). The web holds the read-write token; the
-  worker never does.
-- `PATCH /api/edit-jobs/{id}` body `{status: done|error, error?}`. On `done` the worker
-  has already overwritten the published final.mp4/spool.json/frames via the grants above,
-  so web just revalidates the watch page cache tag.
+- `GET /api/edit-jobs/next` → 200 `{job: {id, spoolId, ops, leaseToken, attempts}}` or 204.
+  Atomically claims the oldest **eligible** job — queued OR a running job whose lease
+  expired (crashed worker) — bumping `attempts`, stamping a fresh `lease_token` + 20-min
+  `lease_expires_at`. Before claiming it retires jobs that expired on their 3rd attempt
+  (→ error `render failed after 3 attempts`). Worker polls every 5s.
+- `POST /api/edit-jobs/{id}/uploads` body `{paths: ["l/{spoolId}/final.mp4", …], leaseToken}`
+  → `{uploads: [{pathname, token, contentType}]}`. Mints short-lived client-upload grants
+  **with `allowOverwrite`** (a re-render replaces the published blob in place; the worker PUT
+  also sends `x-allow-overwrite: 1`, api-version 10) so the worker writes outputs straight to
+  Blob without a standing token. Rejects paths outside `l/{spoolId}/` (403), a non-running
+  job, or a lost lease (409). The web holds the read-write token; the worker never does.
+- `PATCH /api/edit-jobs/{id}` body `{status, error?, leaseToken}`. `status:running` = heartbeat
+  (extends the lease during a long render; the worker beats every 5min). `done|error` =
+  finalize (sets `finished_at`; `done` revalidates the watch page cache tag). All require the
+  current `leaseToken` — a reclaimed job's old worker gets 409 (NULL lease = legacy job, accepted).
 
 ## Worker (worker/ dir in this repo, deployed as Fly app `spool-render`, region syd)
 
@@ -111,6 +121,13 @@ token — outputs use per-job grants). `SPOOL_RENDER_CONCURRENCY` caps render co
 Failure ⇒ PATCH error with a one-line reason; sources are immutable (re-edit = new job
 from the SAME originals + full ops list — jobs are not cumulative in v1; the web UI
 always sends the complete op list relative to the original publish).
+
+**Scale-to-zero.** The single `performance-4x`/8GB machine (restart policy `on-failure`)
+exits(0) after ~2min of empty polls, which stops it. The web wakes it on demand: the
+confirm route fire-and-forgets a Fly Machines API `start` (env `FLY_WAKE_TOKEN` — an
+app-scoped deploy token, `FLY_APP`, `FLY_MACHINE_ID`), and a 10-min vercel.json cron hits
+`GET /api/edit-jobs/wake` (authed by `CRON_SECRET`) to start it if any job has sat queued
+> 60s. Scale-to-zero therefore REQUIRES those web env vars + the deployed wake route.
 
 ## Watch page UI (owner-only panel)
 

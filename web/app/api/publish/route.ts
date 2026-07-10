@@ -36,7 +36,7 @@ type Sources = {
   hasVideo?: boolean; // default true — grant a src/video.mp4 upload
 };
 
-type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources };
+type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources; hasPreview?: boolean };
 
 const segName = (n: number) => `seg_${String(n).padStart(2, "0")}`;
 
@@ -78,6 +78,15 @@ export async function POST(req: Request) {
       contentType: "image/png",
       token: await mintToken(`l/${id}/${rel}`, "image/png"),
     });
+  }
+
+  // preview.gif (optional; older CLIs don't send it): embeddable animated preview
+  // for PR comments etc. Granted like frames; URL returned so the CLI can embed it.
+  let previewUrl: string | null = null;
+  if (body.hasPreview) {
+    const p = `l/${id}/preview.gif`;
+    grants.push({ pathname: p, contentType: "image/gif", token: await mintToken(p, "image/gif") });
+    previewUrl = blobUrl(id, "preview.gif");
   }
 
   // Small, authoritative files written server-side (all well under the body cap).
@@ -125,7 +134,7 @@ export async function POST(req: Request) {
   });
 
   const origin = new URL(req.url).origin;
-  return Response.json({ id, url: `${origin}/l/${id}`, uploads: grants });
+  return Response.json({ id, url: `${origin}/l/${id}`, uploads: grants, ...(previewUrl ? { previewUrl } : {}) });
 }
 
 function mintToken(pathname: string, contentType: string) {

@@ -15,6 +15,8 @@ const SPOOL_HOST = (process.env.SPOOL_HOST || "").replace(/\/$/, "");
 const SECRET = process.env.EDIT_WORKER_SECRET || "";
 const BLOB_BASE = (process.env.SPOOL_BLOB_BASE || "").replace(/\/$/, "");
 const POLL_MS = 5000;
+const HEARTBEAT_MS = Number(process.env.WORKER_HEARTBEAT_MS || 5 * 60 * 1000); // extend the 20min lease well before it lapses
+const MAX_IDLE = Number(process.env.WORKER_IDLE_EXITS || 24); // ~2min of empty polls → exit(0) → machine stops
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const oneLine = (e) => String((e && e.message) || e).split("\n")[0].slice(0, 240);
@@ -46,11 +48,11 @@ async function patchJob(id, body) {
 
 // Ask the web for short-lived client-upload grants for the given output pathnames
 // (POST /api/edit-jobs/{id}/uploads). The worker holds no standing Blob token.
-async function requestGrants(id, paths) {
+async function requestGrants(id, paths, leaseToken) {
   const res = await fetch(`${SPOOL_HOST}/api/edit-jobs/${id}/uploads`, {
     method: "POST",
     headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
-    body: JSON.stringify({ paths }),
+    body: JSON.stringify({ paths, leaseToken }),
   });
   if (!res.ok) throw new Error(`uploads grant ${res.status}: ${(await res.text().catch(() => "")).slice(0, 160)}`);
   return (await res.json()).uploads || [];
@@ -72,9 +74,13 @@ async function downloadSources(spoolId, workdir) {
 }
 
 async function processJob(job) {
-  const { id, spoolId, ops } = job;
-  console.log(`[worker] job ${id} spool ${spoolId} (${ops.length} op[s])`);
+  const { id, spoolId, ops, leaseToken } = job;
+  console.log(`[worker] job ${id} spool ${spoolId} attempt ${job.attempts ?? "?"} (${ops.length} op[s])`);
   const workdir = await mkdtemp(join(tmpdir(), `spool-edit-${spoolId}-`));
+  // Heartbeat the lease during the (potentially long) render so it isn't reclaimed.
+  const hb = setInterval(() => {
+    patchJob(id, { status: "running", leaseToken }).catch(() => {});
+  }, HEARTBEAT_MS);
   try {
     // 1. Pull the immutable sources into a fresh workdir (public URL download).
     await downloadSources(spoolId, workdir);
@@ -118,7 +124,7 @@ async function processJob(job) {
       if (existsSync(p)) outputs.set(`l/${spoolId}/${name}`, await readFile(p));
     }
 
-    const grants = await requestGrants(id, [...outputs.keys()]);
+    const grants = await requestGrants(id, [...outputs.keys()], leaseToken);
     if (grants.length !== outputs.size) throw new Error(`grant count ${grants.length} ≠ outputs ${outputs.size}`);
     for (const g of grants) {
       const buf = outputs.get(g.pathname);
@@ -127,6 +133,7 @@ async function processJob(job) {
     }
     console.log(`[worker] job ${id} done → ${lUrl("final.mp4")}`);
   } finally {
+    clearInterval(hb);
     await rm(workdir, { recursive: true, force: true }).catch(() => {});
   }
 }
@@ -139,6 +146,7 @@ async function main() {
     if (!v) throw new Error(`missing env ${k}`);
   }
   console.log(`[worker] polling ${SPOOL_HOST}/api/edit-jobs/next every ${POLL_MS / 1000}s`);
+  let idle = 0;
   while (!stop) {
     let job = null;
     try {
@@ -147,15 +155,23 @@ async function main() {
       console.warn(`[worker] poll error: ${oneLine(e)}`);
     }
     if (!job) {
+      // Scale-to-zero: after a stretch of empty polls, exit(0) so the machine stops
+      // (Fly restart policy = on-failure, so a clean exit is not restarted). The web
+      // wakes it on the next enqueue.
+      if (++idle >= MAX_IDLE) {
+        console.log(`[worker] ${idle} empty polls — exiting for scale-to-zero`);
+        return;
+      }
       await sleep(POLL_MS);
       continue;
     }
+    idle = 0;
     try {
       await processJob(job);
-      await patchJob(job.id, { status: "done" });
+      await patchJob(job.id, { status: "done", leaseToken: job.leaseToken });
     } catch (e) {
       console.error(`[worker] job ${job.id} error: ${oneLine(e)}`);
-      await patchJob(job.id, { status: "error", error: oneLine(e) });
+      await patchJob(job.id, { status: "error", error: oneLine(e), leaseToken: job.leaseToken });
     }
   }
   console.log("[worker] stopped");

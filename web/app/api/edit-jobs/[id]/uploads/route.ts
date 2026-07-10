@@ -29,7 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (bearer !== secret) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  let body: { paths?: unknown };
+  let body: { paths?: unknown; leaseToken?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -38,13 +38,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const paths = Array.isArray(body.paths) ? body.paths.filter((p): p is string => typeof p === "string") : null;
   if (!paths || paths.length === 0) return Response.json({ error: "paths required" }, { status: 400 });
   if (paths.length > MAX_PATHS) return Response.json({ error: "too many paths" }, { status: 413 });
+  const lease = (typeof body.leaseToken === "string" && body.leaseToken) || req.headers.get("x-lease-token") || null;
 
   const [job] = await db
-    .select({ spoolId: editJobs.spoolId, status: editJobs.status })
+    .select({ spoolId: editJobs.spoolId, status: editJobs.status, leaseToken: editJobs.leaseToken })
     .from(editJobs)
     .where(eq(editJobs.id, id));
   if (!job) return Response.json({ error: "not found" }, { status: 404 });
   if (job.status !== "running") return Response.json({ error: "job not running" }, { status: 409 });
+  // Only the current leaseholder may write outputs (NULL = legacy pre-lease job).
+  if (job.leaseToken !== null && job.leaseToken !== lease)
+    return Response.json({ error: "lease lost" }, { status: 409 });
 
   // Published artifacts live under l/{spoolId}/ (see app/spool.ts blobUrl). Pin every
   // grant there so a job can only overwrite its own spool's files.
@@ -63,6 +67,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         addRandomSuffix: false,
         allowedContentTypes: [contentType],
         validUntil: Date.now() + UPLOAD_TTL_MS,
+        // Overwrite the existing published blob in place. Honored by the current Blob
+        // API via the signed token payload; absent from this SDK version's types, so
+        // spread it in to skip the excess-property check.
+        ...({ allowOverwrite: true } as { allowOverwrite: true }),
       });
       return { pathname, contentType, token };
     })

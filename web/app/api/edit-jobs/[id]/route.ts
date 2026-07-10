@@ -1,12 +1,23 @@
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { revalidateTag } from "next/cache";
 import { db } from "../../../../db";
-import { editJobs } from "../../../../db/schema";
 
 export const runtime = "nodejs";
 
-// Worker completion callback. done → revalidate the watch page's cache tag so the
-// re-rendered final.mp4/spool.json are served fresh; error → store the reason.
+const LEASE_MINUTES = 20;
+
+// Extract the claim's lease token from body or header. NULL (legacy jobs claimed
+// before leases existed) is accepted for finalize so an in-flight pre-lease job
+// can still complete.
+function leaseOf(body: { leaseToken?: unknown }, req: Request): string | null {
+  const b = typeof body.leaseToken === "string" ? body.leaseToken : null;
+  return b || req.headers.get("x-lease-token") || null;
+}
+
+// Worker callback. status:running = heartbeat (extend the lease during a long
+// render); done|error = finalize. All require the current lease token — a stale
+// worker (whose job was reclaimed under a new token) gets 409. On done, revalidate
+// the watch page cache tag.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = req.headers.get("authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -15,27 +26,42 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (bearer !== secret) return Response.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  let body: { status?: string; error?: string };
+  let body: { status?: string; error?: string; leaseToken?: unknown };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "expected json body" }, { status: 400 });
   }
+  const lease = leaseOf(body, req);
+
+  // Heartbeat: extend the lease, strict token match (only live workers heartbeat).
+  if (body.status === "running") {
+    const r = await db.execute(sql`
+      UPDATE edit_jobs
+      SET lease_expires_at = now() + ${sql.raw(`interval '${LEASE_MINUTES} minutes'`)}, updated_at = now()
+      WHERE id = ${id} AND status = 'running' AND lease_token = ${lease}
+      RETURNING id
+    `);
+    const n = ((r as unknown as { rows?: unknown[] }).rows ?? (r as unknown as unknown[])) as unknown[];
+    if (!n.length) return Response.json({ error: "lease lost" }, { status: 409 });
+    return Response.json({ ok: true });
+  }
+
   if (body.status !== "done" && body.status !== "error")
-    return Response.json({ error: "status must be done|error" }, { status: 400 });
+    return Response.json({ error: "status must be running|done|error" }, { status: 400 });
 
-  const [job] = await db
-    .update(editJobs)
-    .set({
-      status: body.status,
-      error: body.status === "error" ? (body.error || "unknown error").slice(0, 2000) : null,
-      updatedAt: new Date(),
-    })
-    .where(eq(editJobs.id, id))
-    .returning({ id: editJobs.id, spoolId: editJobs.spoolId, status: editJobs.status });
+  // Finalize: token match OR a legacy NULL lease (pre-lease in-flight job).
+  const r = await db.execute(sql`
+    UPDATE edit_jobs
+    SET status = ${body.status},
+        error = ${body.status === "error" ? (body.error || "unknown error").slice(0, 2000) : null},
+        finished_at = now(), updated_at = now()
+    WHERE id = ${id} AND status = 'running' AND (lease_token = ${lease} OR lease_token IS NULL)
+    RETURNING spool_id
+  `);
+  const rows = ((r as unknown as { rows?: unknown[] }).rows ?? (r as unknown as unknown[])) as { spool_id: string }[];
+  if (!rows.length) return Response.json({ error: "job not running or lease lost" }, { status: 409 });
 
-  if (!job) return Response.json({ error: "not found" }, { status: 404 });
-
-  if (job.status === "done") revalidateTag(`spool:${job.spoolId}`);
-  return Response.json({ id: job.id, status: job.status });
+  if (body.status === "done") revalidateTag(`spool:${rows[0].spool_id}`);
+  return Response.json({ id, status: body.status });
 }

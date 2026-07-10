@@ -161,9 +161,10 @@ program
   .description('upload the spool + share bundle and get a single shareable watch link')
   .option('--host <host>', 'watch app origin (default: env SPOOL_HOST or ~/.spool.json)')
   .option('--token <token>', 'publish token (default: env SPOOL_PUBLISH_TOKEN or ~/.spool.json)')
+  .option('--pr [numberOrUrl]', "comment the watch link on a GitHub PR via gh (no value: current branch's PR)")
   .action(async (workdir, opts) => {
     const { publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
-    await publishSpool(resolve(workdir), { host: opts.host, token: opts.token });
+    await publishSpool(resolve(workdir), { host: opts.host, token: opts.token, pr: opts.pr });
   });
 
 program
