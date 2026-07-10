@@ -95,20 +95,28 @@ export default function Home() {
                 </span>
                 <span className="spool-window__url">
                   <LockIcon size={12} />
-                  spoolkit.dev/l/<b>finishing-lab</b>
+                  spoolkit.dev/l/<b>spool-tour</b>
                 </span>
                 <span className="spool-window__live">
                   <i />
                   <span>LIVE</span>
                 </span>
               </div>
-              <img
-                className="spool-window__img"
-                src="/product-spool.png"
-                alt="A published Spool walkthrough of the Finishing Lab app, narrated by the agent that built it"
-                width={1600}
-                height={1100}
-              />
+              {/* The real thing: Spool's own walkthrough, recorded and narrated by the agent. */}
+              <a href="/l/dMgYI3fhtBeW-ZljmDqqMg" aria-label="Watch Spool's own narrated walkthrough">
+                <video
+                  className="spool-window__img"
+                  src="https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com/l/dMgYI3fhtBeW-ZljmDqqMg/final.mp4"
+                  poster="https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com/l/dMgYI3fhtBeW-ZljmDqqMg/frames/step_00.png"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  width={1600}
+                  height={1100}
+                />
+              </a>
             </div>
           </section>
         </main>
