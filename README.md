@@ -119,6 +119,13 @@ Force one with `--engine openai|hosted|local`; omit it to auto-detect in that or
 Setup: `npm install && npm link` in this repo (chromium comes from Playwright's cache,
 `npx playwright install chromium` if missing).
 
+## Use it from any agent
+
+`skills/spool/SKILL.md` is an [agent skill](https://agentskills.io) teaching any
+skill-aware agent (Claude Code, Codex, etc.) the full workflow — live driving, OS capture,
+narration voice rules, verification, PR comments. Copy it into your agent's skills
+directory (`~/.claude/skills/spool/` or `~/.codex/skills/spool/`).
+
 ## The steps contract
 
 See [CONTRACTS.md](./CONTRACTS.md) for the full data contracts (steps.mjs shape,
