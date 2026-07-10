@@ -1,0 +1,14 @@
+# Deploy from the repo ROOT so the Docker context includes src/:
+#   fly deploy . -c worker/fly.toml
+app = "spool-render"
+primary_region = "syd"
+
+[env]
+  SPOOL_HOST = "https://spoolkit.dev"
+  SPOOL_RENDER_CONCURRENCY = "2"
+
+# No [http_service]: this is a poller with no inbound traffic, so the single
+# machine simply stays running (no autostop) and restarts on crash.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"

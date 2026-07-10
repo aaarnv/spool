@@ -124,6 +124,19 @@ See [CONTRACTS.md](./CONTRACTS.md) for the full data contracts (steps.mjs shape,
 timeline.json, vo/manifest.json). The only file an agent authors per spool is `steps.mjs`;
 everything else is generated.
 
+## Editing a published spool
+
+Publishing now also uploads the render sources (normalized `video.mp4`, `timeline.json`,
+`render.json`, and the `vo/` segments) alongside the final video, so a spool can be edited
+after the fact without re-recording. On the watch page the owner describes a change in
+plain language ("drop the third step", "re-record the intro narration", "speed it up 1.25x");
+that becomes a validated ops list and an `edit_jobs` row. A small always-on Fly worker
+(`spool-render`, in [`worker/`](./worker)) polls for jobs, pulls the sources, applies the
+ops — re-generating only changed narration segments via the same OpenAI TTS path — re-renders
+with the repo's own `renderSpool`, and overwrites the published video/bundle in Blob. Spools
+published before this feature (no sources) show as re-publish-to-edit. Full shapes:
+[docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
+
 ## Design notes
 
 - **Capture is an adapter.** `--target browser` (default) = Playwright `recordVideo` (CDP

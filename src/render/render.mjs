@@ -168,6 +168,12 @@ export async function renderSpool(opts) {
   // that the speed pass consumes.
   const renderOut = speedUpNeeded ? join(dir, "render.mp4") : finalOut;
   let lastPct = -1;
+  // os.cpus() reports host cores inside a container, so on a memory-capped box the
+  // default over-subscribes and OOM-kills chromium/compositor. SPOOL_RENDER_CONCURRENCY
+  // pins it (the Fly worker sets 2 for shared-cpu-2x/4GB).
+  const concurrency = process.env.SPOOL_RENDER_CONCURRENCY
+    ? Math.max(1, parseInt(process.env.SPOOL_RENDER_CONCURRENCY, 10))
+    : Math.max(2, cpus().length - 1);
   await renderMedia({
     composition,
     serveUrl,
@@ -175,7 +181,7 @@ export async function renderSpool(opts) {
     audioCodec: "aac",
     outputLocation: renderOut,
     inputProps,
-    concurrency: Math.max(2, cpus().length - 1),
+    concurrency,
     x264Preset: "veryfast",
     onProgress: ({ progress }) => {
       const pct = Math.floor(progress * 100);

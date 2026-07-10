@@ -3,6 +3,9 @@
 Every layer communicates only through these files inside a per-spool **workdir**
 (conventionally `<project>/spool/<slug>/`). If you change a format, bump it here first.
 
+> **Editing published spools** is a separate cross-component contract (CLI source
+> upload, web jobs API, Fly render worker): see [docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
+
 ## Workdir layout
 
 ```
