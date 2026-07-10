@@ -178,6 +178,102 @@ details.agents .body code {
 }
 .links { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 
+/* --- owner edit panel --- */
+.editpanel { margin-top: 34px; }
+.edit-note { font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+
+.edit-input { display: flex; gap: 8px; align-items: flex-end; }
+.edit-textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 44px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  border: none;
+  box-shadow: var(--edge-out);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.edit-textarea::placeholder { color: var(--faint); }
+.edit-textarea:focus { outline: none; box-shadow: var(--edge-out), 0 0 0 2px var(--accent-soft); }
+
+.edit-btn {
+  padding: 10px 15px;
+  border-radius: 10px;
+  border: none;
+  box-shadow: var(--edge-out);
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: filter 0.14s ease, background 0.14s ease;
+}
+.edit-btn:hover:not(:disabled) { filter: brightness(1.08); }
+.edit-btn:disabled { opacity: 0.5; cursor: default; }
+.edit-btn.ghost { background: var(--panel); color: var(--muted); }
+.edit-btn.ghost:hover { background: var(--panel-2); }
+
+.edit-card {
+  margin-top: 4px;
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: var(--edge-out);
+  background: var(--panel);
+}
+.edit-card-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.edit-summary { margin: 0 0 14px; padding-left: 18px; }
+.edit-summary li { font-size: 13.5px; color: #d6d6db; line-height: 1.6; }
+.edit-actions { display: flex; gap: 8px; }
+
+.edit-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.edit-spinner {
+  width: 14px; height: 14px; border-radius: 999px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: edit-spin 0.7s linear infinite;
+}
+@keyframes edit-spin { to { transform: rotate(360deg); } }
+
+.edit-error {
+  margin-top: 10px;
+  padding: 10px 13px;
+  border-radius: 10px;
+  box-shadow: var(--edge-out);
+  background: rgba(240, 90, 90, 0.1);
+  color: #f0a5a5;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.edit-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  padding: 11px 18px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.7), var(--edge-out);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 13.5px;
+  animation: edit-toast-in 0.2s ease;
+  z-index: 50;
+}
+@keyframes edit-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+
 /* --- landing --- */
 .landing { max-width: 620px; }
 .landing h1 {
