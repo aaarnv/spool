@@ -103,11 +103,11 @@ export default function Home() {
                 </span>
               </div>
               {/* The real thing: Spool's own walkthrough, recorded and narrated by the agent. */}
-              <a href="/l/dMgYI3fhtBeW-ZljmDqqMg" aria-label="Watch Spool's own narrated walkthrough">
+              <a href="/l/8QidUWv3iq3ufasTqH1y_w" aria-label="Watch Spool's own narrated walkthrough">
                 <video
                   className="spool-window__img"
-                  src="https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com/l/dMgYI3fhtBeW-ZljmDqqMg/final.mp4"
-                  poster="https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com/l/dMgYI3fhtBeW-ZljmDqqMg/frames/step_00.png"
+                  src="https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com/l/8QidUWv3iq3ufasTqH1y_w/final.mp4"
+                  poster="https://ipzxlhyhrfdty2vw.public.blob.vercel-storage.com/l/8QidUWv3iq3ufasTqH1y_w/frames/step_00.png"
                   autoPlay
                   muted
                   loop
