@@ -5,13 +5,39 @@ description: Record a real narrated walkthrough video of a web app feature — a
 
 # spool
 
-The harness is the spool CLI (this repo: `npm install && npm link` puts `spool` on PATH;
-see README for requirements). It handles recording, voice, captions, and rendering. Your job is
-only: make the app runnable, drive a good walkthrough, run the pipeline, verify.
+The harness is the spool CLI. It handles recording, voice, captions, and rendering. Your job
+is only: make the app runnable, drive a good walkthrough, run the pipeline, verify.
 
-There are two paths. **Prefer LIVE** when you've just driven the flow in a browser (e.g. right
-after verifying a feature you built) — you drive once and the steps are derived from the
-session. Use the **SCRIPTED** path when you want a reproducible, debuggable driver up front.
+## Install (once per machine)
+
+If `spool --help` fails, install it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aaarnv/spool/master/install.sh | bash
+```
+
+(clones to `~/.spool/cli`, `npm link`s `spool` onto PATH, fetches chromium; re-running
+updates it. Manual alternative: clone the repo, `npm install && npm link`,
+`npx playwright install chromium`. Also needs node ≥ 20 and ffmpeg on PATH.)
+
+Then configure once — a single dashboard token covers BOTH publishing and hosted AI voice,
+so no OpenAI key is required:
+
+```bash
+# token from https://spoolkit.dev/dashboard → Generate token
+echo '{"host":"https://spoolkit.dev","token":"spk_..."}' > ~/.spool.json
+```
+
+Voice engine auto-detects: your own `OPENAI_API_KEY` (env / project `.env` /
+`"openaiKey"` in `~/.spool.json`) is used directly when present; otherwise voice runs
+hosted through the token above. Sanity check the install: `spool backgrounds` should
+print the canvas presets (and, on macOS, your system wallpapers).
+
+## Choosing a path
+
+**Prefer LIVE** when you've just driven the flow in a browser (e.g. right after verifying a
+feature you built) — you drive once and the steps are derived from the session. Use the
+**SCRIPTED** path when you want a reproducible, debuggable driver up front.
 
 ## Live path (recommended) — drive once, record as you go
 
@@ -19,14 +45,27 @@ session. Use the **SCRIPTED** path when you want a reproducible, debuggable driv
 2. **Start the session.** `spool live spool/<slug> --url <app-url>` (add `--title "…"`). It
    prints one stdout line `{"port":N,"session":"<dir>"}`; grab `N`. Handle login/prep by
    sending `/js` BEFORE your first `/step` (those become `config.prep`).
-3. **Drive it in ONE continuous script.** Write ALL steps as a single shell script (a `J()`
-   curl helper + every /step and /js call back-to-back) and run it in ONE Bash call — your
-   thinking time between separate tool calls gets RECORDED as dead air in the take. Per step:
-   `POST /step {name, narration, zoom?}` (narration
-   REQUIRED — the renderer fits the step window to it), then one or more `POST /js {code}` where
-   `code` is the body of `async (page, h) => { … }` (use the `h.*` helpers for anything visible).
-   A failed `/js` returns `{ok:false}` and does NOT kill the session — fix the selector and
-   retry. `GET /status` shows progress. Aim for 4–8 steps, one idea each.
+3. **Drive it in ONE continuous script.** Write ALL steps as a single shell script and run it
+   in ONE command — your thinking time between separate tool calls gets RECORDED as dead air
+   in the take. Template:
+
+   ```bash
+   P=<port from step 2>
+   J() { curl -s -X POST localhost:$P/$1 -H 'content-type: application/json' -d "$2" > /dev/null; }
+   J step '{"name":"the-pitch","narration":"One or two confident sentences.","zoom":"none"}'
+   J js   '{"code":"await h.move(800,320); await h.pause(2200)"}'
+   J step '{"name":"the-action","narration":"What this click proves.","zoom":"auto"}'
+   J js   '{"code":"await h.click(\"#selector\"); await page.waitForSelector(\"#result\"); await h.pause(1500)"}'
+   curl -s -X POST localhost:$P/end -H 'content-type: application/json' -d '{}'
+   ```
+
+   Rules: narration REQUIRED per step (the renderer sizes the step window to it); `code` is
+   the body of `async (page, h) => { … }` — use `h.*` helpers (`h.click`/`h.type`/`h.scroll`/
+   `h.move`/`h.pause`; coords as `{x,y}` objects) for anything visible, raw `page.*` for
+   waits. A failed `/js` returns `{ok:false}` and does NOT kill the session — fix and retry
+   (it fails fast, but those seconds are recorded, so keep fumbles short). End each step
+   settled, with ~2s of `h.pause` so the freeze-hold lands on a finished state. `GET /status`
+   shows progress. Aim for 4–8 steps, one idea each.
 4. **Finish.** `POST /end` → writes `video.webm` + `timeline.json` + `keyframes/` + a generated
    `steps.mjs`. Then `spool finish spool/<slug>` → `final.mp4` (or `spool build`, which detects
    the recorded session and finishes it). Note: fumbles you leave on screen are recorded; a
