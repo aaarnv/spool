@@ -117,6 +117,34 @@ protocol, but **no `page` driver**. You drive the desktop yourself between steps
   `--pr <number>`) — it comments the watch link + step index on the PR via `gh`, so the
   reviewer gets the narrated demo inline. Do this by default when a PR exists.
 
+## Project init (spool init)
+
+When you start using spool on a repo (or are asked to "set up spool for this project"), seed the
+project's shared knowledge once so future guides and recordings start warm. This is what makes
+later recordings instant: the next session reads the recording topics instead of re-deriving the
+dev-server and auth story.
+
+1. **Scaffold.** Bare `spool init` (no slug) detects the repo owner/name via `gh`, fetches the
+   current project store into `spool/project/knowledge.json` (read-only reference), and writes an
+   empty seed ops file `spool/project/knowledge-ops.json`. Needs `gh` on PATH and `gh auth login`.
+2. **Survey and author `knowledge-ops.json`.** Read the README, docs, and code layout, then author
+   seed ops: one `set_overview`; a `set_subsystem` for each major module a reader needs (5-15); a
+   `set_term` for each piece of domain vocabulary; one `add_decision` only if the repo embodies a
+   foundational decision. Read `knowledge.json` first and UPDATE existing entries rather than
+   duplicating. No em dashes.
+3. **BOOT the app and confirm it serves**, then record what you learned as `set_recording` topics
+   (`run`: the exact command, port, and env needs; `auth`: the dev-login or test-account shape,
+   never secret values; `record-tips`: what flows demo well; `gotchas`: flaky bits, pre-warm
+   needs). This operational memory is the whole point of seeding.
+4. **Apply.** `spool init --apply` reads `knowledge-ops.json`, POSTs the ops to the project store
+   with your spk token, prints the applied/skipped counts and the project page URL, refreshes
+   `knowledge.json`, and resets the ops file to `ops: []` so a re-run cannot double-apply.
+
+After seeding, any `spool pr` or `spool live` session on this repo starts from the recording
+topics (they arrive in the scaffold's `knowledge.json` and summary). Keep them current: when the
+boot command, dev-login, or a flaky element changes, record the new reality with `set_recording`
+ops (via `spool pr`'s `knowledge-ops.json`, or a fresh `spool init`).
+
 ## PR guide (spool pr)
 
 Turn a GitHub PR into a published guide: a narrative reading order of the diff, a narrated
