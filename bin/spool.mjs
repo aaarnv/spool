@@ -67,18 +67,24 @@ program
   .description('Agents record their own spools: real browser video, AI voiceover, word-synced captions.');
 
 program
-  .command('init <slug>')
-  .description('scaffold spool/<slug>/steps.mjs in the current project')
-  .action((slug) => {
-    const workdir = resolve('spool', slug);
-    mkdirSync(workdir, { recursive: true });
-    const dest = join(workdir, 'steps.mjs');
-    if (existsSync(dest)) {
-      console.error(`${dest} already exists — not overwriting.`);
-      process.exit(1);
+  .command('init [slug]')
+  .description('with <slug>: scaffold spool/<slug>/steps.mjs; bare: seed this repo\'s project knowledge')
+  .option('--apply', 'apply the authored project seed ops (bare init only)')
+  .action(async (slug, opts) => {
+    if (slug) {
+      const workdir = resolve('spool', slug);
+      mkdirSync(workdir, { recursive: true });
+      const dest = join(workdir, 'steps.mjs');
+      if (existsSync(dest)) {
+        console.error(`${dest} already exists — not overwriting.`);
+        process.exit(1);
+      }
+      cpSync(join(root, 'templates', 'steps.mjs'), dest);
+      console.log(`Created ${dest}\nNext: edit the steps, then \`spool dry ${workdir}\` to debug the driver.`);
+      return;
     }
-    cpSync(join(root, 'templates', 'steps.mjs'), dest);
-    console.log(`Created ${dest}\nNext: edit the steps, then \`spool dry ${workdir}\` to debug the driver.`);
+    const { initProject } = await import(join(root, 'src/project/init.mjs'));
+    await initProject({ apply: !!opts.apply });
   });
 
 program
