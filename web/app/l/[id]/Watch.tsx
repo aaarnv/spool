@@ -112,13 +112,15 @@ export default function Watch({
 
       <main className="wv-d-shell">
         <div className="wv-d-head">
-          <div className="wv-d-eyebrow">Recorded by an agent</div>
-          <h1 className="wv-d-title">{title}</h1>
-          <p className="wv-d-byline">
-            {pr && tour
-              ? `${tour.length} stops · guided tour of PR #${pr.number}`
-              : `${durationLabel} · ${chapters.length} chapters · one continuous take`}
-          </p>
+          <div className="wv-d-head-text">
+            <div className="wv-d-eyebrow">Recorded by an agent</div>
+            <h1 className="wv-d-title">{title}</h1>
+            <p className="wv-d-byline">
+              {pr && tour
+                ? `${tour.length} stops · guided tour of PR #${pr.number}`
+                : `${durationLabel} · ${chapters.length} chapters · one continuous take`}
+            </p>
+          </div>
           {pr && (
             <a className="wv-pr-link" href={pr.url} target="_blank" rel="noreferrer">
               <span className="wv-pr-num">PR #{pr.number}</span>

@@ -59,7 +59,18 @@
 
 /* ---- shell / head ---- */
 .wv-d-shell { max-width: 1160px; margin: 0 auto; padding: 8px 28px 120px; }
-.wv-d-head { margin: 18px 0 32px; }
+/* Mirrors .wv-d-cols so the PR pill sits over the tour column, on the title line. */
+.wv-d-head {
+  margin: 18px 0 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 44px;
+}
+.wv-d-head .wv-pr-link {
+  justify-self: start;
+  align-self: start;
+  margin-top: 27px; /* eyebrow row height, so the pill rides the title line */
+}
 .wv-d-eyebrow {
   font-size: 11.5px;
   font-weight: 600;
@@ -361,6 +372,8 @@
 @media (max-width: 900px) {
   .wv-d-cols { grid-template-columns: 1fr; gap: 26px; }
   .wv-d-sticky { position: static; }
+  .wv-d-head { grid-template-columns: 1fr; gap: 0; }
+  .wv-d-head .wv-pr-link { margin-top: 14px; }
 }
 @media (max-width: 560px) {
   /* stack the owner edit input so the button never overlaps the textarea */
