@@ -10,6 +10,32 @@ export type SpoolStep = {
   frame: string;
 };
 
+// A single tour stop of a PR guide. `step` indexes into Spool.steps (the video
+// anchor) or is null when the stop is prose+diff only; `hunks` are positional
+// indices within this file's section of the snapshotted diff.patch.
+export type TourStop = {
+  id: string;
+  heading: string;
+  prose: string;
+  files: { path: string; hunks?: number[] }[];
+  step: number | null;
+};
+
+export type SpoolPr = {
+  number: number;
+  url: string;
+  title: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  mode: string | null;
+  stops: TourStop[];
+  // Present on bundle-context guides; grounds display and future retrieval.
+  owner?: string | null;
+  repo?: string | null;
+  headRefOid?: string | null;
+};
+
 export type Spool = {
   version: number;
   kind: string;
@@ -21,6 +47,7 @@ export type Spool = {
   voice?: { engine: string | null; voice: string | null };
   steps: SpoolStep[];
   console?: { errors: number; warnings: number; log: string };
+  pr?: SpoolPr;
 };
 
 // Public base URL of the Blob store, e.g. https://<id>.public.blob.vercel-storage.com
@@ -28,6 +55,10 @@ export type Spool = {
 export const BLOB_BASE = (process.env.SPOOL_BLOB_BASE || "").replace(/\/$/, "");
 
 export const blobUrl = (id: string, name: string) => `${BLOB_BASE}/l/${id}/${name}`;
+
+// PR-guide source artifacts (diff.patch, pr.json, tour.json) live under a flat
+// src/ prefix, separate from the public l/{id}/ watch artifacts.
+export const srcBlobUrl = (id: string, name: string) => `${BLOB_BASE}/spools/${id}/src/${name}`;
 
 export function mmss(sec: number): string {
   const s = Math.max(0, Math.round(sec));

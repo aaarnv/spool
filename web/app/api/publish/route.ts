@@ -37,7 +37,13 @@ type Sources = {
   hasBg?: boolean; // grant a src/bg.jpg upload (the resolved canvas image)
 };
 
-type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources; hasPreview?: boolean };
+// PR guide (optional): pr.json + tour.json ride inline here (written to
+// spools/{id}/src/pr/*); diff.patch and context.json come back as client-upload grants.
+type Pr = { info: unknown; tour: unknown; hasDiff?: boolean; hasContext?: boolean };
+
+type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources; pr?: Pr; hasPreview?: boolean };
+
+const PR_INLINE_MAX = 300 * 1024;
 
 const segName = (n: number) => `seg_${String(n).padStart(2, "0")}`;
 
@@ -58,6 +64,8 @@ export async function POST(req: Request) {
   const spool = body?.spool;
   if (!spool || !Array.isArray(spool.steps)) return bad(400, "missing spool");
   if (spool.steps.length > MAX_STEPS) return bad(413, "too many steps");
+  if (body.pr && JSON.stringify(body.pr.info).length + JSON.stringify(body.pr.tour).length > PR_INLINE_MAX)
+    return bad(413, "PR metadata too large");
 
   const id = newId();
   const frameName = (i: number) => `frames/step_${String(i).padStart(2, "0")}.png`;
@@ -91,21 +99,24 @@ export async function POST(req: Request) {
   }
 
   // Small, authoritative files written server-side (all well under the body cap).
+  // Blob rejects empty bodies; a quiet recording ships an empty console.jsonl.
   const write = (name: string, data: string, contentType: string) =>
-    put(`l/${id}/${name}`, data, { access: "public", addRandomSuffix: false, contentType });
+    put(`l/${id}/${name}`, data || "\n", { access: "public", addRandomSuffix: false, contentType });
   const writes = [
     write("spool.json", JSON.stringify(spool, null, 2), "application/json"),
     write("transcript.txt", body.transcript ?? "", "text/plain"),
     write("console.jsonl", body.console ?? "", "application/x-ndjson"),
   ];
 
+  // Server-side put of a small JSON/text artifact under spools/{id}/src/*.
+  const writeSrc = (name: string, data: string, contentType: string) =>
+    put(`spools/${id}/src/${name}`, data, { access: "public", addRandomSuffix: false, contentType });
+
   // Render sources (optional): write the JSON artifacts here, grant uploads for
   // the binaries. Absence leaves this an old-style, non-editable publish.
   const src = body.sources;
   const hasSources = !!src;
   if (src) {
-    const writeSrc = (name: string, data: string, contentType: string) =>
-      put(`spools/${id}/src/${name}`, data, { access: "public", addRandomSuffix: false, contentType });
     writes.push(writeSrc("timeline.json", JSON.stringify(src.timeline ?? null), "application/json"));
     writes.push(writeSrc("render.json", JSON.stringify(src.render ?? null), "application/json"));
     if (src.vo) {
@@ -125,6 +136,21 @@ export async function POST(req: Request) {
     for (const seg of src.segments ?? []) {
       const p = `spools/${id}/src/vo/${segName(seg)}.wav`;
       grants.push({ pathname: p, contentType: "audio/wav", token: await mintToken(p, "audio/wav") });
+    }
+  }
+
+  // PR guide (optional): pr.json + tour.json inline; diff.patch as an upload grant.
+  // Independent of sources — a PR guide need not be editable.
+  if (body.pr) {
+    writes.push(writeSrc("pr/pr.json", JSON.stringify(body.pr.info ?? null), "application/json"));
+    writes.push(writeSrc("pr/tour.json", JSON.stringify(body.pr.tour ?? null), "application/json"));
+    if (body.pr.hasDiff) {
+      const p = `spools/${id}/src/pr/diff.patch`;
+      grants.push({ pathname: p, contentType: "text/plain", token: await mintToken(p, "text/plain") });
+    }
+    if (body.pr.hasContext) {
+      const p = `spools/${id}/src/pr/context.json`;
+      grants.push({ pathname: p, contentType: "application/json", token: await mintToken(p, "application/json") });
     }
   }
   await Promise.all(writes);
