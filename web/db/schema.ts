@@ -10,20 +10,32 @@ import {
   timestamp,
   primaryKey,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
 // One row per published spool. owner_id is a Clerk user id, or "aarnav-cli" for
 // the legacy global token so existing CLI publishes still get indexed.
-export const spools = pgTable("spools", {
-  id: text("id").primaryKey(),
-  ownerId: text("owner_id").notNull(),
-  title: text("title"),
-  duration: real("duration"),
-  // True once the CLI has uploaded the render sources (see EDIT-CONTRACT.md);
-  // only source-bearing spools are editable.
-  hasSources: boolean("has_sources").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const spools = pgTable(
+  "spools",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    title: text("title"),
+    duration: real("duration"),
+    // True once the CLI has uploaded the render sources (see EDIT-CONTRACT.md);
+    // only source-bearing spools are editable.
+    hasSources: boolean("has_sources").notNull().default(false),
+    // Project identity (server-derived from the PR url; NULL on non-PR/legacy
+    // spools). Groups guides for the same GitHub repo into one shared project.
+    repoOwner: text("repo_owner"),
+    repoName: text("repo_name"),
+    prNumber: integer("pr_number"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    projectIdx: index("spools_project_idx").on(t.ownerId, t.repoOwner, t.repoName),
+  })
+);
 
 // One row per re-render request. Ops is the validated edit vocabulary (see
 // EDIT-CONTRACT.md); the Fly worker claims queued rows and flips them running→done.

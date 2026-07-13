@@ -1,4 +1,5 @@
-import { execTool, listFilesTool, readFileTool, type ContextPack } from "./askBundle";
+import type Anthropic from "@anthropic-ai/sdk";
+import { execTool, type ExecContext } from "./askBundle";
 
 // OpenAI chat-completions provider for the ask route, used when only
 // OPENAI_API_KEY is configured. Mirrors the Anthropic loop's bounds exactly.
@@ -12,22 +13,27 @@ type OpenAIMessage =
 
 type ToolCall = { id: string; type: "function"; function: { name: string; arguments: string } };
 
+type OpenAITool = { type: "function"; function: { name: string; description?: string; parameters: unknown } };
+
 type Choice = {
   finish_reason: string;
   message: { content: string | null; tool_calls?: ToolCall[] };
 };
 
-// Anthropic tool schemas re-shaped into chat-completions function tools.
-const OPENAI_TOOLS = [
-  { type: "function", function: { name: listFilesTool.name, description: listFilesTool.description, parameters: listFilesTool.input_schema } },
-  { type: "function", function: { name: readFileTool.name, description: readFileTool.description, parameters: readFileTool.input_schema } },
-];
+// Re-shape Anthropic tool defs into chat-completions function tools so both
+// loops share one source of truth for the tool vocabulary.
+export function toOpenAITools(tools: Anthropic.Tool[]): OpenAITool[] {
+  return tools.map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.input_schema },
+  }));
+}
 
 async function chatComplete(o: {
   apiKey: string;
   model: string;
   messages: OpenAIMessage[];
-  tools?: boolean;
+  tools?: OpenAITool[];
   toolChoice?: "auto" | "none";
 }): Promise<Choice> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -37,7 +43,7 @@ async function chatComplete(o: {
       model: o.model,
       messages: o.messages,
       max_completion_tokens: 1024,
-      ...(o.tools ? { tools: OPENAI_TOOLS, tool_choice: o.toolChoice ?? "auto" } : {}),
+      ...(o.tools ? { tools: o.tools, tool_choice: o.toolChoice ?? "auto" } : {}),
     }),
   });
   if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => "")}`);
@@ -64,13 +70,14 @@ export async function openAIToolLoop(o: {
   apiKey: string;
   model: string;
   system: string;
-  pack: ContextPack;
-  spoolId: string;
+  ctx: ExecContext;
+  tools: Anthropic.Tool[];
   history: { role: "user" | "assistant"; content: string }[];
   question: string;
   now?: () => number;
 }): Promise<{ answer: string; rounds: number; misses: number }> {
   const now = o.now ?? Date.now;
+  const tools = toOpenAITools(o.tools);
   const messages: OpenAIMessage[] = [
     { role: "system", content: o.system },
     ...o.history,
@@ -80,7 +87,7 @@ export async function openAIToolLoop(o: {
   let rounds = 0;
   let misses = 0;
 
-  let choice = await chatComplete({ apiKey: o.apiKey, model: o.model, messages, tools: true });
+  let choice = await chatComplete({ apiKey: o.apiKey, model: o.model, messages, tools });
   while (choice.finish_reason === "tool_calls" && choice.message.tool_calls?.length) {
     const bound = rounds >= MAX_ROUNDS || now() - t0 >= TIME_BUDGET_MS;
     messages.push({ role: "assistant", content: choice.message.content, tool_calls: choice.message.tool_calls });
@@ -91,21 +98,21 @@ export async function openAIToolLoop(o: {
       } catch {
         /* malformed arguments read as empty input */
       }
-      const { content, miss } = execTool(o.pack, call.function.name, input, o.spoolId);
+      const { content, miss } = await execTool(o.ctx, call.function.name, input);
       if (miss) misses++;
       messages.push({ role: "tool", tool_call_id: call.id, content });
     }
     rounds++;
     if (bound) {
-      choice = await chatComplete({ apiKey: o.apiKey, model: o.model, messages, tools: true, toolChoice: "none" });
+      choice = await chatComplete({ apiKey: o.apiKey, model: o.model, messages, tools, toolChoice: "none" });
       break;
     }
-    choice = await chatComplete({ apiKey: o.apiKey, model: o.model, messages, tools: true });
+    choice = await chatComplete({ apiKey: o.apiKey, model: o.model, messages, tools });
   }
 
   const answer = (choice.message.content ?? "").trim();
   if (misses > 0) {
-    console.log("[ask] possibly-unanswerable", JSON.stringify({ spoolId: o.spoolId, question: o.question.slice(0, 200) }));
+    console.log("[ask] possibly-unanswerable", JSON.stringify({ spoolId: o.ctx.spoolId, question: o.question.slice(0, 200) }));
   }
   return { answer, rounds, misses };
 }

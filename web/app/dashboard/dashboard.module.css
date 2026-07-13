@@ -115,6 +115,17 @@
   margin: 0;
 }
 
+/* Project group heading above a grid; sits between the type scale of .h1 and
+   the card titles so groups read as sections without competing with the page h1. */
+.groupHead {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 30px 0 14px;
+}
+section:first-of-type .groupHead { margin-top: 0; }
+
 /* --- spool grid --- */
 .grid {
   display: grid;
