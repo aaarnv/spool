@@ -93,6 +93,7 @@ export default async function WatchPage({
   let diffUrl: string | undefined;
   let prJsonUrl: string | undefined;
   let tourJsonUrl: string | undefined;
+  let grounding: "bundle" | "diff" = "diff";
   if (spool.pr) {
     pr = {
       number: spool.pr.number,
@@ -117,6 +118,15 @@ export default async function WatchPage({
     diffUrl = srcBlobUrl(id, "pr/diff.patch");
     prJsonUrl = srcBlobUrl(id, "pr/pr.json");
     tourJsonUrl = srcBlobUrl(id, "pr/tour.json");
+
+    // A published context pack means bundle-grounded Q&A. Blob content is
+    // immutable per id, so a cached HEAD is enough and needs no external SDK.
+    try {
+      const res = await fetch(srcBlobUrl(id, "pr/context.json"), { method: "HEAD", cache: "force-cache" });
+      grounding = res.ok ? "bundle" : "diff";
+    } catch {
+      grounding = "diff";
+    }
   }
 
   return (
@@ -139,6 +149,7 @@ export default async function WatchPage({
         diffUrl={diffUrl}
         prJsonUrl={prJsonUrl}
         tourJsonUrl={tourJsonUrl}
+        grounding={grounding}
       />
     </div>
   );

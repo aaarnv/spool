@@ -4,13 +4,15 @@ import { sql } from "drizzle-orm";
 import { db } from "../../../../../db";
 import { askUsage } from "../../../../../db/schema";
 import { fetchSpoolJson } from "../../../../../lib/spoolAccess";
+import { bundleTools, messageCreateParams, parsePack, runToolLoop, type CallModel } from "../../../../../lib/askBundle";
 import { srcBlobUrl } from "../../../../spool";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 // Public, unauthenticated Q&A grounded in a published PR guide. Rate limited by
-// requester IP and per-spool; answers come only from the diff + tour context.
-const MODEL = process.env.SPOOL_ASK_MODEL || "claude-haiku-4-5";
+// requester IP and per-spool. Two tiers: a bundle guide grounds answers in a
+// tool loop over its shipped code + docs; an older guide falls back to diff-only.
 const IP_CAP = Number(process.env.ASK_IP_DAILY_CAP) || 25;
 const SPOOL_CAP = Number(process.env.ASK_SPOOL_DAILY_CAP) || 200;
 const DIFF_BUDGET = 60_000;
@@ -117,10 +119,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Ground the model: PR title/body, the tour stops (inline in spool.pr), the
   // step narrations, and the diff budgeted to fit prioritizing referenced files.
-  const [prRaw, diffRaw] = await Promise.all([
+  // context.json (bundle tier) is optional; its absence keeps the diff-only path.
+  const [prRaw, diffRaw, contextRaw] = await Promise.all([
     fetchText(srcBlobUrl(id, "pr/pr.json")),
     fetchText(srcBlobUrl(id, "pr/diff.patch")),
+    fetchText(srcBlobUrl(id, "pr/context.json")),
   ]);
+  const pack = parsePack(contextRaw || null);
+  const tier: "bundle" | "diff" = pack ? "bundle" : "diff";
+  const model = process.env.SPOOL_ASK_MODEL || (tier === "bundle" ? "claude-sonnet-5" : "claude-haiku-4-5");
 
   let prBody = "";
   try {
@@ -169,33 +176,55 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     (narrations ? `Step narrations:\n${narrations}\n\n` : "") +
     `Diff:\n${diffContext}`;
 
-  const system =
+  const systemBase =
     "You are a guide for one specific pull request. Answer questions ONLY from the provided PR " +
     "context (its diff, tour, and narration). Your tone is a comprehension guide helping a reader " +
     "understand what the change does and why. If the answer is not in the diff or context, say so " +
-    "plainly. Never give a review verdict, never hunt for bugs, and do not use em dashes.\n\n" +
-    `PR context:\n${context}`;
+    "plainly. Never give a review verdict, never hunt for bugs, and do not use em dashes.";
+
+  // Bundle tier prepends the product brief + readme and offers file-reading tools;
+  // file contents are NOT inlined here, they flow through the tools on demand.
+  const bundleContext =
+    tier === "bundle" && pack
+      ? (pack.brief ? `Product brief:\n${pack.brief}\n\n` : "") +
+        (pack.readme ? `README (${pack.readme.path}):\n${pack.readme.text.slice(0, 8000)}\n\n` : "") +
+        context
+      : context;
+
+  const system =
+    tier === "bundle"
+      ? systemBase +
+        " You may read files from this guide's bundle with the provided tools. Read at most a " +
+        "handful of files, then answer.\n\n" +
+        `PR context:\n${bundleContext}`
+      : systemBase + `\n\nPR context:\n${context}`;
+
+  const messages: Anthropic.MessageParam[] = [
+    ...history.map((t) => ({ role: t.role, content: t.content })),
+    { role: "user" as const, content: question },
+  ];
 
   const client = new Anthropic();
   let answer: string;
   try {
-    const res = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system,
-      messages: [
-        ...history.map((t) => ({ role: t.role, content: t.content })),
-        { role: "user" as const, content: question },
-      ],
-    });
-    answer = res.content
-      .filter((b) => b.type === "text")
-      .map((b) => (b as { text: string }).text)
-      .join("")
-      .trim();
+    if (tier === "bundle" && pack) {
+      const callModel: CallModel = (msgs, toolChoice) =>
+        client.messages.create(
+          messageCreateParams({ model, system, messages: msgs, tools: bundleTools, toolChoice })
+        );
+      const result = await runToolLoop({ callModel, pack, spoolId: id, question, initialMessages: messages });
+      answer = result.answer;
+    } else {
+      const res = await client.messages.create(messageCreateParams({ model, system, messages }));
+      answer = res.content
+        .filter((b) => b.type === "text")
+        .map((b) => (b as { text: string }).text)
+        .join("")
+        .trim();
+    }
   } catch (e) {
     return bad(502, `ask failed: ${(e as Error).message}`);
   }
 
-  return Response.json({ answer, usage: { remainingToday } });
+  return Response.json({ answer, grounding: tier, usage: { remainingToday } });
 }

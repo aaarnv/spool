@@ -38,8 +38,8 @@ type Sources = {
 };
 
 // PR guide (optional): pr.json + tour.json ride inline here (written to
-// spools/{id}/src/pr/*); diff.patch comes back as a client-upload grant.
-type Pr = { info: unknown; tour: unknown; hasDiff?: boolean };
+// spools/{id}/src/pr/*); diff.patch and context.json come back as client-upload grants.
+type Pr = { info: unknown; tour: unknown; hasDiff?: boolean; hasContext?: boolean };
 
 type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources; pr?: Pr; hasPreview?: boolean };
 
@@ -147,6 +147,10 @@ export async function POST(req: Request) {
     if (body.pr.hasDiff) {
       const p = `spools/${id}/src/pr/diff.patch`;
       grants.push({ pathname: p, contentType: "text/plain", token: await mintToken(p, "text/plain") });
+    }
+    if (body.pr.hasContext) {
+      const p = `spools/${id}/src/pr/context.json`;
+      grants.push({ pathname: p, contentType: "application/json", token: await mintToken(p, "application/json") });
     }
   }
   await Promise.all(writes);

@@ -42,6 +42,7 @@ type Props = {
   diffUrl?: string;
   prJsonUrl?: string;
   tourJsonUrl?: string;
+  grounding?: "bundle" | "diff";
 };
 
 const pretty = (slug: string) =>
@@ -69,6 +70,7 @@ export default function Watch({
   diffUrl,
   prJsonUrl,
   tourJsonUrl,
+  grounding,
 }: Props) {
   const ref = useRef<HTMLVideoElement>(null);
   const [active, setActive] = useState<number>(-1);
@@ -152,7 +154,7 @@ export default function Watch({
 
             {pr && (
               <div className="wv-ask-mount">
-                <AskPanel spoolId={spoolId} />
+                <AskPanel spoolId={spoolId} grounding={grounding} />
               </div>
             )}
 

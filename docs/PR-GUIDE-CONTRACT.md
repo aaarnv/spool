@@ -17,6 +17,8 @@ A guide is additive: "is a PR guide" derives entirely from `spool.pr` in the pub
 spool/pr-<n>/pr.json         # gh pr view --json … (body trimmed to ~10k chars)
 spool/pr-<n>/diff.patch      # gh pr diff <n> (the exact bytes both agent and web parse)
 spool/pr-<n>/tour.json       # scaffolded placeholder; the agent authors it (schema below)
+spool/pr-<n>/context.json    # captured deep context; the agent curates `related` (schema below)
+spool/pr-<n>/context.md      # product-brief template; the agent authors it (becomes `brief`)
 spool/pr-<n>/explainer.html  # optional: a self-contained page recorded for non-UI PRs
 ```
 
@@ -65,6 +67,46 @@ and records the matched step's index as `stop.step` in the published summary.
 - A workdir without `pr.json` + `tour.json` publishes as an ordinary (non-PR) spool, byte for
   byte unchanged.
 
+## context.json (v1)
+
+`spool pr` captures deep context (best-effort, never fails the scaffold) so the watch-page
+Q&A can understand the product, not just the diff. Bodies are fetched via `gh api` raw accept
+at `headRefOid` (avoids base64 + the 1MB JSON cap). Caps: 100KB per file/doc text, 5KB per
+issue body, 6MB per pack. The published shape (after publish merges the authored brief and
+resolves `related`):
+
+```jsonc
+{
+  "version": 1,
+  "brief": "<agent-authored context.md text | null>",
+  "pr": { "owner", "repo", "headRefOid", "isCrossRepository" },
+  "readme": { "path", "text" } | null,
+  "docs": [ { "path", "text" } ],               // <=10 .md from docs/, README excluded
+  "files": {                                    // post-change contents of changed + related files
+    "<path>": { "text" } | { "omitted": "too-large" | "deleted" | "fetch-failed" }
+  },
+  "related": [ "<path>" ],                      // agent-curated; contents live in files{}
+  "commits": [ { "sha", "message" } ],          // message = headline + (body ? "\n\n" + body : "")
+  "issues": [ { "number", "title", "body" } ]   // <=5, parsed from PR body + commit messages
+}
+```
+
+**`related` (agent curation contract).** The scaffold writes `related: []`. Before publishing,
+the authoring agent lists the files a reader needs beyond the diff: the modules the changed
+code calls into, the callers of changed functions, the config or schema it touches, the types
+it implements. 5 to 20 paths is typical. At publish, `buildPrBundle` resolves any `related`
+path not already in `files{}`: local checkout read first (resolved against `process.cwd()`;
+paths containing `..` or absolute paths are rejected), else `gh api` raw at `headRefOid`;
+failures record `{omitted:"fetch-failed"}`. This is what grounds the watch-page Q&A, so the
+skill marks curating it mandatory.
+
+**`brief`.** `context.md` is a product-brief template the agent authors (removing every TODO
+line). At publish its text becomes `brief`.
+
+**Pack cap.** The merged pack is trimmed to 6MB least-valuable first (docs, then issues, then
+readme, then related file texts, then changed-file texts); changed files survive longest.
+Trimmed file texts become `{omitted:"too-large"}`.
+
 ## Blob layout (per published spool `{id}`)
 
 PR sources land under `src/pr/` alongside the edit sources (see EDIT-CONTRACT.md):
@@ -73,11 +115,14 @@ PR sources land under `src/pr/` alongside the edit sources (see EDIT-CONTRACT.md
 spools/{id}/src/pr/pr.json      # written server-side from publish meta (below)
 spools/{id}/src/pr/tour.json    # written server-side from publish meta (below)
 spools/{id}/src/pr/diff.patch   # client-upload grant (text/plain), like the edit binaries
+spools/{id}/src/pr/context.json # client-upload grant (application/json) when pr.hasContext
 ```
 
-`pr.json`/`tour.json` ride inline in the publish request; `diff.patch` comes back as a scoped
-client-upload grant in the existing `uploads` array. The watch page lazily fetches the diff
-from its public blob URL client-side.
+`pr.json`/`tour.json` ride inline in the publish request; `diff.patch` and (when present) the
+merged `context.json` come back as scoped client-upload grants in the existing `uploads`
+array. The CLI maps the `context.json` grant to the staged `.spool-context.json` (the merged
+pack, not the raw workdir file). The watch page lazily fetches diff + context from their
+public blob URLs client-side.
 
 ## Publish meta `pr` field (CLI → web)
 
@@ -88,9 +133,14 @@ depend on the spool being editable:
 pr: {
   info: { …pr.json… },   // written to spools/{id}/src/pr/pr.json
   tour: { …tour.json… }, // written to spools/{id}/src/pr/tour.json
-  hasDiff: true          // → client-upload grant for spools/{id}/src/pr/diff.patch
+  hasDiff: true,         // → client-upload grant for spools/{id}/src/pr/diff.patch
+  hasContext: true       // → client-upload grant for spools/{id}/src/pr/context.json (merged pack)
 }
 ```
+
+`hasContext` is present (and true) only when the workdir has a `context.json`. A workdir
+without one publishes exactly as before: `pr` is `{info, tour, hasDiff}` with no `hasContext`
+key, byte-identical to phase 1.
 
 Web rejects with 413 if `JSON.stringify(info).length + JSON.stringify(tour).length` exceeds
 ~300KB.
@@ -103,6 +153,8 @@ never needs `tour.json`. `step` is the index into `spool.steps` (null when unmap
 ```jsonc
 pr: {
   number, url, title, additions, deletions, changedFiles,
+  owner, repo,                  // parsed from url; null if unparseable
+  headRefOid: "<sha>" | null,   // for future re-fetch / display
   mode: "walkthrough" | "explainer" | null,
   stops: [
     { id, heading, prose, files: [{ path, hunks? }], step: 1 | null }
@@ -126,6 +178,14 @@ tour stops, step narrations, and the diff budgeted to ~60k chars prioritizing fi
 by tour stops); the model says plainly when the answer is not in the diff, gives no verdicts,
 and uses no em dashes. Very large diffs may drop the file a question targets (acceptable in
 v1).
+
+**Grounding tiers.** A guide published with a `context.json` answers in the `bundle` tier: the
+model reads the pack (brief, readme, docs, changed + related file contents) through a small
+`list_files` / `read_file` tool loop, on top of the diff. A guide without one answers in the
+`diff` tier, which is exactly the phase-1 path (diff only, no tools). Every `read_file` that
+misses the pack is logged web-side (`[ask] bundle-miss`); frequent misses are the tripwire
+that would justify the parked GitHub App (see tasks/todo.md). The web side owns the tiers, the
+tool loop, and the miss logging.
 
 **Rate limiting.** `ip_hash = sha256(ASK_IP_SALT + first x-forwarded-for)`. Two caps, each an
 atomic per-day counter in `ask_usage`:

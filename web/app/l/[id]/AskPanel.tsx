@@ -3,14 +3,22 @@
 import { useRef, useState } from "react";
 
 type Msg = { role: "user" | "assistant"; content: string };
+type Grounding = "bundle" | "diff";
+
+const NOTE: Record<Grounding, string> = {
+  bundle: "Answers come from the code and docs this guide shipped with. Anyone with the link can ask.",
+  diff: "Answers come from the diff and tour. Anyone with the link can ask.",
+};
 
 // Public Q&A about a PR guide: message list, send box, one call per question
-// carrying the last six turns as history. Answers come from the diff + tour.
-export default function AskPanel({ spoolId }: { spoolId: string }) {
+// carrying the last six turns as history. Grounding (bundle vs diff) sets the
+// note and is reconciled from the first answer if the server reports otherwise.
+export default function AskPanel({ spoolId, grounding }: { spoolId: string; grounding?: Grounding }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [note, setNote] = useState<Grounding>(grounding ?? "diff");
   const listRef = useRef<HTMLDivElement>(null);
 
   const send = async () => {
@@ -30,6 +38,7 @@ export default function AskPanel({ spoolId }: { spoolId: string }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "could not answer that");
+      if (data.grounding === "bundle" || data.grounding === "diff") setNote(data.grounding);
       setMessages([...next, { role: "assistant", content: data.answer || "" }]);
     } catch (e) {
       setError((e as Error).message);
@@ -45,9 +54,7 @@ export default function AskPanel({ spoolId }: { spoolId: string }) {
   return (
     <div className="wv-ask">
       <div className="section-label">Ask about this PR</div>
-      <div className="wv-ask-note">
-        Answers come from the diff and tour. Anyone with the link can ask.
-      </div>
+      <div className="wv-ask-note">{NOTE[note]}</div>
 
       {messages.length > 0 && (
         <div className="wv-ask-list" ref={listRef}>

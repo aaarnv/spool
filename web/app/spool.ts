@@ -30,6 +30,10 @@ export type SpoolPr = {
   changedFiles: number;
   mode: string | null;
   stops: TourStop[];
+  // Present on bundle-context guides; grounds display and future retrieval.
+  owner?: string | null;
+  repo?: string | null;
+  headRefOid?: string | null;
 };
 
 export type Spool = {
