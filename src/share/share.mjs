@@ -105,6 +105,7 @@ async function buildPrSummary(dir, steps) {
   if (unmatched.length) {
     console.error(`[share] PR guide: ${unmatched.length} stop(s) not mapped to a recorded step (prose+diff only): ${unmatched.join(", ")}`);
   }
+  const urlMatch = String(info.url || "").match(/github\.com\/([^/]+)\/([^/]+)\/pull\/\d+/);
   return {
     number: info.number,
     url: info.url,
@@ -112,6 +113,9 @@ async function buildPrSummary(dir, steps) {
     additions: info.additions,
     deletions: info.deletions,
     changedFiles: info.changedFiles,
+    owner: urlMatch ? urlMatch[1] : null,
+    repo: urlMatch ? urlMatch[2] : null,
+    headRefOid: info.headRefOid ?? null,
     mode: tour.mode ?? null,
     stops,
   };

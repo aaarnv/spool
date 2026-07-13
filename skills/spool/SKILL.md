@@ -41,7 +41,9 @@ feature you built) — you drive once and the steps are derived from the session
 
 ## Live path (recommended) — drive once, record as you go
 
-1. **App up.** Start the target app locally (background Bash), wait for HTTP 200.
+1. **App up.** Start the target app locally (background Bash), wait for HTTP 200. When the page
+   is served by a DEV server, curl the URL once before `spool live` so the first compile is
+   warm (a cold compile can exceed the 5s goto timeout).
 2. **Start the session.** `spool live spool/<slug> --url <app-url>` (add `--title "…"`). It
    prints one stdout line `{"port":N,"session":"<dir>"}`; grab `N`. Handle login/prep by
    sending `/js` BEFORE your first `/step` (those become `config.prep`).
@@ -60,9 +62,9 @@ feature you built) — you drive once and the steps are derived from the session
    ```
 
    Rules: narration REQUIRED per step (the renderer sizes the step window to it); `code` is
-   the body of `async (page, h) => { … }` — use `h.*` helpers (`h.click`/`h.type`/`h.scroll`/
-   `h.move`/`h.pause`; coords as `{x,y}` objects) for anything visible, raw `page.*` for
-   waits. A failed `/js` returns `{ok:false}` and does NOT kill the session — fix and retry
+   the body of `async (page, h) => { … }`. Use `h.*` helpers for anything visible: `h.move(x, y)`
+   takes two floats; `h.click`/`h.hover` take a selector string or `{x, y}`; also `h.type`/
+   `h.scroll`/`h.pause`. Raw `page.*` is for waits. A failed `/js` returns `{ok:false}` and does NOT kill the session — fix and retry
    (it fails fast, but those seconds are recorded, so keep fumbles short). End each step
    settled, with ~2s of `h.pause` so the freeze-hold lands on a finished state. `GET /status`
    shows progress. Aim for 4–8 steps, one idea each.
@@ -128,9 +130,19 @@ It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
    order. Rewrite it into 4–8 stops in narrative READING order (why the change exists, the
    entrypoint, the core change, the ripples, the tests), never alphabetical or diff order.
    Each stop is `{id, heading, prose, files:[{path}]}`. `prose` guides comprehension and is
-   explicitly NOT review. No em dashes. Set `mode` (see step 3) and delete `_instructions`
-   when done. A stop's `id` doubles as the recorded step name that illustrates it (step 4).
-3. **Choose the video mode.**
+   explicitly NOT review. No em dashes. Set `mode` (see step 4) and delete `_instructions`
+   when done. A stop's `id` doubles as the recorded step name that illustrates it (step 5).
+3. **Author context (MANDATORY).** The scaffold also wrote `context.md` (a product-brief
+   template) and `context.json` (captured readme, docs, changed-file contents, commits,
+   linked issues). This context grounds the watch-page Q&A, so do not skip it:
+   - Fill in `context.md`: what the product is, what the touched subsystem does and where it
+     sits, the vocabulary a reader needs, how this change fits the direction. Remove every
+     TODO line. No em dashes.
+   - Curate `context.json`'s `related: []`: list the files a reader needs beyond the diff:
+     the modules the changed code calls into, the callers of changed functions, the config or
+     schema it touches, the types it implements. You just worked in this repo; you know. 5 to
+     20 paths is typical. This grounds the watch-page Q&A; do not skip it.
+4. **Choose the video mode.**
    - **UI-surface change** (`mode:"walkthrough"`) → live-record the running feature as usual
      (Live path above), naming steps after stop ids.
    - **Non-UI change** (refactor, backend, infra; `mode:"explainer"`) → author a
@@ -139,13 +151,14 @@ It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
      `spool live spool/pr-<n> --url file:///abs/path/explainer.html`. If the page needs local
      assets, serve it with `python3 -m http.server` and use the `http://localhost:PORT/…` URL
      instead of `file://`. Drive one section reveal per step.
-4. **Mapping rule (critical).** Each live `/step` name MUST equal the tour stop id it
+5. **Mapping rule (critical).** Each live `/step` name MUST equal the tour stop id it
    illustrates. That is the only link between the tour and the video. Not every stop needs a
    step (an unmapped stop degrades to prose + diff on the watch page); steps without a matching
    stop are fine too.
-5. **Finish + publish.** `spool finish spool/pr-<n>` → verify keyframes → `spool publish
-   spool/pr-<n> --pr <n>`. Publish attaches the tour + diff, and the `--pr` comment posts a
-   guide variant (stop table timestamped to the video) on the PR.
+6. **Finish + publish.** `spool finish spool/pr-<n>` → verify keyframes → `spool publish
+   spool/pr-<n> --pr <n>`. Publish merges `context.md` into the bundle and resolves the
+   `related` files, attaches the tour + diff, and the `--pr` comment posts a guide variant
+   (stop table timestamped to the video) on the PR.
 
 ## Consuming a spool another agent made
 
