@@ -226,6 +226,28 @@ one accumulating world so the ask gets smarter over time. It is a keyed, provena
 store patched by validated ops at publish (the same pattern as the edit ops), not a living
 markdown brief. A project is formed automatically, with no create step.
 
+**Seeding a project up front (`spool init`).** A project can be warmed before any guide exists.
+Bare `spool init` (no slug — the slugged form scaffolds a scripted recording instead) detects the
+repo owner/name via `gh repo view` and scaffolds a `spool/project/` workdir:
+
+```
+spool/project/knowledge.json      # current store fetched from the GET API (read-only reference)
+spool/project/knowledge-ops.json  # { "_instructions" (seed-oriented), "ops": [] } — the agent authors
+```
+
+The agent surveys the repo, authors seed ops (overview, subsystems, vocabulary, and — after
+booting the app — `recording` topics), then runs `spool init --apply`. Apply reads
+`knowledge-ops.json`, resolves host/token from `resolveConfig`, and POSTs directly to the
+knowledge API (the spk-token path, not a publish): `POST /api/projects/knowledge` with
+`Authorization: Bearer <spk>` and body `{ owner, repo, ops }` → `200 { knowledge, applied, skipped }`.
+It prints `seeded: N op(s) applied, M skipped`, the project page URL
+`<host>/dashboard/p/<owner>/<repo>`, refreshes the workdir `knowledge.json` from the response
+store, and rewrites `knowledge-ops.json` to `ops: []` so a re-run cannot double-apply. A non-200
+prints the status and the server's error body verbatim and exits non-zero. Seed ops are stamped
+with provenance `pr: 0` (a manual/seed write, distinct from a real PR number). A project may thus
+exist with knowledge but zero guides; the sibling-guide list is simply empty until the first
+`spool publish`.
+
 **Project identity.** A project is the triple `(ownerId, owner, repo)`:
 - `ownerId` is the Clerk publisher (the spk token owner). Forgery only pollutes the forger's
   own namespace.

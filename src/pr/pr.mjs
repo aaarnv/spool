@@ -20,7 +20,8 @@ const KNOWLEDGE_OPS_SCAFFOLD = {
 
 // Best-effort read of the project's accumulated knowledge store for this repo. Missing
 // config, a slow/absent server, or any non-200 all degrade to the empty store.
-async function fetchProjectKnowledge(owner, repo) {
+// Shared with `spool init` (project seeding) — keep it the single fetch path.
+export async function fetchProjectKnowledge(owner, repo) {
   const { host, token } = await resolveConfig();
   if (!host || !token) return emptyStore();
   const ctrl = new AbortController();

@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { blobUrl, mmss } from "../spool";
 import { db } from "../../db";
-import { spools as spoolsTable, publishTokens } from "../../db/schema";
+import { spools as spoolsTable, publishTokens, projectKnowledge } from "../../db/schema";
 import { TokenCard } from "./TokenCard";
 import { SpoolCard } from "./SpoolCard";
 import styles from "./dashboard.module.css";
@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  const [rows, tokenCount] = await Promise.all([
+  const [rows, tokenCount, knowledgeRows] = await Promise.all([
     db
       .select()
       .from(spoolsTable)
@@ -26,6 +26,10 @@ export default async function DashboardPage() {
       .select({ n: sql<number>`count(*)` })
       .from(publishTokens)
       .where(eq(publishTokens.ownerId, userId)),
+    db
+      .select({ repoOwner: projectKnowledge.repoOwner, repoName: projectKnowledge.repoName })
+      .from(projectKnowledge)
+      .where(eq(projectKnowledge.ownerId, userId)),
   ]);
   const hasToken = Number(tokenCount[0]?.n ?? 0) > 0;
 
@@ -46,7 +50,12 @@ export default async function DashboardPage() {
     if (arr) arr.push(s);
     else groups.set(key, [s]);
   }
-  const hasNamedGroups = groups.size > 0;
+  // Seeded projects (spool init) can have knowledge but zero spools. Surface each
+  // one that has no spool group as its own heading; it also earns the grouped layout.
+  const knowledgeOnly = knowledgeRows.filter(
+    (k) => !groups.has(`${k.repoOwner}/${k.repoName}`)
+  );
+  const hasNamedGroups = groups.size > 0 || knowledgeOnly.length > 0;
 
   const renderCard = (s: Row) => (
     <SpoolCard
@@ -75,7 +84,7 @@ export default async function DashboardPage() {
 
       <TokenCard hasToken={hasToken} compact={rows.length > 0} />
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && knowledgeOnly.length === 0 ? (
         <div className={styles.empty}>
           No spools yet. Publish one with the <code>spool</code> CLI using your token above.
         </div>
@@ -92,6 +101,19 @@ export default async function DashboardPage() {
                 </Link>
               </h2>
               <div className={styles.grid}>{gr.map(renderCard)}</div>
+            </section>
+          ))}
+          {knowledgeOnly.map((k) => (
+            <section key={`k:${k.repoOwner}/${k.repoName}`}>
+              <h2 className={styles.groupHead}>
+                <Link href={`/dashboard/p/${encodeURIComponent(k.repoOwner)}/${encodeURIComponent(k.repoName)}`}>
+                  {k.repoOwner}/{k.repoName}
+                  <span className={styles.manage}>manage &rarr;</span>
+                </Link>
+              </h2>
+              <p className={styles.kEmpty}>
+                No guides yet. <code>spool pr &lt;a PR url&gt;</code> publishes the first one.
+              </p>
             </section>
           ))}
           {other.length > 0 && (
