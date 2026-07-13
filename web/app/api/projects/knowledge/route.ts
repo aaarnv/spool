@@ -29,12 +29,19 @@ export async function GET(req: Request) {
   return Response.json({ knowledge });
 }
 
-// Owner-authenticated store mutation from the dashboard project page. Clerk-authed
-// (not spk token): a project only exists under the caller's own userId namespace,
-// so scoping to userId is the ownership check. Ops carry pr:0 (manual-edit sentinel).
+// Owner-authenticated store mutation. Two callers: the dashboard project page
+// (Clerk session, preferred) and the CLI's `spool init` (spk bearer, same auth as
+// GET). Either resolves the owner whose namespace scopes the write; ops carry
+// pr:0 (manual-edit sentinel). 401 only when neither auth resolves.
 export async function POST(req: Request) {
   const { userId } = await auth();
-  if (!userId) return bad(401, "unauthorized");
+  let ownerId: string | null = userId;
+  if (!ownerId) {
+    const header = req.headers.get("authorization") || "";
+    const bearer = header.startsWith("Bearer ") ? header.slice(7) : "";
+    if (bearer) ownerId = await resolveOwner(bearer);
+  }
+  if (!ownerId) return bad(401, "unauthorized");
 
   let body: unknown;
   try {
@@ -51,9 +58,9 @@ export async function POST(req: Request) {
 
   const lowerOwner = owner.toLowerCase();
   const lowerRepo = repo.toLowerCase();
-  const store = await fetchKnowledge(userId, lowerOwner, lowerRepo);
+  const store = await fetchKnowledge(ownerId, lowerOwner, lowerRepo);
   const date = new Date().toISOString().slice(0, 10);
   const { store: next, applied, skipped } = applyKnowledgeOps(store, parsed.ops, { pr: 0, date });
-  await putKnowledge(userId, lowerOwner, lowerRepo, next);
+  await putKnowledge(ownerId, lowerOwner, lowerRepo, next);
   return Response.json({ knowledge: next, applied, skipped: skipped.length });
 }

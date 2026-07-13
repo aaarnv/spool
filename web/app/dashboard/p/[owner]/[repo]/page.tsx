@@ -74,7 +74,7 @@ export default async function ProjectPage({
         {n} {n === 1 ? "guide" : "guides"} &middot; shared knowledge grounds every guide&rsquo;s chat.
       </p>
 
-      {n > 0 && (
+      {n > 0 ? (
         <div className={styles.grid}>
           {rows.map((s) => (
             <SpoolCard
@@ -86,6 +86,8 @@ export default async function ProjectPage({
             />
           ))}
         </div>
+      ) : (
+        <p className={styles.kEmpty}>No guides yet.</p>
       )}
 
       <KnowledgeManager owner={owner} repo={repo} initial={knowledge} />
