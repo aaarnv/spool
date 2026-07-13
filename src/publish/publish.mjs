@@ -13,7 +13,7 @@ const CONTEXT_PACK_MAX = 6 * 1024 * 1024;
 const sliceText = (s) => (s.length > CONTEXT_FILE_MAX ? s.slice(0, CONTEXT_FILE_MAX) : s);
 
 // Resolve host/token from explicit args, then env, then ~/.spool.json.
-async function resolveConfig({ host, token } = {}) {
+export async function resolveConfig({ host, token } = {}) {
   let cfg = {};
   const cfgPath = join(homedir(), ".spool.json");
   if (existsSync(cfgPath)) {
@@ -94,6 +94,22 @@ export async function buildPrBundle(dir) {
     tour: JSON.parse(await readFile(tourPath, "utf8")),
     hasDiff: existsSync(join(dir, "diff.patch")),
   };
+
+  // Agent-authored knowledge ops ride in meta regardless of a context pack, so fold
+  // them into base BEFORE the no-context early return. Server validates; this is a
+  // light shape check (non-empty array of objects each with a string `op`).
+  const opsPath = join(dir, "knowledge-ops.json");
+  if (existsSync(opsPath)) {
+    try {
+      const parsed = JSON.parse(await readFile(opsPath, "utf8"));
+      const ops = parsed?.ops;
+      if (Array.isArray(ops) && ops.length && ops.every((o) => o && typeof o === "object" && typeof o.op === "string")) {
+        base.knowledgeOps = ops;
+      }
+    } catch {
+      /* malformed ops file: skip; nothing durable ships */
+    }
+  }
 
   const contextPath = join(dir, "context.json");
   if (!existsSync(contextPath)) return base;
@@ -237,7 +253,7 @@ export async function publishSpool(workdir, opts = {}) {
   if (!res.ok) {
     throw new Error(`publish failed: ${res.status} ${res.statusText} ${await res.text().catch(() => "")}`);
   }
-  const { url, uploads, previewUrl } = await res.json();
+  const { url, uploads, previewUrl, knowledge } = await res.json();
 
   // One grant per big binary: published final.mp4/frames (l/<id>/*) plus source
   // video.mp4 + seg wavs (spools/<id>/src/*) when the spool was published editable.
@@ -249,6 +265,12 @@ export async function publishSpool(workdir, opts = {}) {
     if (grant.pathname.includes("/src/")) sourceGrants++;
   }
   if (sources) console.error(`[publish] editable: uploaded sources (${sources.segments.length} vo seg[s], ${sourceGrants} binary grant[s])`);
+
+  // Project knowledge apply summary from the server (present only for PR guides with ops).
+  if (knowledge && typeof knowledge.applied === "number") {
+    const skipped = Array.isArray(knowledge.skipped) ? knowledge.skipped.length : Number(knowledge.skipped) || 0;
+    console.error(`[publish] knowledge: ${knowledge.applied} op(s) applied${skipped > 0 ? `, ${skipped} skipped (caps)` : ""}`);
+  }
 
   console.log(url);
 

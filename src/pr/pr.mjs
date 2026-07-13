@@ -3,8 +3,42 @@ import { promisify } from "node:util";
 import { writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { resolveConfig } from "../publish/publish.mjs";
 
 const run = promisify(execFile);
+
+// The knowledge store shape returned when nothing is stored yet or the fetch degrades.
+const emptyStore = () => ({ version: 1, overview: null, subsystems: {}, vocabulary: {}, recording: {}, decisions: [] });
+
+// Scaffold the agent authors: durable repo truths this PR changes, not PR narration.
+// `_instructions` is ignored at publish (see PR-GUIDE-CONTRACT.md Project knowledge).
+const KNOWLEDGE_OPS_SCAFFOLD = {
+  _instructions:
+    "Record durable truths this PR changes about the repo, not PR narration. knowledge.json shows the current store: UPDATE existing entries rather than duplicating. Ops: set_overview{text<=500}, set_subsystem{name<=80,text<=1000}, remove_subsystem{name}, set_term{term<=60,text<=500}, remove_term{term}, set_recording{topic<=80,text<=1000}, remove_recording{topic}, add_decision{what<=300,why<=500}. recording topics (run, auth, record-tips, gotchas) hold operational memory: how to boot this repo's app, dev-login tricks, pre-warm needs, flaky elements. Server stamps pr+date. Leave ops:[] if nothing durable changed. This _instructions field is ignored at publish.",
+  ops: [],
+};
+
+// Best-effort read of the project's accumulated knowledge store for this repo. Missing
+// config, a slow/absent server, or any non-200 all degrade to the empty store.
+async function fetchProjectKnowledge(owner, repo) {
+  const { host, token } = await resolveConfig();
+  if (!host || !token) return emptyStore();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  try {
+    const res = await fetch(
+      `${host}/api/projects/knowledge?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`,
+      { headers: { authorization: `Bearer ${token}` }, signal: ctrl.signal }
+    );
+    if (!res.ok) return emptyStore();
+    const json = await res.json();
+    return json.knowledge ?? emptyStore();
+  } catch {
+    return emptyStore();
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // gh pr view fields fetched into pr.json (the guide's grounding metadata).
 const PR_FIELDS =
@@ -226,6 +260,13 @@ export async function preparePr(prArg, opts = {}) {
   };
   await writeFile(tourPath, JSON.stringify(tour, null, 2) + "\n");
 
+  // Cross-PR project knowledge: fetch the accumulated store as a read-only reference for
+  // the authoring agent, and scaffold the ops file it writes back. Owner/repo lowercased
+  // (GitHub is case-insensitive); a degraded fetch leaves the empty store in front of it.
+  const knowledge = await fetchProjectKnowledge(String(owner || "").toLowerCase(), String(rname || "").toLowerCase());
+  await writeFile(join(workdir, "knowledge.json"), JSON.stringify(knowledge, null, 2) + "\n");
+  await writeFile(join(workdir, "knowledge-ops.json"), JSON.stringify(KNOWLEDGE_OPS_SCAFFOLD, null, 2) + "\n");
+
   const rel = `spool/pr-${number}`;
   const contextLines = context
     ? [
@@ -233,10 +274,35 @@ export async function preparePr(prArg, opts = {}) {
         `  context.md    product-brief template — author it`,
       ]
     : [];
-  const authorContext = context
-    ? [`  2. Author context.md (product brief; remove every TODO line) and curate context.json "related" (files a reader needs beyond the diff).`]
-    : [];
-  const stepN = (n) => n + (context ? 1 : 0);
+
+  const subsystemCount = Object.keys(knowledge.subsystems || {}).length;
+  const termCount = Object.keys(knowledge.vocabulary || {}).length;
+  const recordingTopics = Object.keys(knowledge.recording || {});
+  const decisionCount = (knowledge.decisions || []).length;
+  const knowledgeEmpty =
+    !knowledge.overview && subsystemCount === 0 && termCount === 0 && recordingTopics.length === 0 && decisionCount === 0;
+  const knowledgeLine = knowledgeEmpty
+    ? `  knowledge.json  empty (first guide for this repo)`
+    : `  knowledge.json  overview ${knowledge.overview ? "yes" : "no"}, ${subsystemCount} subsystem(s), ${termCount} term(s), ${recordingTopics.length} recording topic(s), ${decisionCount} decision(s)`;
+
+  // Author steps are numbered sequentially; context and knowledge each add one.
+  let n = 1;
+  const authorSteps = [`  ${n++}. Author tour.json (reorder narratively, write prose, set mode, delete _instructions).`];
+  if (context) {
+    authorSteps.push(
+      `  ${n++}. Author context.md (product brief; remove every TODO line) and curate context.json "related" (files a reader needs beyond the diff).`
+    );
+  }
+  authorSteps.push(
+    `  ${n++}. Author knowledge-ops.json: read knowledge.json first, then record durable truths this PR changes about the repo (UPDATE existing entries). Leave ops:[] if nothing durable changed.`
+  );
+  if (recordingTopics.length) {
+    authorSteps.push(`     Read knowledge.json recording topics before recording: ${recordingTopics.join(", ")}`);
+  }
+  authorSteps.push(`  ${n++}. spool live ${rel} --url <app-url or file:///abs/explainer.html>   (name each /step after its stop id)`);
+  authorSteps.push(`  ${n++}. spool finish ${rel}`);
+  authorSteps.push(`  ${n++}. spool publish ${rel} --pr ${number}`);
+
   console.log(
     [
       `Scaffolded ${workdir}`,
@@ -244,13 +310,10 @@ export async function preparePr(prArg, opts = {}) {
       `  diff.patch  ${diffOut.length} bytes`,
       `  tour.json   ${stops.length} placeholder stop(s) — author it (see the spool skill)`,
       ...contextLines,
+      knowledgeLine,
       "",
       "Next:",
-      `  1. Author tour.json (reorder narratively, write prose, set mode, delete _instructions).`,
-      ...authorContext,
-      `  ${stepN(2)}. spool live ${rel} --url <app-url or file:///abs/explainer.html>   (name each /step after its stop id)`,
-      `  ${stepN(3)}. spool finish ${rel}`,
-      `  ${stepN(4)}. spool publish ${rel} --pr ${number}`,
+      ...authorSteps,
     ].join("\n")
   );
   return workdir;
