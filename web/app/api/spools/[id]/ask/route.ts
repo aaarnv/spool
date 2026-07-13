@@ -5,6 +5,7 @@ import { db } from "../../../../../db";
 import { askUsage } from "../../../../../db/schema";
 import { fetchSpoolJson } from "../../../../../lib/spoolAccess";
 import { bundleTools, messageCreateParams, parsePack, runToolLoop, type CallModel } from "../../../../../lib/askBundle";
+import { openAIAnswer, openAIToolLoop } from "../../../../../lib/askOpenAI";
 import { srcBlobUrl } from "../../../../spool";
 
 export const runtime = "nodejs";
@@ -84,7 +85,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const spool = await fetchSpoolJson(id);
   if (!spool || !spool.pr) return bad(404, "not found");
-  if (!process.env.ANTHROPIC_API_KEY) return bad(503, "ANTHROPIC_API_KEY not configured");
+  // Anthropic when its key exists, OpenAI otherwise; both loops share bounds + tools.
+  const provider = process.env.ANTHROPIC_API_KEY ? "anthropic" : process.env.OPENAI_API_KEY ? "openai" : null;
+  if (!provider) return bad(503, "no model API key configured");
 
   // Reserve a daily slot per IP, then per spool, before any model work. Rejecting
   // past the cap keeps counting, which is harmless for an abuse guard.
@@ -127,7 +130,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   ]);
   const pack = parsePack(contextRaw || null);
   const tier: "bundle" | "diff" = pack ? "bundle" : "diff";
-  const model = process.env.SPOOL_ASK_MODEL || (tier === "bundle" ? "claude-sonnet-5" : "claude-haiku-4-5");
+  const DEFAULT_MODEL = {
+    anthropic: { bundle: "claude-sonnet-5", diff: "claude-haiku-4-5" },
+    openai: { bundle: "gpt-5.1", diff: "gpt-5-mini" },
+  } as const;
+  const model = process.env.SPOOL_ASK_MODEL || DEFAULT_MODEL[provider][tier];
 
   let prBody = "";
   try {
@@ -204,10 +211,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     { role: "user" as const, content: question },
   ];
 
-  const client = new Anthropic();
   let answer: string;
   try {
-    if (tier === "bundle" && pack) {
+    if (provider === "openai") {
+      const apiKey = process.env.OPENAI_API_KEY!;
+      answer =
+        tier === "bundle" && pack
+          ? (await openAIToolLoop({ apiKey, model, system, pack, spoolId: id, history, question })).answer
+          : await openAIAnswer({ apiKey, model, system, history, question });
+    } else if (tier === "bundle" && pack) {
+      const client = new Anthropic();
       const callModel: CallModel = (msgs, toolChoice) =>
         client.messages.create(
           messageCreateParams({ model, system, messages: msgs, tools: bundleTools, toolChoice })
@@ -215,6 +228,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const result = await runToolLoop({ callModel, pack, spoolId: id, question, initialMessages: messages });
       answer = result.answer;
     } else {
+      const client = new Anthropic();
       const res = await client.messages.create(messageCreateParams({ model, system, messages }));
       answer = res.content
         .filter((b) => b.type === "text")

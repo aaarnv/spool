@@ -67,7 +67,7 @@
   gap: 44px;
 }
 .wv-d-head .wv-pr-link {
-  justify-self: start;
+  justify-self: end;
   align-self: start;
   margin-top: 27px; /* eyebrow row height, so the pill rides the title line */
 }
