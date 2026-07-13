@@ -190,6 +190,14 @@ program
   });
 
 program
+  .command('pr <numberOrUrl>')
+  .description('scaffold a PR guide workdir (fetches PR metadata + diff via gh)')
+  .action(async (numberOrUrl) => {
+    const { preparePr } = await import(join(root, 'src/pr/pr.mjs'));
+    await preparePr(numberOrUrl);
+  });
+
+program
   .command('build <workdir>')
   .description('(vo ‖ record) → render → share, end to end')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')

@@ -79,6 +79,44 @@ function frameTime(step, videoDur) {
   return Math.min(Math.max(t, 0), Math.max(0, videoDur - 0.05));
 }
 
+// Resolve a `spool pr` scaffold in the workdir into the spool.json `pr` summary,
+// mapping each tour stop to the recorded step (by `stop.step ?? stop.id` vs step
+// name) so the watch page can anchor a seek. Returns null when not a PR guide.
+async function buildPrSummary(dir, steps) {
+  const prPath = join(dir, "pr.json");
+  const tourPath = join(dir, "tour.json");
+  if (!existsSync(prPath) || !existsSync(tourPath)) return null;
+  const info = await readJson(prPath);
+  const tour = await readJson(tourPath);
+  const byName = new Map((steps || []).map((s, idx) => [s.name, idx]));
+  const unmatched = [];
+  const stops = (tour.stops || []).map((stop) => {
+    const key = stop.step ?? stop.id;
+    const matched = byName.has(key) ? byName.get(key) : null;
+    if (matched === null) unmatched.push(stop.id);
+    return {
+      id: stop.id,
+      heading: stop.heading ?? "",
+      prose: stop.prose ?? "",
+      files: stop.files ?? [],
+      step: matched,
+    };
+  });
+  if (unmatched.length) {
+    console.error(`[share] PR guide: ${unmatched.length} stop(s) not mapped to a recorded step (prose+diff only): ${unmatched.join(", ")}`);
+  }
+  return {
+    number: info.number,
+    url: info.url,
+    title: info.title,
+    additions: info.additions,
+    deletions: info.deletions,
+    changedFiles: info.changedFiles,
+    mode: tour.mode ?? null,
+    stops,
+  };
+}
+
 /**
  * Write the agent-consumable share/ bundle for a spool workdir.
  * See CONTRACTS.md "share/ bundle".
@@ -189,6 +227,11 @@ export async function shareSpool(workdir) {
     await rm(listPath, { force: true }).catch(() => {});
   }
 
+  // PR guide (optional): if the workdir is a `spool pr` scaffold, attach a `pr`
+  // summary so the watch page never needs tour.json. Stop ids map to recorded step
+  // names; unmatched stops degrade to prose+diff only (step: null), never fail.
+  const pr = await buildPrSummary(dir, steps);
+
   const spool = {
     version: 1,
     kind: "spool",
@@ -199,6 +242,7 @@ export async function shareSpool(workdir) {
     rate,
     voice: { engine: manifest.engine ?? null, voice: manifest.voice ?? null },
     steps,
+    ...(pr ? { pr } : {}),
     console: {
       errors: errors.length,
       warnings: warnings.length,

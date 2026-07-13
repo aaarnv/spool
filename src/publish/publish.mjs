@@ -72,11 +72,27 @@ async function buildSources(dir) {
   };
 }
 
+// Read a `spool pr` scaffold from the workdir into the publish `pr` bundle. Rides
+// inline in meta (sibling of sources — must not depend on editability). Null when
+// the workdir is not a PR guide.
+async function buildPrBundle(dir) {
+  const prPath = join(dir, "pr.json");
+  const tourPath = join(dir, "tour.json");
+  if (!existsSync(prPath) || !existsSync(tourPath)) return null;
+  return {
+    info: JSON.parse(await readFile(prPath, "utf8")),
+    tour: JSON.parse(await readFile(tourPath, "utf8")),
+    hasDiff: existsSync(join(dir, "diff.patch")),
+  };
+}
+
 // Map a returned upload grant to its local file. Source grants (spools/{id}/src/*)
 // resolve against the workdir; published grants (l/{id}/*) against final.mp4/share.
 function grantLocalPath(pathname, { dir, shareDir, finalMp4 }) {
   if (pathname.includes("/src/")) {
     const rel = pathname.replace(/^spools\/[^/]+\/src\//, "");
+    // PR guide sources live flat in the workdir (src/pr/diff.patch → diff.patch).
+    if (rel.startsWith("pr/")) return join(dir, rel.slice(3));
     // src/bg.jpg is staged in the workdir as the hidden .spool-bg.jpg.
     return join(dir, rel === "bg.jpg" ? ".spool-bg.jpg" : rel);
   }
@@ -112,11 +128,13 @@ export async function publishSpool(workdir, opts = {}) {
   const transcriptPath = join(shareDir, "transcript.txt");
   const consolePath = join(shareDir, "console.jsonl");
   const sources = await buildSources(dir); // null ⇒ dry/partial session, not editable
+  const prBundle = await buildPrBundle(dir); // null ⇒ ordinary (non-PR) spool
   const meta = {
     spool,
     transcript: existsSync(transcriptPath) ? await readFile(transcriptPath, "utf8") : "",
     console: existsSync(consolePath) ? await readFile(consolePath, "utf8") : "",
     ...(sources ? { sources } : {}),
+    ...(prBundle ? { pr: prBundle } : {}),
     hasPreview: existsSync(join(shareDir, "preview.gif")),
   };
 
@@ -158,10 +176,19 @@ export async function commentOnPR(url, spool, pr, previewUrl) {
   });
 
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  const steps = (spool.steps || [])
-    .map((s) => `| ${mmss(s.start)} | ${s.name} |`)
-    .join("\n");
-  const body = [
+  const body = spool.pr ? guideBody(url, spool, previewUrl, mmss) : walkthroughBody(url, spool, previewUrl, mmss);
+
+  const args = ["pr", "comment"];
+  if (pr !== true) args.push(String(pr));
+  args.push("--body", body);
+  const { stdout } = await run("gh", args);
+  console.error(`[publish] PR comment: ${stdout.trim() || "posted"}`);
+}
+
+// Default walkthrough comment (non-PR spools): step index by start time.
+function walkthroughBody(url, spool, previewUrl, mmss) {
+  const steps = (spool.steps || []).map((s) => `| ${mmss(s.start)} | ${s.name} |`).join("\n");
+  return [
     `### 🎬 Walkthrough: ${spool.title || "spool"}`,
     "",
     // GIF preview when available: GitHub renders it inline; clicking opens the watch page.
@@ -174,12 +201,30 @@ export async function commentOnPR(url, spool, pr, previewUrl) {
     "",
     `<sub>Recorded and narrated by the agent that shipped this change, via [spool](https://spoolkit.dev). Agents can review without watching: \`spool read\` the share bundle linked on the watch page.</sub>`,
   ].join("\n");
+}
 
-  const args = ["pr", "comment"];
-  if (pr !== true) args.push(String(pr));
-  args.push("--body", body);
-  const { stdout } = await run("gh", args);
-  console.error(`[publish] PR comment: ${stdout.trim() || "posted"}`);
+// PR-guide comment variant: the tour stops are the rows, timestamped by the step
+// each stop maps to (blank when the stop has no anchored step). No em dashes.
+function guideBody(url, spool, previewUrl, mmss) {
+  const steps = spool.steps || [];
+  const rows = (spool.pr.stops || [])
+    .map((stop) => {
+      const at = typeof stop.step === "number" && steps[stop.step] ? mmss(steps[stop.step].start) : "";
+      return `| ${at} | ${stop.heading || stop.id} |`;
+    })
+    .join("\n");
+  return [
+    `### 🧭 PR guide: ${spool.pr.title || spool.title || "PR"}`,
+    "",
+    ...(previewUrl ? [`[![watch the guided tour](${previewUrl})](${url})`, ""] : []),
+    `**Watch the guided tour:** ${url} (${Math.round(spool.duration)}s, narrated)`,
+    "",
+    "| at | stop |",
+    "|---|---|",
+    rows,
+    "",
+    `<sub>A guided reading of this change, not a review. The watch page has the tour, the full diff, and Q&A grounded in the diff. Built via [spool](https://spoolkit.dev).</sub>`,
+  ].join("\n");
 }
 
 // Direct CLI: node src/publish/publish.mjs --workdir <dir> [--host <h>] [--token <t>]
