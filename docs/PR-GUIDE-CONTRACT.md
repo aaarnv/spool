@@ -218,3 +218,123 @@ diff, and Q&A grounded in the diff. Built via spool.</sub>
 ```
 
 No em dashes in the generated body.
+
+## Project knowledge (v1)
+
+Every PR guide is an island; the project knowledge store lets guides for the same repo share
+one accumulating world so the ask gets smarter over time. It is a keyed, provenance-stamped
+store patched by validated ops at publish (the same pattern as the edit ops), not a living
+markdown brief. A project is formed automatically, with no create step.
+
+**Project identity.** A project is the triple `(ownerId, owner, repo)`:
+- `ownerId` is the Clerk publisher (the spk token owner). Forgery only pollutes the forger's
+  own namespace.
+- `owner`/`repo` are the GitHub repo owner and name, **lowercased** everywhere (GitHub is
+  case-insensitive). The server re-derives them from `meta.pr.info.url` (authoritative); it
+  never trusts a client-supplied owner/repo.
+
+**Blob path.** `projects/{ownerId}/{owner}/{repo}/knowledge.json` (public URL, overwritten in
+place with `addRandomSuffix:false`).
+
+**Store schema.**
+
+```jsonc
+{
+  "version": 1,
+  "overview": { "text", "pr", "updatedAt" } | null,
+  "subsystems": { "<name>": { "text", "pr", "updatedAt" } },
+  "vocabulary": { "<term>": { "text", "pr", "updatedAt" } },
+  "recording":  { "<topic>": { "text", "pr", "updatedAt" } },
+  "decisions":  [ { "what", "why", "pr", "date" } ]
+}
+```
+
+`recording` is operational memory for the AUTHORING AGENT, not the chat: how to boot this
+repo's app (command, port, envs, seed), auth handling (dev-login endpoints, test accounts),
+what URL/flows to record against, known flaky elements and pre-warm steps. Conventional
+free-form topics: `run`, `auth`, `record-tips`, `gotchas`. The CLI puts it in front of the
+agent at `spool pr` scaffold time (the workdir `knowledge.json` reference plus the scaffold
+summary's topic list), and the skill has the agent read and write it around recording.
+
+**Caps.** Publish never fails on caps; overruns skip and report (see cap-skip semantics).
+
+| section | count cap | key cap | text cap |
+|---|---|---|---|
+| overview | 1 | n/a | text ≤500 |
+| subsystems | ≤40 | name ≤80 | text ≤1000 |
+| vocabulary | ≤60 | term ≤60 | text ≤500 |
+| recording | ≤20 | topic ≤80 | text ≤1000 |
+| decisions | last 50 (append-only) | n/a | what ≤300, why ≤500 |
+
+Also ≤20 ops per publish. Worst-case store is ~130KB.
+
+**Op vocabulary (8 ops).** Agent-authored in `knowledge-ops.json`. The server stamps `pr` and
+`date`; agents never write provenance.
+
+```
+set_overview    { text }            set_subsystem  { name, text }   remove_subsystem { name }
+set_term        { term, text }      remove_term    { term }
+set_recording   { topic, text }     remove_recording { topic }
+add_decision    { what, why }
+```
+
+Per-field caps match the store caps above (overview/subsystem/term/recording text and
+name/term/topic key lengths; decision what ≤300, why ≤500).
+
+**Workdir files** (both written by `spool pr` after context capture):
+- `knowledge.json` is the current store fetched from the GET API, a **read-only reference** for
+  the authoring agent. When the fetch degrades it is the empty store.
+- `knowledge-ops.json` (`{ "_instructions", "ops": [] }`) is the file the agent **authors**.
+  `_instructions` is ignored at publish. The agent reads `knowledge.json` first and UPDATES
+  existing entries rather than duplicating; it leaves `ops: []` when nothing durable changed.
+
+**Publish meta.** When `knowledge-ops.json` has a non-empty `ops` array, `buildPrBundle`
+attaches it as `pr.knowledgeOps` (a sibling of `info`/`tour`, independent of the context pack):
+
+```jsonc
+pr: { info, tour, hasDiff, hasContext?, knowledgeOps?: [ { op, … } ] }
+```
+
+**Fail-fast.** If `pr.knowledgeOps` is present the web validates it BEFORE any blob writes:
+`parseProjectRef(info)` must resolve (a PR url) and `validateKnowledgeOps` must pass, else the
+publish is rejected **400** with the exact validation reason and nothing is written. This is
+intentional: a malformed ops batch never half-applies.
+
+**Apply + response.** After the blob writes and db insert, the web fetches the store, applies
+the ops (provenance `{pr, date: today}`), and puts it back, then returns
+`knowledge: { applied, skipped }` in the publish response (the CLI prints
+`[publish] knowledge: N op(s) applied` plus `, M skipped (caps)` when any skipped). Apply-stage
+failures are caught and logged; they never fail the publish.
+
+**GET `/api/projects/knowledge?owner=&repo=`.** Bearer spk token. The server resolves `ownerId`
+from the token (the CLI never learns it), validates `owner`/`repo` against
+`/^[A-Za-z0-9._-]{1,100}$/` and lowercases them. Returns `200 { knowledge }` (the empty store
+when absent), `400` on bad params, `401` without a valid token. The CLI calls this best-effort
+with a ~5s timeout; any failure degrades to the empty store.
+
+**Cap-skip semantics.** A `set_*` op that introduces a NEW key past its section's count cap is
+skipped with reason `cap`; an update to an EXISTING key always applies (it does not grow the
+section). `remove_*` on a missing key is skipped. `decisions` is truncated to the last 50.
+Publish never fails on caps; skips are reported in the response and logged.
+
+**Ask grounding.** The chat gets an inline project index appended to its system context: the
+overview text, the subsystem NAMES, the vocabulary TERMS, the last 5 decisions with provenance,
+and the sibling guide list (`PR #n: title`). Full entries are read on demand via
+`read_knowledge { key }` (`overview` | `decisions` | `subsystems/<name>` | `vocabulary/<term>`);
+sibling guides are toured via `read_guide { pr }`. `recording` topics are **excluded** from the
+inline index (operational, not comprehension) but remain readable via
+`read_knowledge { key: "recording/<topic>" }`.
+
+**Degradation.** A workdir WITHOUT `knowledge-ops.json` (or with `ops: []`) produces a publish
+request byte-identical to the pre-knowledge shape: no `knowledgeOps` key, no store fetch or
+apply. Old spools with NULL project columns behave identically (knowledge works off the parsed
+url; siblings need the columns).
+
+**Concurrency.** The blob read-modify-write has no compare-and-set, so concurrent publishes to
+the same project are **last-writer-wins**: the later put can drop the earlier publish's ops. The
+keyed store bounds the blast radius to one publish's ops, and single-owner workflows make this
+rare. Revisit with a revision column if multi-agent publishing to one project becomes real.
+
+**No secrets.** The store is a public blob. Knowledge (including `recording` topics: dev-login
+tricks, test accounts, boot commands) must not contain secrets, tokens, or credentials. Record
+the shape of the auth flow, never the values.
