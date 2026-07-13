@@ -6,7 +6,7 @@ import { db } from "../../../db";
 import { spools as spoolsTable } from "../../../db/schema";
 import { resolveOwner } from "../../../db/owner";
 import { validateKnowledgeOps, applyKnowledgeOps, type KnowledgeOp } from "../../../lib/knowledgeOps";
-import { fetchKnowledge, putKnowledge } from "../../../lib/knowledge";
+import { fetchKnowledge, putKnowledge, parseProjectRef } from "../../../lib/knowledge";
 
 export const runtime = "nodejs";
 
@@ -48,19 +48,6 @@ type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sou
 const PR_INLINE_MAX = 300 * 1024;
 
 const segName = (n: number) => `seg_${String(n).padStart(2, "0")}`;
-
-// Server-authoritative project identity: parse owner/repo/pr out of the PR url
-// (never trust client-computed fields). null on any miss. owner/repo lowercased.
-export function parseProjectRef(info: unknown): { owner: string; repo: string; pr: number } | null {
-  const url = (info as { url?: unknown })?.url;
-  if (typeof url !== "string") return null;
-  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-  if (!m) return null;
-  const num = (info as { number?: unknown })?.number;
-  const pr = Number.isInteger(num) ? (num as number) : Number(m[3]);
-  if (!Number.isInteger(pr) || pr <= 0) return null;
-  return { owner: m[1].toLowerCase(), repo: m[2].toLowerCase(), pr };
-}
 
 export async function POST(req: Request) {
   const auth = req.headers.get("authorization") || "";

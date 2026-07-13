@@ -31,3 +31,16 @@ export async function putKnowledge(ownerId: string, owner: string, repo: string,
     contentType: "application/json",
   });
 }
+
+// Server-authoritative project identity: parse owner/repo/pr out of the PR url
+// (never trust client-computed fields). null on any miss. owner/repo lowercased.
+export function parseProjectRef(info: unknown): { owner: string; repo: string; pr: number } | null {
+  const url = (info as { url?: unknown })?.url;
+  if (typeof url !== "string") return null;
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!m) return null;
+  const num = (info as { number?: unknown })?.number;
+  const pr = Number.isInteger(num) ? (num as number) : Number(m[3]);
+  if (!Number.isInteger(pr) || pr <= 0) return null;
+  return { owner: m[1].toLowerCase(), repo: m[2].toLowerCase(), pr };
+}
