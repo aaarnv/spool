@@ -79,5 +79,18 @@ export const voUsage = pgTable(
   (t) => ({ pk: primaryKey({ columns: [t.ownerId, t.day] }) })
 );
 
+// Per-spool public Q&A daily counters. The "*" ipHash row is the per-spool
+// global counter; every other row is one requester IP for that day.
+export const askUsage = pgTable(
+  "ask_usage",
+  {
+    spoolId: text("spool_id").notNull(),
+    ipHash: text("ip_hash").notNull(),
+    day: text("day").notNull(), // YYYY-MM-DD (UTC)
+    count: integer("count").notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.spoolId, t.ipHash, t.day] }) })
+);
+
 export type SpoolRow = typeof spools.$inferSelect;
 export type EditJobRow = typeof editJobs.$inferSelect;

@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
-import { blobUrl, mmss, type Spool } from "../../spool";
+import { blobUrl, srcBlobUrl, mmss, type Spool } from "../../spool";
 import { db } from "../../../db";
 import { spools as spoolsTable } from "../../../db/schema";
-import Watch, { type Chapter, type Line } from "./Watch";
+import Watch, { type Chapter, type Line, type TourNode, type PrMeta } from "./Watch";
 import { sans, serif } from "../../components/marketing/fonts";
 import "./watch.css";
 
@@ -86,6 +86,39 @@ export default async function WatchPage({
   const consoleUrl = blobUrl(id, "console.jsonl");
   const rawUrl = blobUrl(id, "spool.json");
 
+  // PR-guide mode: resolve each tour stop's step index to a video anchor, and
+  // point the client at the diff + source blobs. Out-of-range index = unanchored.
+  let pr: PrMeta | undefined;
+  let tour: TourNode[] | undefined;
+  let diffUrl: string | undefined;
+  let prJsonUrl: string | undefined;
+  let tourJsonUrl: string | undefined;
+  if (spool.pr) {
+    pr = {
+      number: spool.pr.number,
+      url: spool.pr.url,
+      title: spool.pr.title,
+      additions: spool.pr.additions,
+      deletions: spool.pr.deletions,
+      changedFiles: spool.pr.changedFiles,
+    };
+    tour = spool.pr.stops.map((s) => {
+      const step = s.step != null ? spool.steps[s.step] : undefined;
+      const at = step ? toFinal(step.start) : null;
+      return {
+        id: s.id,
+        heading: s.heading,
+        prose: s.prose,
+        files: s.files,
+        at,
+        label: at != null ? mmss(at) : null,
+      };
+    });
+    diffUrl = srcBlobUrl(id, "pr/diff.patch");
+    prJsonUrl = srcBlobUrl(id, "pr/pr.json");
+    tourJsonUrl = srcBlobUrl(id, "pr/tour.json");
+  }
+
   return (
     <div className={`${sans.variable} ${serif.variable}`}>
       <Watch
@@ -101,6 +134,11 @@ export default async function WatchPage({
         rawUrl={rawUrl}
         consoleUrl={consoleUrl}
         signedIn={!!userId}
+        pr={pr}
+        tour={tour}
+        diffUrl={diffUrl}
+        prJsonUrl={prJsonUrl}
+        tourJsonUrl={tourJsonUrl}
       />
     </div>
   );

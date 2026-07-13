@@ -115,6 +115,38 @@ protocol, but **no `page` driver**. You drive the desktop yourself between steps
   `--pr <number>`) — it comments the watch link + step index on the PR via `gh`, so the
   reviewer gets the narrated demo inline. Do this by default when a PR exists.
 
+## PR guide (spool pr)
+
+Turn a GitHub PR into a published guide: a narrative reading order of the diff, a narrated
+video, and a watch page where anyone with the link can ask questions grounded in the change.
+It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
+
+1. **Scaffold.** `spool pr <number>` (or a full PR URL) fetches the PR metadata + diff via
+   `gh` and writes `spool/pr-<n>/{pr.json,diff.patch,tour.json}`. Needs `gh` on PATH and
+   `gh auth login`.
+2. **Author `tour.json`.** It arrives with one placeholder stop per changed file, in diff
+   order. Rewrite it into 4–8 stops in narrative READING order (why the change exists, the
+   entrypoint, the core change, the ripples, the tests), never alphabetical or diff order.
+   Each stop is `{id, heading, prose, files:[{path}]}`. `prose` guides comprehension and is
+   explicitly NOT review. No em dashes. Set `mode` (see step 3) and delete `_instructions`
+   when done. A stop's `id` doubles as the recorded step name that illustrates it (step 4).
+3. **Choose the video mode.**
+   - **UI-surface change** (`mode:"walkthrough"`) → live-record the running feature as usual
+     (Live path above), naming steps after stop ids.
+   - **Non-UI change** (refactor, backend, infra; `mode:"explainer"`) → author a
+     self-contained single-file `explainer.html` in the workdir (designed for the 1600x900
+     live viewport: dark, big type, one section per stop), then record it:
+     `spool live spool/pr-<n> --url file:///abs/path/explainer.html`. If the page needs local
+     assets, serve it with `python3 -m http.server` and use the `http://localhost:PORT/…` URL
+     instead of `file://`. Drive one section reveal per step.
+4. **Mapping rule (critical).** Each live `/step` name MUST equal the tour stop id it
+   illustrates. That is the only link between the tour and the video. Not every stop needs a
+   step (an unmapped stop degrades to prose + diff on the watch page); steps without a matching
+   stop are fine too.
+5. **Finish + publish.** `spool finish spool/pr-<n>` → verify keyframes → `spool publish
+   spool/pr-<n> --pr <n>`. Publish attaches the tour + diff, and the `--pr` comment posts a
+   guide variant (stop table timestamped to the video) on the PR.
+
 ## Consuming a spool another agent made
 
 `spool read <workdir-or-share-dir>` prints the digest: steps, narration, timings, click

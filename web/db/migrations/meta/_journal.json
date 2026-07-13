@@ -29,6 +29,13 @@
       "when": 1783658687870,
       "tag": "0003_fresh_albert_cleary",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783905127305,
+      "tag": "0004_thick_the_santerians",
+      "breakpoints": true
     }
   ]
 }
