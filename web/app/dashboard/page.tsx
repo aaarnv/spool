@@ -72,7 +72,7 @@ export default async function DashboardPage() {
         Walkthroughs you&rsquo;ve published, and the token your agent uses to publish them.
       </p>
 
-      <TokenCard hasToken={hasToken} />
+      <TokenCard hasToken={hasToken} compact={rows.length > 0} />
 
       {rows.length === 0 ? (
         <div className={styles.empty}>
