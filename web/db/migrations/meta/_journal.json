@@ -43,6 +43,13 @@
       "when": 1783926660023,
       "tag": "0005_silly_network",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783931781343,
+      "tag": "0006_melodic_skin",
+      "breakpoints": true
     }
   ]
 }

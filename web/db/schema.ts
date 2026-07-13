@@ -104,5 +104,20 @@ export const askUsage = pgTable(
   (t) => ({ pk: primaryKey({ columns: [t.spoolId, t.ipHash, t.day] }) })
 );
 
+// Per-project shared knowledge. Lives in Postgres, not Blob: the store is
+// mutable read-modify-write state, and Blob's CDN serves stale reads after an
+// in-place overwrite (and its URLs reject cache-busting query params).
+export const projectKnowledge = pgTable(
+  "project_knowledge",
+  {
+    ownerId: text("owner_id").notNull(),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    store: jsonb("store").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.ownerId, t.repoOwner, t.repoName] }) })
+);
+
 export type SpoolRow = typeof spools.$inferSelect;
 export type EditJobRow = typeof editJobs.$inferSelect;

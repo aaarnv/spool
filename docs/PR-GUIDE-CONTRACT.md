@@ -233,8 +233,10 @@ markdown brief. A project is formed automatically, with no create step.
   case-insensitive). The server re-derives them from `meta.pr.info.url` (authoritative); it
   never trusts a client-supplied owner/repo.
 
-**Blob path.** `projects/{ownerId}/{owner}/{repo}/knowledge.json` (public URL, overwritten in
-place with `addRandomSuffix:false`).
+**Storage.** Postgres table `project_knowledge` (composite PK ownerId + repoOwner + repoName,
+`store` jsonb). The store is mutable read-modify-write state, so it cannot live in Blob: the
+CDN serves stale content after an in-place overwrite, and blob URLs reject cache-busting
+query params. All reads and writes go through the web app (lib/knowledge.ts).
 
 **Store schema.**
 
@@ -268,15 +270,18 @@ summary's topic list), and the skill has the agent read and write it around reco
 
 Also ≤20 ops per publish. Worst-case store is ~130KB.
 
-**Op vocabulary (8 ops).** Agent-authored in `knowledge-ops.json`. The server stamps `pr` and
+**Op vocabulary (9 ops).** Agent-authored in `knowledge-ops.json`. The server stamps `pr` and
 `date`; agents never write provenance.
 
 ```
 set_overview    { text }            set_subsystem  { name, text }   remove_subsystem { name }
 set_term        { term, text }      remove_term    { term }
 set_recording   { topic, text }     remove_recording { topic }
-add_decision    { what, why }
+add_decision    { what, why }       remove_decision  { index }
 ```
+
+`remove_decision` deletes the decision at `index` (out of range → skipped `missing`); it exists
+for manual management from the dashboard, not for the CLI (decisions stay append-only there).
 
 Per-field caps match the store caps above (overview/subsystem/term/recording text and
 name/term/topic key lengths; decision what ≤300, why ≤500).
@@ -335,6 +340,6 @@ the same project are **last-writer-wins**: the later put can drop the earlier pu
 keyed store bounds the blast radius to one publish's ops, and single-owner workflows make this
 rare. Revisit with a revision column if multi-agent publishing to one project becomes real.
 
-**No secrets.** The store is a public blob. Knowledge (including `recording` topics: dev-login
-tricks, test accounts, boot commands) must not contain secrets, tokens, or credentials. Record
-the shape of the auth flow, never the values.
+**No secrets.** Knowledge (including `recording` topics: dev-login tricks, test accounts, boot
+commands) must not contain secrets, tokens, or credentials. Record the shape of the auth flow,
+never the values. Entries surface in the public watch-page chat via read_knowledge.

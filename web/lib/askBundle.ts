@@ -159,7 +159,11 @@ export function makeExecContext(o: {
 
 const GUIDE_CAP = 8000;
 
-const provLine = (pr: number, updatedAt: string) => `(from PR #${pr}, updated ${updatedAt})`;
+// pr === 0 is the manual-edit sentinel (dashboard edits carry no PR).
+const provLine = (pr: number, updatedAt: string) =>
+  pr === 0 ? `(manually edited, ${updatedAt})` : `(from PR #${pr}, updated ${updatedAt})`;
+const decisionProv = (pr: number, date: string) =>
+  pr === 0 ? `(manually edited, ${date})` : `(PR #${pr}, ${date})`;
 
 // The valid-key listing returned when read_knowledge gets an unknown/absent key.
 // Self-correcting, not a miss: it shows the model exactly what it can read.
@@ -183,7 +187,7 @@ function readKnowledge(k: KnowledgeStore | null, key: string): string {
   }
   if (key === "decisions") {
     if (k.decisions.length === 0) return "no decisions recorded";
-    return k.decisions.map((d) => `- ${d.what}: ${d.why} (PR #${d.pr}, ${d.date})`).join("\n");
+    return k.decisions.map((d) => `- ${d.what}: ${d.why} ${decisionProv(d.pr, d.date)}`).join("\n");
   }
   const slash = key.indexOf("/");
   if (slash > 0) {
@@ -279,7 +283,7 @@ export function buildProjectBlock(knowledge: KnowledgeStore | null, siblings: Si
   if (subs.length) parts.push(`Subsystems: ${subs.join(", ")}`);
   if (terms.length) parts.push(`Vocabulary: ${terms.join(", ")}`);
   if (decisions.length) {
-    const recent = decisions.slice(-5).map((d) => `- ${d.what}: ${d.why} (PR #${d.pr}, ${d.date})`);
+    const recent = decisions.slice(-5).map((d) => `- ${d.what}: ${d.why} ${decisionProv(d.pr, d.date)}`);
     parts.push(`Recent decisions:\n${recent.join("\n")}`);
   }
   if (siblings.length) {

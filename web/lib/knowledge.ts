@@ -1,35 +1,43 @@
-import { put } from "@vercel/blob";
-import { BLOB_BASE } from "../app/spool";
+import { and, eq } from "drizzle-orm";
+import { db } from "../db";
+import { projectKnowledge } from "../db/schema";
 import { emptyStore, parseStore, type KnowledgeStore } from "./knowledgeOps";
 
-// Blob storage for a project's shared knowledge store. Keyed by (publisher
-// ownerId, repo owner, repo name); owner/repo are lowercased by the caller.
-export const knowledgePath = (ownerId: string, owner: string, repo: string) =>
-  `projects/${ownerId}/${owner}/${repo}/knowledge.json`;
+// The project knowledge store lives in Postgres (project_knowledge, composite
+// PK ownerId+repoOwner+repoName). It is mutable read-modify-write state, so it
+// cannot live behind Blob's CDN: in-place overwrites serve stale reads and the
+// public URLs reject cache-busting query params. owner/repo lowercased by callers.
 
-export const knowledgeUrl = (ownerId: string, owner: string, repo: string) =>
-  `${BLOB_BASE}/${knowledgePath(ownerId, owner, repo)}`;
-
-// Read the current store from its public URL. Any failure (absent, network,
-// malformed) degrades to an empty store so callers never throw on a miss.
+// Read the current store. Any failure (absent row, malformed jsonb) degrades to
+// an empty store so callers never throw on a miss.
 export async function fetchKnowledge(ownerId: string, owner: string, repo: string): Promise<KnowledgeStore> {
   try {
-    const res = await fetch(knowledgeUrl(ownerId, owner, repo), { cache: "no-store" });
-    if (!res.ok) return emptyStore();
-    return parseStore(await res.text());
+    const [row] = await db
+      .select({ store: projectKnowledge.store })
+      .from(projectKnowledge)
+      .where(
+        and(
+          eq(projectKnowledge.ownerId, ownerId),
+          eq(projectKnowledge.repoOwner, owner),
+          eq(projectKnowledge.repoName, repo)
+        )
+      )
+      .limit(1);
+    if (!row) return emptyStore();
+    return parseStore(JSON.stringify(row.store));
   } catch {
     return emptyStore();
   }
 }
 
-// Overwrite the store in place. addRandomSuffix:false makes the URL deterministic
-// so fetchKnowledge can read it back without SDK auth.
 export async function putKnowledge(ownerId: string, owner: string, repo: string, store: KnowledgeStore) {
-  await put(knowledgePath(ownerId, owner, repo), JSON.stringify(store, null, 2), {
-    access: "public",
-    addRandomSuffix: false,
-    contentType: "application/json",
-  });
+  await db
+    .insert(projectKnowledge)
+    .values({ ownerId, repoOwner: owner, repoName: repo, store, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [projectKnowledge.ownerId, projectKnowledge.repoOwner, projectKnowledge.repoName],
+      set: { store, updatedAt: new Date() },
+    });
 }
 
 // Server-authoritative project identity: parse owner/repo/pr out of the PR url

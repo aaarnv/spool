@@ -26,7 +26,9 @@ export type KnowledgeOp =
   | { op: "remove_term"; term: string }
   | { op: "set_recording"; topic: string; text: string }
   | { op: "remove_recording"; topic: string }
-  | { op: "add_decision"; what: string; why: string };
+  | { op: "add_decision"; what: string; why: string }
+  // Mainly for dashboard management; index is bounds-checked at apply, not here.
+  | { op: "remove_decision"; index: number };
 
 export const OVERVIEW_MAX = 500;
 export const SUBSYSTEMS_MAX = 40;
@@ -183,6 +185,12 @@ export function validateKnowledgeOps(
         out.push({ op, what: what.value, why: why.value });
         break;
       }
+      case "remove_decision": {
+        const index = (r as { index?: unknown }).index;
+        if (!isInt(index) || index < 0) return { ok: false, error: `op ${idx}: index must be a non-negative integer` };
+        out.push({ op, index });
+        break;
+      }
       default:
         return { ok: false, error: `op ${idx}: unknown op "${String(op)}"` };
     }
@@ -261,6 +269,14 @@ export function applyKnowledgeOps(
       case "add_decision":
         next.decisions.push({ what: o.what, why: o.why, pr: prov.pr, date: prov.date });
         applied++;
+        break;
+      case "remove_decision":
+        if (o.index < next.decisions.length) {
+          next.decisions.splice(o.index, 1);
+          applied++;
+        } else {
+          skipped.push({ op: o.op, reason: "missing" });
+        }
         break;
     }
   }

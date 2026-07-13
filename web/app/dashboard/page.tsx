@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { UserButton } from "@clerk/nextjs";
 import { desc, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { blobUrl, mmss } from "../spool";
 import { db } from "../../db";
 import { spools as spoolsTable, publishTokens } from "../../db/schema";
@@ -72,7 +73,7 @@ export default async function DashboardPage() {
         Walkthroughs you&rsquo;ve published, and the token your agent uses to publish them.
       </p>
 
-      <TokenCard hasToken={hasToken} />
+      <TokenCard hasToken={hasToken} compact={rows.length > 0} />
 
       {rows.length === 0 ? (
         <div className={styles.empty}>
@@ -84,7 +85,12 @@ export default async function DashboardPage() {
         <>
           {[...groups].map(([key, gr]) => (
             <section key={key}>
-              <h2 className={styles.groupHead}>{key}</h2>
+              <h2 className={styles.groupHead}>
+                <Link href={`/dashboard/p/${encodeURIComponent(gr[0].repoOwner!)}/${encodeURIComponent(gr[0].repoName!)}`}>
+                  {key}
+                  <span className={styles.manage}>manage &rarr;</span>
+                </Link>
+              </h2>
               <div className={styles.grid}>{gr.map(renderCard)}</div>
             </section>
           ))}

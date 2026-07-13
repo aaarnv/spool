@@ -28,7 +28,9 @@ function Cmd({ text }: { text: string }) {
 // Quickstart + publish-token panel. The raw token only ever exists client-side
 // right after generation (the server stores a hash), so the ready-to-paste
 // config command can only be rendered in that moment — we make it count.
-export function TokenCard({ hasToken }: { hasToken: boolean }) {
+// compact: the user has published spools, so the 3-step quickstart collapses
+// to a slim token row (regenerate stays one click away).
+export function TokenCard({ hasToken, compact = false }: { hasToken: boolean; compact?: boolean }) {
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const exists = hasToken || token !== null;
@@ -47,6 +49,31 @@ export function TokenCard({ hasToken }: { hasToken: boolean }) {
   const configCmd = token
     ? `echo '{"host":"https://spoolkit.dev","token":"${token}"}' > ~/.spool.json`
     : null;
+
+  if (compact) {
+    return (
+      <section className={styles.token}>
+        <div className={styles.tokenHead}>
+          <span className={styles.label}>Publish token</span>
+          <button className={styles.ghost} onClick={generate} disabled={busy}>
+            {busy ? "Generating…" : "Regenerate token"}
+          </button>
+        </div>
+        {configCmd ? (
+          <>
+            <Cmd text={configCmd} />
+            <p className={styles.stepHint}>
+              Shown once. Paste it into your terminal now; the old token is invalid.
+            </p>
+          </>
+        ) : (
+          <p className={styles.stepHint}>
+            Your agent publishes with this token. Regenerating invalidates the old one.
+          </p>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section className={styles.token}>
