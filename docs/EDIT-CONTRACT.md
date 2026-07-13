@@ -38,6 +38,9 @@ sources: {
 Spools published before this feature have `has_sources = false` and are not editable
 (UI says re-publish to enable editing).
 
+PR guides add `spools/{id}/src/pr/{pr.json,tour.json,diff.patch}` under the same prefix, but
+independently of editability — see PR-GUIDE-CONTRACT.md.
+
 ## DB (Drizzle, Neon)
 
 ```
