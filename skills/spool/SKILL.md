@@ -142,7 +142,21 @@ It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
      the modules the changed code calls into, the callers of changed functions, the config or
      schema it touches, the types it implements. You just worked in this repo; you know. 5 to
      20 paths is typical. This grounds the watch-page Q&A; do not skip it.
-4. **Choose the video mode.**
+4. **Author project knowledge (`knowledge-ops.json`).** The scaffold also wrote
+   `knowledge.json` (the repo's accumulated cross-PR store, read-only) and an empty
+   `knowledge-ops.json`. Read `knowledge.json` FIRST, then record only the durable truths this
+   PR changes about the repo, not PR narration:
+   - UPDATE the existing `subsystem`/`term` entries the PR touched (`set_subsystem`/`set_term`
+     with the same name) rather than duplicating them; the server re-stamps provenance.
+   - Add vocabulary (`set_term`) only for genuinely new concepts a future reader needs.
+   - Add exactly one `add_decision` when the PR embodies a real decision (a tradeoff, a
+     direction), and none otherwise.
+   - Leave `ops: []` when nothing durable changed. This ships regardless of the video mode.
+5. **Choose the video mode.**
+   - **Before recording, read `knowledge.json`'s `recording` topics** (run, auth, record-tips,
+     gotchas) and follow them: how to boot this repo's app, the dev-login trick, any pre-warm
+     the flow needs, and the known flaky elements to avoid. This is operational memory left by
+     the last agent that recorded this repo.
    - **UI-surface change** (`mode:"walkthrough"`) → live-record the running feature as usual
      (Live path above), naming steps after stop ids.
    - **Non-UI change** (refactor, backend, infra; `mode:"explainer"`) → author a
@@ -151,14 +165,17 @@ It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
      `spool live spool/pr-<n> --url file:///abs/path/explainer.html`. If the page needs local
      assets, serve it with `python3 -m http.server` and use the `http://localhost:PORT/…` URL
      instead of `file://`. Drive one section reveal per step.
-5. **Mapping rule (critical).** Each live `/step` name MUST equal the tour stop id it
+6. **Mapping rule (critical).** Each live `/step` name MUST equal the tour stop id it
    illustrates. That is the only link between the tour and the video. Not every stop needs a
    step (an unmapped stop degrades to prose + diff on the watch page); steps without a matching
    stop are fine too.
-6. **Finish + publish.** `spool finish spool/pr-<n>` → verify keyframes → `spool publish
-   spool/pr-<n> --pr <n>`. Publish merges `context.md` into the bundle and resolves the
-   `related` files, attaches the tour + diff, and the `--pr` comment posts a guide variant
-   (stop table timestamped to the video) on the PR.
+7. **Finish + publish.** If the recording session taught you something operational (a dev-login
+   trick, a selector gotcha, a pre-warm need), write it back into `knowledge-ops.json` via
+   `set_recording` ops so the next agent records this repo without re-deriving it. Then
+   `spool finish spool/pr-<n>` → verify keyframes → `spool publish spool/pr-<n> --pr <n>`.
+   Publish merges `context.md` into the bundle and resolves the `related` files, attaches the
+   tour + diff, applies the knowledge ops to the project store, and the `--pr` comment posts a
+   guide variant (stop table timestamped to the video) on the PR.
 
 ## Consuming a spool another agent made
 

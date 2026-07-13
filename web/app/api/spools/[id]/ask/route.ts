@@ -1,11 +1,23 @@
 import { createHash } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
-import { sql } from "drizzle-orm";
+import { sql, eq, and, ne, desc, isNotNull } from "drizzle-orm";
 import { db } from "../../../../../db";
-import { askUsage } from "../../../../../db/schema";
+import { askUsage, spools as spoolsTable } from "../../../../../db/schema";
 import { fetchSpoolJson } from "../../../../../lib/spoolAccess";
-import { bundleTools, messageCreateParams, parsePack, runToolLoop, type CallModel } from "../../../../../lib/askBundle";
+import {
+  bundleTools,
+  projectTools,
+  buildProjectBlock,
+  makeExecContext,
+  messageCreateParams,
+  parsePack,
+  runToolLoop,
+  fetchText,
+  type CallModel,
+  type SiblingGuide,
+} from "../../../../../lib/askBundle";
 import { openAIAnswer, openAIToolLoop } from "../../../../../lib/askOpenAI";
+import { fetchKnowledge } from "../../../../../lib/knowledge";
 import { srcBlobUrl } from "../../../../spool";
 
 export const runtime = "nodejs";
@@ -60,15 +72,6 @@ function validateHistory(raw: unknown): Turn[] {
   return out;
 }
 
-async function fetchText(url: string): Promise<string> {
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    return res.ok ? await res.text() : "";
-  } catch {
-    return "";
-  }
-}
-
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -120,14 +123,64 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const remainingToday = Math.max(0, IP_CAP - ipRow.count);
 
+  // Project identity: prefer the server-stamped columns; fall back to the guide's
+  // own pr.owner/repo (lowercased) for pre-migration guides so knowledge still
+  // resolves. Siblings need the columns, so they are gated on repoOwner below.
+  const [row] = await db
+    .select({ ownerId: spoolsTable.ownerId, repoOwner: spoolsTable.repoOwner, repoName: spoolsTable.repoName })
+    .from(spoolsTable)
+    .where(eq(spoolsTable.id, id))
+    .limit(1);
+  const projOwner = (row?.repoOwner ?? spool.pr.owner ?? null)?.toLowerCase() ?? null;
+  const projRepo = (row?.repoName ?? spool.pr.repo ?? null)?.toLowerCase() ?? null;
+
+  const knowledgeP =
+    row?.ownerId && projOwner && projRepo
+      ? fetchKnowledge(row.ownerId, projOwner, projRepo)
+      : Promise.resolve(null);
+  const siblingsP =
+    row?.ownerId && row?.repoOwner && row?.repoName
+      ? db
+          .select({ id: spoolsTable.id, prNumber: spoolsTable.prNumber, title: spoolsTable.title })
+          .from(spoolsTable)
+          .where(
+            and(
+              eq(spoolsTable.ownerId, row.ownerId),
+              eq(spoolsTable.repoOwner, row.repoOwner),
+              eq(spoolsTable.repoName, row.repoName),
+              ne(spoolsTable.id, id),
+              isNotNull(spoolsTable.prNumber)
+            )
+          )
+          .orderBy(desc(spoolsTable.createdAt))
+          .limit(10)
+      : Promise.resolve([] as { id: string; prNumber: number | null; title: string | null }[]);
+
   // Ground the model: PR title/body, the tour stops (inline in spool.pr), the
   // step narrations, and the diff budgeted to fit prioritizing referenced files.
   // context.json (bundle tier) is optional; its absence keeps the diff-only path.
-  const [prRaw, diffRaw, contextRaw] = await Promise.all([
+  const [prRaw, diffRaw, contextRaw, knowledge, siblingRows] = await Promise.all([
     fetchText(srcBlobUrl(id, "pr/pr.json")),
     fetchText(srcBlobUrl(id, "pr/diff.patch")),
     fetchText(srcBlobUrl(id, "pr/context.json")),
+    knowledgeP,
+    siblingsP,
   ]);
+  const siblings: SiblingGuide[] = siblingRows
+    .filter((r) => r.prNumber !== null)
+    .map((r) => ({ id: r.id, pr: r.prNumber as number, title: r.title }));
+  const knowledgeHasContent = !!(
+    knowledge &&
+    (knowledge.overview ||
+      Object.keys(knowledge.subsystems).length ||
+      Object.keys(knowledge.vocabulary).length ||
+      Object.keys(knowledge.recording).length ||
+      knowledge.decisions.length)
+  );
+  const hasProject = siblings.length > 0 || knowledgeHasContent;
+  const projectBlock = buildProjectBlock(knowledge, siblings);
+  const projectSuffix = projectBlock ? `\n\n${projectBlock}` : "";
+
   const pack = parsePack(contextRaw || null);
   const tier: "bundle" | "diff" = pack ? "bundle" : "diff";
   const DEFAULT_MODEL = {
@@ -198,18 +251,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         context
       : context;
 
+  // The bundle-tier tool sentence widens to mention project knowledge + sibling
+  // guides only when the guide belongs to a project; projectless guides keep the
+  // original sentence (and the projectSuffix is "") so their prompt is unchanged.
+  const bundleToolSentence = hasProject
+    ? " You may read files from this guide's bundle, this project's shared knowledge, and sibling " +
+      "guides from the same repo with the provided tools. Read at most a handful, then answer.\n\n"
+    : " You may read files from this guide's bundle with the provided tools. Read at most a " +
+      "handful of files, then answer.\n\n";
+
   const system =
     tier === "bundle"
-      ? systemBase +
-        " You may read files from this guide's bundle with the provided tools. Read at most a " +
-        "handful of files, then answer.\n\n" +
-        `PR context:\n${bundleContext}`
-      : systemBase + `\n\nPR context:\n${context}`;
+      ? systemBase + bundleToolSentence + `PR context:\n${bundleContext}${projectSuffix}`
+      : systemBase + `\n\nPR context:\n${context}${projectSuffix}`;
 
   const messages: Anthropic.MessageParam[] = [
     ...history.map((t) => ({ role: t.role, content: t.content })),
     { role: "user" as const, content: question },
   ];
+
+  // Bundle tier offers the project tools alongside the bundle tools only when the
+  // guide has a project; ctx carries knowledge/siblings only then too.
+  const bundleToolset = hasProject ? [...bundleTools, ...projectTools] : bundleTools;
+  const ctx = makeExecContext({ pack, spoolId: id, knowledge: hasProject ? knowledge : null, siblings });
 
   let answer: string;
   try {
@@ -217,15 +281,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const apiKey = process.env.OPENAI_API_KEY!;
       answer =
         tier === "bundle" && pack
-          ? (await openAIToolLoop({ apiKey, model, system, pack, spoolId: id, history, question })).answer
+          ? (await openAIToolLoop({ apiKey, model, system, ctx, tools: bundleToolset, history, question })).answer
           : await openAIAnswer({ apiKey, model, system, history, question });
     } else if (tier === "bundle" && pack) {
       const client = new Anthropic();
       const callModel: CallModel = (msgs, toolChoice) =>
         client.messages.create(
-          messageCreateParams({ model, system, messages: msgs, tools: bundleTools, toolChoice })
+          messageCreateParams({ model, system, messages: msgs, tools: bundleToolset, toolChoice })
         );
-      const result = await runToolLoop({ callModel, pack, spoolId: id, question, initialMessages: messages });
+      const result = await runToolLoop({ callModel, ctx, question, initialMessages: messages });
       answer = result.answer;
     } else {
       const client = new Anthropic();

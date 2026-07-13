@@ -5,6 +5,8 @@ import { BLOB_BASE, blobUrl, type Spool } from "../../spool";
 import { db } from "../../../db";
 import { spools as spoolsTable } from "../../../db/schema";
 import { resolveOwner } from "../../../db/owner";
+import { validateKnowledgeOps, applyKnowledgeOps, type KnowledgeOp } from "../../../lib/knowledgeOps";
+import { fetchKnowledge, putKnowledge, parseProjectRef } from "../../../lib/knowledge";
 
 export const runtime = "nodejs";
 
@@ -39,7 +41,7 @@ type Sources = {
 
 // PR guide (optional): pr.json + tour.json ride inline here (written to
 // spools/{id}/src/pr/*); diff.patch and context.json come back as client-upload grants.
-type Pr = { info: unknown; tour: unknown; hasDiff?: boolean; hasContext?: boolean };
+type Pr = { info: unknown; tour: unknown; hasDiff?: boolean; hasContext?: boolean; knowledgeOps?: unknown };
 
 type Body = { spool: Spool; transcript?: string; console?: string; sources?: Sources; pr?: Pr; hasPreview?: boolean };
 
@@ -66,6 +68,17 @@ export async function POST(req: Request) {
   if (spool.steps.length > MAX_STEPS) return bad(413, "too many steps");
   if (body.pr && JSON.stringify(body.pr.info).length + JSON.stringify(body.pr.tour).length > PR_INLINE_MAX)
     return bad(413, "PR metadata too large");
+
+  // Fail fast on knowledge ops BEFORE any blob write or token mint: they need a
+  // valid PR url (server-derived identity) and must pass validation, else 400.
+  let knowledgeOps: KnowledgeOp[] | null = null;
+  const projectRef = body.pr ? parseProjectRef(body.pr.info) : null;
+  if (body.pr?.knowledgeOps !== undefined && body.pr.knowledgeOps !== null) {
+    if (!projectRef) return bad(400, "knowledgeOps requires a valid PR url");
+    const v = validateKnowledgeOps(body.pr.knowledgeOps);
+    if (!v.ok) return bad(400, `invalid knowledgeOps: ${v.error}`);
+    knowledgeOps = v.ops;
+  }
 
   const id = newId();
   const frameName = (i: number) => `frames/step_${String(i).padStart(2, "0")}.png`;
@@ -155,17 +168,45 @@ export async function POST(req: Request) {
   }
   await Promise.all(writes);
 
-  // Index the spool for its owner's dashboard.
+  // Index the spool for its owner's dashboard. PR guides also stamp the
+  // server-derived project identity so same-repo guides group into one project.
   await db.insert(spoolsTable).values({
     id,
     ownerId,
     title: spool.title ?? null,
     duration: spool.duration ?? null,
     hasSources,
+    ...(projectRef ? { repoOwner: projectRef.owner, repoName: projectRef.repo, prNumber: projectRef.pr } : {}),
   });
 
+  // Patch the project's shared knowledge store (RMW, last-writer-wins — see the
+  // contract's concurrency note). Never fails the publish: apply errors are
+  // logged and swallowed since the guide is already indexed.
+  let knowledgeResult: { applied: number; skipped: number } | null = null;
+  if (knowledgeOps && projectRef) {
+    try {
+      const store = await fetchKnowledge(ownerId, projectRef.owner, projectRef.repo);
+      const date = new Date().toISOString().slice(0, 10);
+      const { store: next, applied, skipped } = applyKnowledgeOps(store, knowledgeOps, { pr: projectRef.pr, date });
+      await putKnowledge(ownerId, projectRef.owner, projectRef.repo, next);
+      console.log(
+        "[publish] knowledge",
+        JSON.stringify({ owner: projectRef.owner, repo: projectRef.repo, applied, skipped: skipped.length })
+      );
+      knowledgeResult = { applied, skipped: skipped.length };
+    } catch (e) {
+      console.error("[publish] knowledge apply failed", (e as Error).message);
+    }
+  }
+
   const origin = new URL(req.url).origin;
-  return Response.json({ id, url: `${origin}/l/${id}`, uploads: grants, ...(previewUrl ? { previewUrl } : {}) });
+  return Response.json({
+    id,
+    url: `${origin}/l/${id}`,
+    uploads: grants,
+    ...(previewUrl ? { previewUrl } : {}),
+    ...(knowledgeResult ? { knowledge: knowledgeResult } : {}),
+  });
 }
 
 function mintToken(pathname: string, contentType: string) {
