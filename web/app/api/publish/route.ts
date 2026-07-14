@@ -7,6 +7,7 @@ import { spools as spoolsTable } from "../../../db/schema";
 import { resolveOwner } from "../../../db/owner";
 import { validateKnowledgeOps, applyKnowledgeOps, type KnowledgeOp } from "../../../lib/knowledgeOps";
 import { fetchKnowledge, putKnowledge, parseProjectRef } from "../../../lib/knowledge";
+import { sendOpsAlert } from "../../../lib/alerts";
 
 export const runtime = "nodejs";
 
@@ -50,11 +51,26 @@ const PR_INLINE_MAX = 300 * 1024;
 const segName = (n: number) => `seg_${String(n).padStart(2, "0")}`;
 
 export async function POST(req: Request) {
+  const ctx: { ownerId?: string } = {};
+  try {
+    return await handle(req, ctx);
+  } catch (e) {
+    await sendOpsAlert(
+      "/api/publish failed",
+      `${(e as Error).message}${ctx.ownerId ? ` owner=${ctx.ownerId}` : ""}`,
+      { key: "publish-error" }
+    );
+    return bad(500, "internal error");
+  }
+}
+
+async function handle(req: Request, ctx: { ownerId?: string }) {
   const auth = req.headers.get("authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!bearer) return bad(401, "unauthorized");
   const ownerId = await resolveOwner(bearer);
   if (!ownerId) return bad(401, "unauthorized");
+  ctx.ownerId = ownerId;
   if (!BLOB_BASE) return bad(500, "SPOOL_BLOB_BASE not configured");
 
   let body: Body;
@@ -196,6 +212,9 @@ export async function POST(req: Request) {
       knowledgeResult = { applied, skipped: skipped.length };
     } catch (e) {
       console.error("[publish] knowledge apply failed", (e as Error).message);
+      await sendOpsAlert("publish knowledge write failed", (e as Error).message, {
+        key: `knowledge-rmw:${projectRef.owner}/${projectRef.repo}`,
+      });
     }
   }
 

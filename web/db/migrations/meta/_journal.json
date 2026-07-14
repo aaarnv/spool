@@ -50,6 +50,13 @@
       "when": 1783931781343,
       "tag": "0006_melodic_skin",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784010272288,
+      "tag": "0008_rapid_wraith",
+      "breakpoints": true
     }
   ]
 }
