@@ -104,6 +104,24 @@ export const askUsage = pgTable(
   (t) => ({ pk: primaryKey({ columns: [t.spoolId, t.ipHash, t.day] }) })
 );
 
+// Per-repo daily bundle-miss counter. A miss is a public-ask file read the PR
+// bundle couldn't answer: the tripwire signal that live repo access is needed.
+export const bundleMisses = pgTable(
+  "bundle_misses",
+  {
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    day: text("day").notNull(), // YYYY-MM-DD (UTC)
+    count: integer("count").notNull().default(0), // total missed file-reads
+    asks: integer("asks").notNull().default(0), // asks with >= 1 miss
+    ownerId: text("owner_id").notNull(),
+    lastSpoolId: text("last_spool_id"),
+    lastPrNumber: integer("last_pr_number"),
+    paths: jsonb("paths"), // recent missed paths, capped at 20
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.repoOwner, t.repoName, t.day] }) })
+);
+
 // Per-project shared knowledge. Lives in Postgres, not Blob: the store is
 // mutable read-modify-write state, and Blob's CDN serves stale reads after an
 // in-place overwrite (and its URLs reject cache-busting query params).

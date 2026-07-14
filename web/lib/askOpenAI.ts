@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { execTool, type ExecContext } from "./askBundle";
+import { execTool, recordMissedPath, type ExecContext } from "./askBundle";
 
 // OpenAI chat-completions provider for the ask route, used when only
 // OPENAI_API_KEY is configured. Mirrors the Anthropic loop's bounds exactly.
@@ -75,7 +75,7 @@ export async function openAIToolLoop(o: {
   history: { role: "user" | "assistant"; content: string }[];
   question: string;
   now?: () => number;
-}): Promise<{ answer: string; rounds: number; misses: number }> {
+}): Promise<{ answer: string; rounds: number; misses: number; missedPaths: string[] }> {
   const now = o.now ?? Date.now;
   const tools = toOpenAITools(o.tools);
   const messages: OpenAIMessage[] = [
@@ -86,6 +86,7 @@ export async function openAIToolLoop(o: {
   const t0 = now();
   let rounds = 0;
   let misses = 0;
+  const missedPaths = new Set<string>();
 
   let choice = await chatComplete({ apiKey: o.apiKey, model: o.model, messages, tools });
   while (choice.finish_reason === "tool_calls" && choice.message.tool_calls?.length) {
@@ -99,7 +100,10 @@ export async function openAIToolLoop(o: {
         /* malformed arguments read as empty input */
       }
       const { content, miss } = await execTool(o.ctx, call.function.name, input);
-      if (miss) misses++;
+      if (miss) {
+        misses++;
+        recordMissedPath(missedPaths, call.function.name, input);
+      }
       messages.push({ role: "tool", tool_call_id: call.id, content });
     }
     rounds++;
@@ -114,5 +118,5 @@ export async function openAIToolLoop(o: {
   if (misses > 0) {
     console.log("[ask] possibly-unanswerable", JSON.stringify({ spoolId: o.ctx.spoolId, question: o.question.slice(0, 200) }));
   }
-  return { answer, rounds, misses };
+  return { answer, rounds, misses, missedPaths: [...missedPaths] };
 }

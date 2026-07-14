@@ -1,11 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { UserButton } from "@clerk/nextjs";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { blobUrl, mmss } from "../../../../spool";
 import { db } from "../../../../../db";
-import { spools as spoolsTable } from "../../../../../db/schema";
+import { spools as spoolsTable, bundleMisses } from "../../../../../db/schema";
 import { fetchKnowledge } from "../../../../../lib/knowledge";
 import { SpoolCard } from "../../../SpoolCard";
 import { KnowledgeManager } from "./KnowledgeManager";
@@ -29,7 +29,7 @@ export default async function ProjectPage({
   const repo = decodeURIComponent(raw.repo).toLowerCase();
   if (!SEG.test(owner) || owner === ".." || !SEG.test(repo) || repo === "..") notFound();
 
-  const [knowledge, rows] = await Promise.all([
+  const [knowledge, rows, missRows] = await Promise.all([
     fetchKnowledge(userId, owner, repo),
     db
       .select()
@@ -42,7 +42,21 @@ export default async function ProjectPage({
         )
       )
       .orderBy(desc(spoolsTable.createdAt)),
+    db
+      .select({
+        count: sql<number>`coalesce(sum(${bundleMisses.count}), 0)`,
+        asks: sql<number>`coalesce(sum(${bundleMisses.asks}), 0)`,
+      })
+      .from(bundleMisses)
+      .where(
+        and(
+          eq(bundleMisses.ownerId, userId),
+          eq(bundleMisses.repoOwner, owner),
+          eq(bundleMisses.repoName, repo)
+        )
+      ),
   ]);
+  const missCount = Number(missRows[0]?.count ?? 0);
 
   const emptyStore =
     !knowledge.overview &&
@@ -72,6 +86,12 @@ export default async function ProjectPage({
       </h1>
       <p className={styles.sub}>
         {n} {n === 1 ? "guide" : "guides"} &middot; shared knowledge grounds every guide&rsquo;s chat.
+        {missCount > 0 ? (
+          <span title="file reads the PR bundles couldn't answer: signal for live repo access">
+            {" "}
+            &middot; {missCount} bundle {missCount === 1 ? "miss" : "misses"}
+          </span>
+        ) : null}
       </p>
 
       {n > 0 ? (
