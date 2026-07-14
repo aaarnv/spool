@@ -3,6 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://spoolkit.dev"),
   title: "spool",
   description: "Shareable walkthrough videos recorded by agents.",
 };

@@ -32,9 +32,33 @@ export async function generateMetadata({
   const { id } = await params;
   const spool = await getSpool(id);
   if (!spool) return { title: "Not found · spool" };
+  const title = `${spool.title || "Untitled spool"} · spool`;
+  const steps = spool.steps.length;
+  const description = spool.pr
+    ? `Narrated walkthrough of PR #${spool.pr.number} · ${steps} steps, ${mmss(spool.duration)}.`
+    : steps > 0
+      ? `${steps}-step narrated walkthrough · ${mmss(spool.duration)}.`
+      : "A walkthrough recorded by an agent.";
+  // spool.video / step frames are already absolute blob URLs (rewritten at publish).
+  const poster = spool.steps[0]?.frame;
   return {
-    title: `${spool.title || "Untitled spool"} · spool`,
-    description: "A walkthrough recorded by an agent.",
+    title,
+    description,
+    openGraph: {
+      type: "video.other",
+      url: `https://spoolkit.dev/l/${id}`,
+      siteName: "Spool",
+      title,
+      description,
+      ...(poster && { images: [{ url: poster, alt: title }] }),
+      videos: [{ url: spool.video, type: "video/mp4" }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      ...(poster && { images: [poster] }),
+    },
   };
 }
 
