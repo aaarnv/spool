@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../../db";
 import { publishTokens } from "../../../db/schema";
 import { hashToken, newToken } from "../../../db/tokens";
+import { sendOpsAlert } from "../../../lib/alerts";
 
 export const runtime = "nodejs";
 
@@ -12,13 +13,17 @@ export async function POST() {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "unauthorized" }, { status: 401 });
 
-  await db.delete(publishTokens).where(eq(publishTokens.ownerId, userId));
-  const raw = newToken();
-  await db.insert(publishTokens).values({
-    tokenHash: hashToken(raw),
-    ownerId: userId,
-    label: "dashboard",
-  });
-
-  return Response.json({ token: raw });
+  try {
+    await db.delete(publishTokens).where(eq(publishTokens.ownerId, userId));
+    const raw = newToken();
+    await db.insert(publishTokens).values({
+      tokenHash: hashToken(raw),
+      ownerId: userId,
+      label: "dashboard",
+    });
+    return Response.json({ token: raw });
+  } catch (e) {
+    await sendOpsAlert("/api/token failed", (e as Error).message, { key: "token-error" });
+    return Response.json({ error: "internal error" }, { status: 500 });
+  }
 }

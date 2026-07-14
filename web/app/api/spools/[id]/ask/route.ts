@@ -18,6 +18,7 @@ import {
 } from "../../../../../lib/askBundle";
 import { openAIAnswer, openAIToolLoop } from "../../../../../lib/askOpenAI";
 import { fetchKnowledge } from "../../../../../lib/knowledge";
+import { sendOpsAlert } from "../../../../../lib/alerts";
 import { srcBlobUrl } from "../../../../spool";
 
 export const runtime = "nodejs";
@@ -301,6 +302,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         .trim();
     }
   } catch (e) {
+    await sendOpsAlert(`/api/spools/${id}/ask failed`, (e as Error).message, { key: "ask-error" });
     return bad(502, `ask failed: ${(e as Error).message}`);
   }
 
