@@ -212,14 +212,69 @@ export default function Home() {
             <span className="spool-eyebrow-lbl">Pricing</span>
             <h2 className="spool-section__title">Open source at the core</h2>
             <p className="spool-section__sub">
-              Self-host the whole pipeline for free, or let us host the watch app while it is in beta.
+              Start free with 3 published spools, go Pro for unlimited, or self-host the whole
+              pipeline for free.
             </p>
           </div>
 
           <div className="spool-pricing">
             <div className="spool-plan">
+              <span className="spool-plan__tag spool-plan__tag--host">Free</span>
+              <h3>Free</h3>
+              <p className="spool-plan__blurb">
+                Publish 3 spools with every feature included. Your links stay live forever.
+              </p>
+              <div className="spool-plan__price">
+                <span className="amt">$0</span>
+                <span className="per">/ forever</span>
+              </div>
+              <ul className="spool-plan__list">
+                <li>
+                  <CheckIcon /> 3 published spools
+                </li>
+                <li>
+                  <CheckIcon /> Every feature: PR guides, projects, hosted voice
+                </li>
+                <li>
+                  <CheckIcon /> Published links never expire
+                </li>
+              </ul>
+              <a className="spool-plan__cta spool-plan__cta--ghost" href={SIGNUP}>
+                Start free
+                <ArrowIcon size={16} />
+              </a>
+            </div>
+
+            <div className="spool-plan spool-plan--featured">
+              <span className="spool-plan__tag spool-plan__tag--host">Pro</span>
+              <h3>Pro</h3>
+              <p className="spool-plan__blurb">
+                Unlimited spools for teams that ship every day. Nothing to run.
+              </p>
+              <div className="spool-plan__price">
+                <span className="amt">$8</span>
+                <span className="per">/ month</span>
+              </div>
+              <ul className="spool-plan__list">
+                <li>
+                  <CheckIcon /> Unlimited published spools
+                </li>
+                <li>
+                  <CheckIcon /> PR guides and shared projects
+                </li>
+                <li>
+                  <CheckIcon /> Hosted voice and per-user CI tokens
+                </li>
+              </ul>
+              <a className="spool-plan__cta spool-plan__cta--light" href={SIGNUP}>
+                Get Pro
+                <ArrowIcon size={16} />
+              </a>
+            </div>
+
+            <div className="spool-plan">
               <span className="spool-plan__tag spool-plan__tag--os">Open source</span>
-              <h3>Free forever</h3>
+              <h3>Self-host</h3>
               <p className="spool-plan__blurb">
                 The entire CLI and watch app, MIT licensed. Run it yourself, anywhere.
               </p>
@@ -241,35 +296,6 @@ export default function Home() {
               <a className="spool-plan__cta spool-plan__cta--ghost" href={GITHUB}>
                 <StarIcon size={16} />
                 View on GitHub
-              </a>
-            </div>
-
-            <div className="spool-plan spool-plan--featured">
-              <span className="spool-plan__tag spool-plan__tag--host">Hosted</span>
-              <h3>Free during beta</h3>
-              <p className="spool-plan__blurb">
-                We host the watch app, links, and dashboard. Nothing to run.
-              </p>
-              <div className="spool-plan__price">
-                <span className="amt">$0</span>
-                <span className="later">
-                  <s>$15/mo</s> after beta
-                </span>
-              </div>
-              <ul className="spool-plan__list">
-                <li>
-                  <CheckIcon /> Unlisted, shareable spool links
-                </li>
-                <li>
-                  <CheckIcon /> Dashboard for every published spool
-                </li>
-                <li>
-                  <CheckIcon /> Per-user publish tokens for CI
-                </li>
-              </ul>
-              <a className="spool-plan__cta spool-plan__cta--light" href={SIGNUP}>
-                Start free
-                <ArrowIcon size={16} />
               </a>
             </div>
           </div>

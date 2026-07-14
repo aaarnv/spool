@@ -6,17 +6,25 @@ import Link from "next/link";
 import { blobUrl, mmss } from "../spool";
 import { db } from "../../db";
 import { spools as spoolsTable, publishTokens, projectKnowledge } from "../../db/schema";
+import { isPro } from "../../lib/billing";
 import { TokenCard } from "./TokenCard";
+import { BillingCard } from "./BillingCard";
 import { SpoolCard } from "./SpoolCard";
 import styles from "./dashboard.module.css";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ billing?: string }>;
+}) {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  const [rows, tokenCount, knowledgeRows] = await Promise.all([
+  const { billing: billingParam } = await searchParams;
+
+  const [rows, tokenCount, knowledgeRows, pro] = await Promise.all([
     db
       .select()
       .from(spoolsTable)
@@ -30,6 +38,7 @@ export default async function DashboardPage() {
       .select({ repoOwner: projectKnowledge.repoOwner, repoName: projectKnowledge.repoName })
       .from(projectKnowledge)
       .where(eq(projectKnowledge.ownerId, userId)),
+    isPro(userId),
   ]);
   const hasToken = Number(tokenCount[0]?.n ?? 0) > 0;
 
@@ -83,6 +92,8 @@ export default async function DashboardPage() {
       </p>
 
       <TokenCard hasToken={hasToken} compact={rows.length > 0} />
+
+      <BillingCard pro={pro} used={rows.length} billingParam={billingParam} />
 
       {rows.length === 0 && knowledgeOnly.length === 0 ? (
         <div className={styles.empty}>
