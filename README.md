@@ -12,7 +12,7 @@ inverted: there a human records and the agent watches; here the agent is the pro
 ## Install
 
 ```bash
-npm i -g @spoolkit/cli     # publishing soon; use the installer below meanwhile
+npm i -g @spoolkit/cli
 npx playwright install chromium
 ```
 

@@ -4,12 +4,12 @@
   "description": "Agents record their own spools: real browser video, AI voiceover, word-synced captions, Remotion-rendered MP4. No human hits record.",
   "type": "module",
   "bin": {
-    "spool": "./bin/spool.mjs"
+    "spool": "bin/spool.mjs"
   },
   "homepage": "https://spoolkit.dev",
   "repository": {
     "type": "git",
-    "url": "github:aaarnv/spool"
+    "url": "git+https://github.com/aaarnv/spool.git"
   },
   "license": "MIT",
   "keywords": [
