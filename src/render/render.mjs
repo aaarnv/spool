@@ -197,6 +197,7 @@ export async function renderSpool(opts) {
     outputLocation: renderOut,
     inputProps,
     concurrency,
+    timeoutInMilliseconds,
     // Preview trades quality for speed: half-scale software x264, high crf.
     ...(preview ? { scale: 0.5, crf: 28, x264Preset: "ultrafast" } : { x264Preset: "veryfast" }),
     onProgress: ({ progress }) => {
