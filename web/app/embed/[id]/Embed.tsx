@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import TourSpine from "../../l/[id]/TourSpine";
 import ChapterSpine from "../../l/[id]/ChapterSpine";
+import Player, { type PlayerHandle } from "../../l/[id]/Player";
 import type { Chapter, Line, TourNode, PrMeta } from "../../l/[id]/Watch";
 
 type Props = {
@@ -23,30 +24,18 @@ type Props = {
 // Iframe-sized player: video + seekable spine only, plus a persistent link out
 // to the full watch page. Header, edit, ask and agent sections are dropped.
 export default function Embed({ spoolId, src, poster, chapters, lines, pr, tour, diffUrl }: Props) {
-  const ref = useRef<HTMLVideoElement>(null);
+  const ref = useRef<PlayerHandle>(null);
   const [active, setActive] = useState<number>(-1);
 
   const seek = (at: number, i: number) => {
-    const v = ref.current;
-    if (!v) return;
-    v.currentTime = at + 0.001;
+    ref.current?.seek(at);
     setActive(i);
-    void v.play().catch(() => {});
   };
 
   return (
     <div className="wv wv-embed">
       <div className="wv-d-stage wv-embed-stage">
-        <video
-          ref={ref}
-          src={src}
-          poster={poster}
-          controls
-          autoPlay
-          muted
-          playsInline
-          preload="metadata"
-        />
+        <Player ref={ref} src={src} poster={poster} chapters={chapters} />
       </div>
 
       <div className="wv-embed-spine">

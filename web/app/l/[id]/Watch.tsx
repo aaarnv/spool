@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import EditPanel from "./EditPanel";
 import TourSpine from "./TourSpine";
 import ChapterSpine from "./ChapterSpine";
 import AskPanel from "./AskPanel";
+import Player, { type PlayerHandle } from "./Player";
 
 export type Chapter = { i: number; name: string; label: string; at: number };
 export type Line = { i: number; label: string; narration: string; at: number };
@@ -70,16 +71,31 @@ export default function Watch({
   tourJsonUrl,
   grounding,
 }: Props) {
-  const ref = useRef<HTMLVideoElement>(null);
+  const ref = useRef<PlayerHandle>(null);
   const [active, setActive] = useState<number>(-1);
   const [copied, setCopied] = useState(false);
 
   const seek = (at: number, i: number) => {
-    const v = ref.current;
-    if (!v) return;
-    v.currentTime = at + 0.001;
+    ref.current?.seek(at);
     setActive(i);
-    void v.play().catch(() => {});
+  };
+
+  // Ordered anchor list so playback can highlight the current spine row.
+  const anchors = useMemo(() => {
+    const raw = pr && tour ? tour : chapters;
+    return raw
+      .map((n, i) => ({ at: n.at, i: pr && tour ? i : (n as Chapter).i }))
+      .filter((a): a is { at: number; i: number } => a.at != null)
+      .sort((a, b) => a.at - b.at);
+  }, [chapters, tour, pr]);
+
+  const onTime = (t: number) => {
+    let next = -1;
+    for (const a of anchors) {
+      if (t + 0.25 >= a.at) next = a.i;
+      else break;
+    }
+    setActive((cur) => (cur === next ? cur : next));
   };
 
   // Owner affordance: copy a paste-ready iframe snippet for /embed/{id}.
@@ -150,16 +166,7 @@ export default function Watch({
         <div className="wv-d-cols">
           <div className="wv-d-sticky">
             <div className="wv-d-stage">
-              <video
-                ref={ref}
-                src={src}
-                poster={poster}
-                controls
-                autoPlay
-                muted
-                playsInline
-                preload="metadata"
-              />
+              <Player ref={ref} src={src} poster={poster} chapters={chapters} onTime={onTime} />
             </div>
 
             {isOwner && (
