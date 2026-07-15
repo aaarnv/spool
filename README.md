@@ -108,7 +108,7 @@ spool publish spool/my-feature --pr    # …and comment the link on the branch's
 (`spool build` on a live/recorded session skips recording and finishes it, so `build` works
 for both paths.)
 
-`spool publish` uploads the video + share bundle to the hosted watch app (web/ in this
+`spool publish` uploads the video + share bundle to the hosted watch app (spoolkit.dev, developed in a
 repo, deployable to Vercel + Blob) and returns a single unlisted, unguessable link —
 video player, chapters, transcript for humans; raw spool.json on the same page for agents.
 
