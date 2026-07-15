@@ -108,10 +108,13 @@ async function speedUp(src, dst, rate) {
  * its VO), so `rate` defaults to 1.0; when set it speeds the whole clip and the
  * rate used is stamped into <workdir>/render.json for the share layer.
  *
- * @param {string|{workdir:string, rate?:number, bg?:string|null}} opts
+ * `preview` renders a fast half-scale draft (ultrafast x264, crf 28, no --rate
+ * pass, no render.json stamp) to <workdir>/share/preview.mp4; final.mp4 untouched.
+ *
+ * @param {string|{workdir:string, rate?:number, bg?:string|null, preview?:boolean}} opts
  */
 export async function renderSpool(opts) {
-  const { workdir, rate = 1, bg = null } = typeof opts === "string" ? { workdir: opts } : opts;
+  const { workdir, rate = 1, bg = null, preview = false } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
   const timeline = await readJson(join(dir, "timeline.json"));
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
@@ -164,11 +167,16 @@ export async function renderSpool(opts) {
     `[render] ${composition.durationInFrames} frames @ ${composition.fps}fps (${composition.width}x${composition.height})`
   );
 
-  const finalOut = join(dir, "final.mp4");
-  const speedUpNeeded = rate && rate !== 1;
+  let finalOut = join(dir, "final.mp4");
+  if (preview) {
+    finalOut = join(dir, "share", "preview.mp4");
+    await mkdir(join(dir, "share"), { recursive: true });
+  }
+  const speedUpNeeded = !preview && rate && rate !== 1;
   // At natural speed render straight to final.mp4; otherwise to an intermediate
   // that the speed pass consumes.
   const renderOut = speedUpNeeded ? join(dir, "render.mp4") : finalOut;
+  const t0 = Date.now();
   let lastPct = -1;
   // os.cpus() reports host cores inside a container, so on a memory-capped box the
   // default over-subscribes and OOM-kills chromium/compositor. SPOOL_RENDER_CONCURRENCY
@@ -184,7 +192,8 @@ export async function renderSpool(opts) {
     outputLocation: renderOut,
     inputProps,
     concurrency,
-    x264Preset: "veryfast",
+    // Preview trades quality for speed: half-scale software x264, high crf.
+    ...(preview ? { scale: 0.5, crf: 28, x264Preset: "ultrafast" } : { x264Preset: "veryfast" }),
     onProgress: ({ progress }) => {
       const pct = Math.floor(progress * 100);
       if (pct !== lastPct && pct % 5 === 0) {
@@ -198,6 +207,12 @@ export async function renderSpool(opts) {
     console.log(`[render] speeding up ${rate}x -> final.mp4`);
     await speedUp(renderOut, finalOut, rate);
     await unlink(renderOut).catch(() => {});
+  }
+
+  if (preview) {
+    // No render.json stamp: it describes final.mp4, which a preview never touches.
+    console.log(`[render] preview wrote ${finalOut} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+    return finalOut;
   }
 
   // Stamp the rate + bg so `spool share`/re-renders know final.mp4's clock differs
@@ -218,11 +233,12 @@ if (isMain) {
   const rate = rIdx >= 0 ? Number(argv[rIdx + 1]) : 1;
   const bIdx = argv.indexOf("--bg");
   const bg = bIdx >= 0 ? argv[bIdx + 1] : null;
+  const preview = argv.includes("--preview");
   if (!workdir) {
-    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>]");
+    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>] [--preview]");
     process.exit(1);
   }
-  renderSpool({ workdir, rate, bg })
+  renderSpool({ workdir, rate, bg, preview })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error("[render] failed:", err);

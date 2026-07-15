@@ -77,6 +77,45 @@ async function writeKeyframes(dir, steps) {
   }
 }
 
+// Up to 10 visible clickable/input elements as { selector, text } so a failed
+// locator comes back with what WAS on the page. Runs in the page; best-effort.
+function collectCandidates(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const els = document.querySelectorAll('a, button, input, select, textarea, [role="button"], [onclick]');
+    for (const el of els) {
+      if (out.length >= 10) break;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const st = getComputedStyle(el);
+      if (st.visibility === 'hidden' || st.display === 'none') continue;
+      let sel = el.tagName.toLowerCase();
+      if (el.id) sel += `#${el.id}`;
+      else if (el.getAttribute('aria-label')) sel += `[aria-label="${el.getAttribute('aria-label')}"]`;
+      else if (typeof el.className === 'string' && el.className.trim()) {
+        sel += `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}`;
+      }
+      const text = (el.innerText || el.value || el.placeholder || '').trim().slice(0, 40);
+      out.push({ selector: sel, text });
+    }
+    return out;
+  });
+}
+
+const LOCATORISH = /timeout|timed out|waiting for|locator|selector|strict mode|not visible|not attached|no element/i;
+
+// The raw material for debug/session-notes.md: what an agent folds into project
+// knowledge `set_recording` ops after the session.
+function sessionNotes(failures) {
+  const lines = ['# spool live session notes: raw /js failure forensics to fold into project knowledge `set_recording` ops.', ''];
+  failures.forEach((f, i) => {
+    lines.push(`## failure ${i + 1}`, '', '```js', f.code, '```', '', `error: ${f.error}`);
+    if (f.screenshot) lines.push(`screenshot: ${f.screenshot}`);
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -181,11 +220,37 @@ export async function liveSession({ workdir, url, title, headed = false }) {
     return { status: 200, body: { ok: true, index: steps.length, name: current.name, url: page.url() } };
   }
 
+  // Failure forensics: screenshot + recent telemetry (+ candidates on locator-ish
+  // errors), and a failures[] entry for session-notes.md. Must never throw.
+  let jsFails = 0;
+  const failures = [];
+  async function jsFailureInfo(errMsg, code) {
+    const info = { console: telemetry.slice(-8) };
+    const n = ++jsFails;
+    try {
+      const dbg = path.join(dir, 'debug');
+      await mkdir(dbg, { recursive: true });
+      const shot = path.join(dbg, `jsfail_${n}.png`);
+      await page.screenshot({ path: shot });
+      info.screenshot = shot;
+    } catch { /* screenshot is best-effort */ }
+    if (LOCATORISH.test(errMsg)) {
+      try { info.candidates = await collectCandidates(page); } catch { /* best-effort */ }
+    }
+    failures.push({
+      code: code.replace(/^\n+/, '').split('\n').slice(0, 3).join('\n'),
+      error: errMsg,
+      screenshot: info.screenshot ?? null,
+    });
+    return info;
+  }
+
   async function doJs(p) {
     if (typeof p.code !== 'string' || !p.code.trim()) return { status: 400, body: { ok: false, error: 'code is required' } };
     let fn;
     try { fn = new AsyncFunction('page', 'h', p.code); } catch (e) {
-      return { status: 200, body: { ok: false, error: `compile: ${e.message}`, url: page.url() } };
+      const error = `compile: ${e.message}`;
+      return { status: 200, body: { ok: false, error, url: page.url(), ...(await jsFailureInfo(error, p.code)) } };
     }
     try {
       const result = await fn(page, h);
@@ -196,7 +261,7 @@ export async function liveSession({ workdir, url, title, headed = false }) {
       if (out !== undefined) body.result = out;
       return { status: 200, body };
     } catch (e) {
-      return { status: 200, body: { ok: false, error: e.message, url: page.url() } };
+      return { status: 200, body: { ok: false, error: e.message, url: page.url(), ...(await jsFailureInfo(e.message, p.code)) } };
     }
   }
 
@@ -224,6 +289,10 @@ export async function liveSession({ workdir, url, title, headed = false }) {
     await writeFile(path.join(dir, 'timeline.json'), JSON.stringify(timeline, null, 2) + '\n');
     await writeGeneratedSteps({ dir, config, steps, prep });
     await writeKeyframes(dir, steps).catch(() => {});
+    if (failures.length) {
+      await mkdir(path.join(dir, 'debug'), { recursive: true }).catch(() => {});
+      await writeFile(path.join(dir, 'debug', 'session-notes.md'), sessionNotes(failures)).catch(() => {});
+    }
     finalizeSummary = { dir, steps: steps.length, total: timeline.total };
     return finalizeSummary;
   }
