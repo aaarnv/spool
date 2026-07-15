@@ -116,6 +116,8 @@ protocol, but **no `page` driver**. You drive the desktop yourself between steps
 - **If the demoed change has an open PR**, publish with `spool publish <dir> --pr` (or
   `--pr <number>`) — it comments the watch link + step index on the PR via `gh`, so the
   reviewer gets the narrated demo inline. Do this by default when a PR exists.
+- **If publish exits with a 402 upgrade message** (the free plan's 3-spool limit), relay that
+  message and its upgrade link to the user verbatim rather than retrying the publish.
 
 ## Project init (spool init)
 
