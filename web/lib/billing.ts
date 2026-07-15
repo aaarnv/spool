@@ -10,9 +10,18 @@ import { billing } from "../db/schema";
 const STRIPE_API = "https://api.stripe.com/v1";
 const PAID_PLANS = new Set(["pro", "founder"]);
 
+// BILLING_WHITELIST: comma-separated ownerIds exempt from the gate with no
+// Stripe subscription or billing row. Re-read per call so env edits apply on deploy.
+function whitelisted(ownerId: string): boolean {
+  const raw = process.env.BILLING_WHITELIST;
+  if (!raw) return false;
+  return raw.split(",").map((s) => s.trim()).filter(Boolean).includes(ownerId);
+}
+
 // True when the owner has an unexpired paid plan. A null currentPeriodEnd means
 // perpetual (e.g. a founder grant); any set period must still be in the future.
 export async function isPro(ownerId: string): Promise<boolean> {
+  if (whitelisted(ownerId)) return true;
   const [row] = await db.select().from(billing).where(eq(billing.ownerId, ownerId)).limit(1);
   if (!row || !PAID_PLANS.has(row.plan)) return false;
   if (row.currentPeriodEnd && row.currentPeriodEnd.getTime() <= Date.now()) return false;
