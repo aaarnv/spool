@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql, eq, and, ne, desc, isNotNull } from "drizzle-orm";
 import { db } from "../../../../../db";
-import { askUsage, spools as spoolsTable } from "../../../../../db/schema";
+import { askUsage, bundleMisses, spools as spoolsTable } from "../../../../../db/schema";
 import { fetchSpoolJson } from "../../../../../lib/spoolAccess";
 import {
   bundleTools,
@@ -18,6 +18,7 @@ import {
 } from "../../../../../lib/askBundle";
 import { openAIAnswer, openAIToolLoop } from "../../../../../lib/askOpenAI";
 import { fetchKnowledge } from "../../../../../lib/knowledge";
+import { sendOpsAlert } from "../../../../../lib/alerts";
 import { srcBlobUrl } from "../../../../spool";
 
 export const runtime = "nodejs";
@@ -276,13 +277,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const ctx = makeExecContext({ pack, spoolId: id, knowledge: hasProject ? knowledge : null, siblings });
 
   let answer: string;
+  let misses = 0;
+  let missedPaths: string[] = [];
   try {
     if (provider === "openai") {
       const apiKey = process.env.OPENAI_API_KEY!;
-      answer =
-        tier === "bundle" && pack
-          ? (await openAIToolLoop({ apiKey, model, system, ctx, tools: bundleToolset, history, question })).answer
-          : await openAIAnswer({ apiKey, model, system, history, question });
+      if (tier === "bundle" && pack) {
+        const result = await openAIToolLoop({ apiKey, model, system, ctx, tools: bundleToolset, history, question });
+        answer = result.answer;
+        misses = result.misses;
+        missedPaths = result.missedPaths;
+      } else {
+        answer = await openAIAnswer({ apiKey, model, system, history, question });
+      }
     } else if (tier === "bundle" && pack) {
       const client = new Anthropic();
       const callModel: CallModel = (msgs, toolChoice) =>
@@ -291,6 +298,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         );
       const result = await runToolLoop({ callModel, ctx, question, initialMessages: messages });
       answer = result.answer;
+      misses = result.misses;
+      missedPaths = result.missedPaths;
     } else {
       const client = new Anthropic();
       const res = await client.messages.create(messageCreateParams({ model, system, messages }));
@@ -301,7 +310,41 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         .trim();
     }
   } catch (e) {
+    await sendOpsAlert(`/api/spools/${id}/ask failed`, (e as Error).message, { key: "ask-error" });
     return bad(502, `ask failed: ${(e as Error).message}`);
+  }
+
+  // Bundle miss = a file read the guide's bundle couldn't answer: the tripwire
+  // for live repo access. Best-effort counter; never fail the ask over it.
+  if (misses > 0 && projOwner && projRepo && row?.ownerId) {
+    try {
+      await db
+        .insert(bundleMisses)
+        .values({
+          repoOwner: projOwner,
+          repoName: projRepo,
+          day,
+          count: misses,
+          asks: 1,
+          ownerId: row.ownerId,
+          lastSpoolId: id,
+          lastPrNumber: spool.pr.number,
+          paths: missedPaths.slice(0, 20),
+        })
+        .onConflictDoUpdate({
+          target: [bundleMisses.repoOwner, bundleMisses.repoName, bundleMisses.day],
+          set: {
+            count: sql`${bundleMisses.count} + ${misses}`,
+            asks: sql`${bundleMisses.asks} + 1`,
+            ownerId: row.ownerId,
+            lastSpoolId: id,
+            lastPrNumber: spool.pr.number,
+            paths: missedPaths.slice(0, 20),
+          },
+        });
+    } catch (e) {
+      console.error("[ask] bundle-miss record failed", (e as Error).message);
+    }
   }
 
   return Response.json({ answer, grounding: tier, usage: { remainingToday } });

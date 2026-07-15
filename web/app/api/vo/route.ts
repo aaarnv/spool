@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "../../../db";
 import { voUsage } from "../../../db/schema";
 import { resolveOwner } from "../../../db/owner";
+import { sendOpsAlert } from "../../../lib/alerts";
 
 export const runtime = "nodejs";
 
@@ -64,6 +65,7 @@ export async function POST(req: Request) {
     audio = Buffer.from(wav).toString("base64");
     words = await openaiWordTimestamps(wav, text);
   } catch (e) {
+    await sendOpsAlert("/api/vo upstream tts failed", (e as Error).message, { key: "vo-error" });
     return bad(502, `upstream tts failed: ${(e as Error).message}`);
   }
 

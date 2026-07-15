@@ -1,9 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import EditPanel from "./EditPanel";
 import TourSpine from "./TourSpine";
+import ChapterSpine from "./ChapterSpine";
 import AskPanel from "./AskPanel";
+import Player, { type PlayerHandle } from "./Player";
 
 export type Chapter = { i: number; name: string; label: string; at: number };
 export type Line = { i: number; label: string; narration: string; at: number };
@@ -45,9 +47,6 @@ type Props = {
   grounding?: "bundle" | "diff";
 };
 
-const pretty = (slug: string) =>
-  slug.replace(/[-_]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
-
 // The watch page: timeline spine. Sticky player (plus owner edit and agent
 // receipts) on the left; on the right, chapters and narration merge into one
 // annotated spine — the walkthrough's structure IS the navigation. Every
@@ -72,18 +71,44 @@ export default function Watch({
   tourJsonUrl,
   grounding,
 }: Props) {
-  const ref = useRef<HTMLVideoElement>(null);
+  const ref = useRef<PlayerHandle>(null);
   const [active, setActive] = useState<number>(-1);
+  const [copied, setCopied] = useState(false);
 
   const seek = (at: number, i: number) => {
-    const v = ref.current;
-    if (!v) return;
-    v.currentTime = at + 0.001;
+    ref.current?.seek(at);
     setActive(i);
-    void v.play().catch(() => {});
   };
 
-  const byStep = new Map(lines.map((l) => [l.i, l.narration]));
+  // Ordered anchor list so playback can highlight the current spine row.
+  const anchors = useMemo(() => {
+    const raw = pr && tour ? tour : chapters;
+    return raw
+      .map((n, i) => ({ at: n.at, i: pr && tour ? i : (n as Chapter).i }))
+      .filter((a): a is { at: number; i: number } => a.at != null)
+      .sort((a, b) => a.at - b.at);
+  }, [chapters, tour, pr]);
+
+  const onTime = (t: number) => {
+    let next = -1;
+    for (const a of anchors) {
+      if (t + 0.25 >= a.at) next = a.i;
+      else break;
+    }
+    setActive((cur) => (cur === next ? cur : next));
+  };
+
+  // Owner affordance: copy a paste-ready iframe snippet for /embed/{id}.
+  const copyEmbed = () => {
+    const tag = `<iframe src="https://spoolkit.dev/embed/${spoolId}" width="800" height="480" frameborder="0" allowfullscreen></iframe>`;
+    navigator.clipboard
+      .writeText(tag)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  };
 
   return (
     <div className="wv wv-d">
@@ -93,6 +118,11 @@ export default function Watch({
           <span>spool</span>
         </a>
         <nav className="wv-top-nav">
+          {isOwner && (
+            <button type="button" className="wv-top-link wv-top-embed" onClick={copyEmbed}>
+              {copied ? "Copied" : "Embed"}
+            </button>
+          )}
           {signedIn ? (
             <a className="wv-top-link wv-top-cta" href="/dashboard">
               My spools
@@ -136,16 +166,7 @@ export default function Watch({
         <div className="wv-d-cols">
           <div className="wv-d-sticky">
             <div className="wv-d-stage">
-              <video
-                ref={ref}
-                src={src}
-                poster={poster}
-                controls
-                autoPlay
-                muted
-                playsInline
-                preload="metadata"
-              />
+              <Player ref={ref} src={src} poster={poster} chapters={chapters} onTime={onTime} />
             </div>
 
             {isOwner && (
@@ -184,24 +205,7 @@ export default function Watch({
           {pr && tour ? (
             <TourSpine tour={tour} active={active} seek={seek} diffUrl={diffUrl} />
           ) : (
-            <ol className="wv-d-spine">
-              {chapters.map((c) => (
-                <li key={c.i} className="wv-d-node" data-active={active === c.i}>
-                  <button className="wv-d-node-btn" onClick={() => seek(c.at, c.i)}>
-                    <span className="wv-d-dot" />
-                    <span className="wv-d-node-body">
-                      <span className="wv-d-node-head">
-                        <span className="wv-d-node-name">{pretty(c.name)}</span>
-                        <span className="wv-d-node-t">{c.label}</span>
-                      </span>
-                      {byStep.get(c.i) && (
-                        <span className="wv-d-node-narr">{byStep.get(c.i)}</span>
-                      )}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ol>
+            <ChapterSpine chapters={chapters} lines={lines} active={active} seek={seek} />
           )}
         </div>
       </main>

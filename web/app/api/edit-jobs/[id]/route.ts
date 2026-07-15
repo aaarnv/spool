@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { revalidateTag } from "next/cache";
 import { db } from "../../../../db";
+import { sendOpsAlert } from "../../../../lib/alerts";
 
 export const runtime = "nodejs";
 
@@ -19,13 +20,24 @@ function leaseOf(body: { leaseToken?: unknown }, req: Request): string | null {
 // worker (whose job was reclaimed under a new token) gets 409. On done, revalidate
 // the watch page cache tag.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try {
+    return await finalize(req, id);
+  } catch (e) {
+    await sendOpsAlert("edit-job route failed", `job=${id} ${(e as Error).message}`, {
+      key: `edit-job:${id}`,
+    });
+    return Response.json({ error: "internal error" }, { status: 500 });
+  }
+}
+
+async function finalize(req: Request, id: string) {
   const auth = req.headers.get("authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   const secret = process.env.EDIT_WORKER_SECRET;
   if (!secret) return Response.json({ error: "worker secret not configured" }, { status: 500 });
   if (bearer !== secret) return Response.json({ error: "unauthorized" }, { status: 401 });
 
-  const { id } = await params;
   let body: { status?: string; error?: string; leaseToken?: unknown };
   try {
     body = await req.json();
@@ -62,6 +74,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const rows = ((r as unknown as { rows?: unknown[] }).rows ?? (r as unknown as unknown[])) as { spool_id: string }[];
   if (!rows.length) return Response.json({ error: "job not running or lease lost" }, { status: 409 });
 
+  if (body.status === "error") {
+    await sendOpsAlert("edit job failed", `job=${id} ${body.error || "unknown error"}`, {
+      key: `edit-job:${id}`,
+    });
+  }
   if (body.status === "done") revalidateTag(`spool:${rows[0].spool_id}`);
   return Response.json({ id, status: body.status });
 }

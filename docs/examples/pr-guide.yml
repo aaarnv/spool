@@ -1,0 +1,59 @@
+# Narrated PR guide on every opened pull request. Copy into .github/workflows/
+# in YOUR repo. Tour authoring is agent work (docs/PR-GUIDE-CONTRACT.md), so this
+# pairs the setup-spool action with claude-code-action for the authoring step.
+#
+# Secrets required:
+#   SPOOL_TOKEN        spk_ publish token, minted at https://spoolkit.dev/dashboard
+#   ANTHROPIC_API_KEY  key for the authoring agent
+
+name: PR guide
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  guide:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Installs the spool CLI, ffmpeg and headless chromium; writes ~/.spool.json
+      # from the token; caps SPOOL_RENDER_CONCURRENCY for CI.
+      - uses: aaarnv/spool@master
+        with:
+          token: ${{ secrets.SPOOL_TOKEN }}
+
+      - uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: '--allowedTools "Bash,Read,Write,Edit,Glob,Grep"'
+          prompt: |
+            Create a narrated Spool PR guide for pull request #${{ github.event.pull_request.number }}
+            and comment the watch link on it. The runner already has the spool CLI, ffmpeg and
+            headless chromium; SPOOL_RENDER_CONCURRENCY is capped. Never pass --headed or --target os.
+
+            Follow the Spool PR-guide flow (contract: docs/PR-GUIDE-CONTRACT.md in aaarnv/spool):
+            1. Run: spool pr ${{ github.event.pull_request.number }}
+               This scaffolds spool/pr-N/ with pr.json, diff.patch, tour.json, context.json, context.md.
+            2. Read pr.json and diff.patch, then author tour.json: 4 to 8 stops in narrative
+               reading order (why, entrypoint, core change, ripples, tests) with why-first prose,
+               and set mode to "explainer". Curate context.json "related" (the files a reader
+               needs beyond the diff) and author context.md. No em dashes in any authored text.
+            3. Author a self-contained spool/pr-N/explainer.html that walks the change visually,
+               then record it headless:
+                 spool live spool/pr-N --url "file://$PWD/spool/pr-N/explainer.html"
+               spool live prints {"port":N,...} on stdout. Drive it with curl: one POST /step per
+               tour stop (name = the stop id, narration = what a reviewer should understand),
+               POST /js to advance the explainer between steps, then POST /end.
+            4. Run: spool finish spool/pr-N --bg paper
+            5. Run: spool publish spool/pr-N --pr

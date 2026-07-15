@@ -9,6 +9,7 @@ import { resolveOwner, LEGACY_OWNER } from "../../../db/owner";
 import { isPro } from "../../../lib/billing";
 import { validateKnowledgeOps, applyKnowledgeOps, type KnowledgeOp } from "../../../lib/knowledgeOps";
 import { fetchKnowledge, putKnowledge, parseProjectRef } from "../../../lib/knowledge";
+import { sendOpsAlert } from "../../../lib/alerts";
 
 export const runtime = "nodejs";
 
@@ -52,11 +53,26 @@ const PR_INLINE_MAX = 300 * 1024;
 const segName = (n: number) => `seg_${String(n).padStart(2, "0")}`;
 
 export async function POST(req: Request) {
+  const ctx: { ownerId?: string } = {};
+  try {
+    return await handle(req, ctx);
+  } catch (e) {
+    await sendOpsAlert(
+      "/api/publish failed",
+      `${(e as Error).message}${ctx.ownerId ? ` owner=${ctx.ownerId}` : ""}`,
+      { key: "publish-error" }
+    );
+    return bad(500, "internal error");
+  }
+}
+
+async function handle(req: Request, ctx: { ownerId?: string }) {
   const auth = req.headers.get("authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!bearer) return bad(401, "unauthorized");
   const ownerId = await resolveOwner(bearer);
   if (!ownerId) return bad(401, "unauthorized");
+  ctx.ownerId = ownerId;
 
   // Free tier: 3 published spools lifetime. The gate is on publishing the 4th,
   // never on viewing. The legacy CLI owner is exempt. Runs before any blob write.
@@ -218,6 +234,9 @@ export async function POST(req: Request) {
       knowledgeResult = { applied, skipped: skipped.length };
     } catch (e) {
       console.error("[publish] knowledge apply failed", (e as Error).message);
+      await sendOpsAlert("publish knowledge write failed", (e as Error).message, {
+        key: `knowledge-rmw:${projectRef.owner}/${projectRef.repo}`,
+      });
     }
   }
 

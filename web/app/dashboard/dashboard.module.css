@@ -388,3 +388,32 @@ section:first-of-type .groupHead { margin-top: 0; }
   font-size: 12.5px;
   line-height: 1.5;
 }
+
+/* Agent-prompt onboarding: the primary CTA reuses the accent button; the prompt
+   itself renders in a scrollable mono box, and manual steps collapse away. */
+.primary {
+  composes: ghost;
+}
+.promptBox {
+  margin: 14px 0 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: var(--edge-out);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+}
+.promptBox code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.manual { margin-top: 16px; }
+.manual summary {
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.manual summary:hover { color: var(--text); }
+.manual > ol { margin-top: 12px; }

@@ -235,6 +235,14 @@ async function readGuide(ctx: ExecContext, pr: number): Promise<{ content: strin
   return { content, miss: false };
 }
 
+// A read_file miss (the App tripwire) records its path; other misses have none.
+// Bounded to 20 distinct paths so one loop can't grow the set without limit.
+export function recordMissedPath(into: Set<string>, name: string, input: unknown): void {
+  if (name !== "read_file" || into.size >= 20) return;
+  const path = (input as { path?: unknown })?.path;
+  if (typeof path === "string" && path) into.add(path);
+}
+
 // Execute one tool call. Read misses are logged here (they are the App tripwire)
 // and reported via `miss` so the loop can flag a possibly-unanswerable answer.
 export async function execTool(
@@ -340,7 +348,7 @@ export async function runToolLoop(opts: {
   now?: () => number;
   maxRounds?: number;
   timeBudgetMs?: number;
-}): Promise<{ answer: string; rounds: number; misses: number }> {
+}): Promise<{ answer: string; rounds: number; misses: number; missedPaths: string[] }> {
   const now = opts.now ?? Date.now;
   const maxRounds = opts.maxRounds ?? MAX_ROUNDS;
   const timeBudgetMs = opts.timeBudgetMs ?? TIME_BUDGET_MS;
@@ -348,6 +356,7 @@ export async function runToolLoop(opts: {
   const t0 = now();
   let rounds = 0;
   let misses = 0;
+  const missedPaths = new Set<string>();
 
   // Answer every tool_use block in `res`, appending the assistant turn and the
   // matching tool_result user turn so prior tool_use blocks stay valid.
@@ -357,7 +366,10 @@ export async function runToolLoop(opts: {
     for (const block of res.content) {
       if (block.type !== "tool_use") continue;
       const { content, miss } = await execTool(opts.ctx, block.name, block.input);
-      if (miss) misses++;
+      if (miss) {
+        misses++;
+        recordMissedPath(missedPaths, block.name, block.input);
+      }
       results.push({ type: "tool_result", tool_use_id: block.id, content });
     }
     messages.push({ role: "user", content: results });
@@ -382,5 +394,5 @@ export async function runToolLoop(opts: {
       JSON.stringify({ spoolId: opts.ctx.spoolId, question: opts.question.slice(0, 200) })
     );
   }
-  return { answer, rounds, misses };
+  return { answer, rounds, misses, missedPaths: [...missedPaths] };
 }
