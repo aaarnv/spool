@@ -9,6 +9,22 @@ is the producer.
 Inspired by [BuilderIO/agent-native](https://github.com/BuilderIO/agent-native)'s Clips,
 inverted: there a human records and the agent watches; here the agent is the producer.
 
+## Install
+
+```bash
+npm i -g @spoolkit/cli     # publishing soon; use the installer below meanwhile
+npx playwright install chromium
+```
+
+Current method (clones, links `spool` onto PATH, fetches chromium):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aaarnv/spool/master/install.sh | bash
+```
+
+You also need `ffmpeg` on PATH (macOS: `brew install ffmpeg`). Run `spool doctor`
+anytime to check your environment and get fix hints for anything missing.
+
 ## How it works
 
 ```

@@ -10,42 +10,18 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { CURSOR_INIT_SCRIPT, makeHelpers } from './cursor.js';
 import { PAD_S } from '../render/retime.mjs';
+import { validateStepsModule } from './validate.mjs';
 
 const SETTLE_MS = 1000; // after goto, let first paint/layout settle
 // After a step's interactions, let the resulting UI paint and the screencast
 // emit it before we cut — the last frame is what the renderer freeze-holds.
 const STEP_SETTLE_MS = 250;
 
-function validate(mod, stepsFile) {
-  const { config, steps } = mod;
-  if (!config || typeof config !== 'object') {
-    throw new Error(`${stepsFile}: missing \`export const config\``);
-  }
-  if (typeof config.url !== 'string' || !config.url) {
-    throw new Error(`${stepsFile}: config.url is required (a string)`);
-  }
-  if (!Array.isArray(steps) || steps.length === 0) {
-    throw new Error(`${stepsFile}: \`export const steps\` must be a non-empty array`);
-  }
-  steps.forEach((s, i) => {
-    if (typeof s.name !== 'string' || !s.name) {
-      throw new Error(`${stepsFile}: steps[${i}] needs a string \`name\``);
-    }
-    if (typeof s.run !== 'function') {
-      throw new Error(`${stepsFile}: step "${s.name}" needs an async \`run(page, h)\``);
-    }
-  });
-  if (config.prep != null && typeof config.prep !== 'function') {
-    throw new Error(`${stepsFile}: config.prep must be an async function`);
-  }
-  return { config, steps };
-}
-
 export async function record({ stepsFile, workdir, headed = false, dry = false }) {
   const absSteps = path.resolve(stepsFile);
   if (!existsSync(absSteps)) throw new Error(`steps file not found: ${absSteps}`);
   const mod = await import(pathToFileURL(absSteps).href);
-  const { config, steps } = validate(mod, absSteps);
+  const { config, steps } = validateStepsModule(mod, absSteps);
 
   workdir = path.resolve(workdir);
   await mkdir(workdir, { recursive: true });

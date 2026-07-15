@@ -1,11 +1,37 @@
 {
-  "name": "spool",
+  "name": "@spoolkit/cli",
   "version": "0.1.0",
   "description": "Agents record their own spools: real browser video, AI voiceover, word-synced captions, Remotion-rendered MP4. No human hits record.",
   "type": "module",
   "bin": {
     "spool": "./bin/spool.mjs"
   },
+  "homepage": "https://spoolkit.dev",
+  "repository": {
+    "type": "git",
+    "url": "github:aaarnv/spool"
+  },
+  "license": "MIT",
+  "keywords": [
+    "spool",
+    "walkthrough",
+    "screen-recording",
+    "voiceover",
+    "playwright",
+    "remotion",
+    "agent",
+    "demo",
+    "loom",
+    "cli"
+  ],
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "assets",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20"
   },
