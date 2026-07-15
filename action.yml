@@ -1,0 +1,57 @@
+name: setup-spool
+description: >
+  Install the spool CLI on a GitHub Actions runner, plus ffmpeg and headless
+  chromium, ready to record, render and publish walkthroughs in CI.
+branding:
+  icon: video
+  color: purple
+
+inputs:
+  token:
+    description: >
+      Spool publish token (spk_...), usually a repo secret. When set,
+      ~/.spool.json is written so `spool publish` and hosted voice work.
+    required: false
+    default: ""
+  install-chromium:
+    description: >
+      Install Playwright chromium for the recorder. Set "false" for jobs that
+      only render or publish an existing session.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up node 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install spool CLI
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        npm ci --omit=dev --silent
+        npm link --silent
+
+    - name: Install ffmpeg
+      shell: bash
+      run: command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
+
+    - name: Install chromium
+      if: inputs.install-chromium == 'true'
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npx playwright install --with-deps chromium
+
+    - name: Write ~/.spool.json
+      if: inputs.token != ''
+      shell: bash
+      env:
+        SPOOL_TOKEN: ${{ inputs.token }}
+      run: node -e 'const os=require("os"),fs=require("fs");fs.writeFileSync(os.homedir()+"/.spool.json",JSON.stringify({host:"https://spoolkit.dev",token:process.env.SPOOL_TOKEN})+"\n")'
+
+    - name: Cap render concurrency for CI runners
+      shell: bash
+      run: '[ -n "${SPOOL_RENDER_CONCURRENCY:-}" ] || echo "SPOOL_RENDER_CONCURRENCY=2" >> "$GITHUB_ENV"'
