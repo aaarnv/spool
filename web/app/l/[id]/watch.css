@@ -52,6 +52,8 @@
   box-shadow: var(--wv-edge);
 }
 .wv-top-cta:hover { color: #0a0a0b; background: #fff; }
+/* Owner-only embed copy: nav-pill styling on a button element. */
+.wv-top-embed { border: none; background: transparent; font-family: inherit; font-size: 13.5px; cursor: pointer; }
 
 /* ---- caret ---- */
 .wv-caret { color: var(--faint); transition: transform 0.15s ease; display: inline-block; }

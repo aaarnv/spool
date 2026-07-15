@@ -1,0 +1,44 @@
+/* ==========================================================================
+   Embed player: fills the host iframe. Video on top, scrollable spine below,
+   footer link pinned at the bottom. Layout deltas only; watch.css skins it.
+   ========================================================================== */
+
+.wv-embed {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 0;
+  overflow: hidden;
+}
+/* The card hugs the video so letterbox bars never show. */
+.wv-embed-stage {
+  flex: none;
+  align-self: center;
+  max-width: 100%;
+  border-radius: 10px;
+}
+.wv-embed video {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 58vh;
+}
+.wv-embed-spine {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.wv-embed-spine .wv-d-node-btn { padding-top: 10px; padding-bottom: 10px; }
+.wv-embed-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 2px;
+  font-size: 12px;
+  color: var(--muted);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+.wv-embed-footer:hover { color: var(--text); }
+.wv-embed-footer img { display: block; border-radius: 3px; }
