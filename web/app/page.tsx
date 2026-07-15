@@ -43,7 +43,7 @@ export default function Home() {
             <a href="#features">Features</a>
             <a href={GITHUB}>Open source</a>
             <a href="#pricing">Pricing</a>
-            <a href={GITHUB}>Docs</a>
+            <a href="/docs">Docs</a>
           </span>
           <a className="spool-nav__cta" href={SIGNUP}>
             Publish a spool
@@ -310,7 +310,7 @@ export default function Home() {
             <a href="#features">Features</a>
             <a href="#pricing">Pricing</a>
             <a href={GITHUB}>GitHub</a>
-            <a href={GITHUB}>Docs</a>
+            <a href="/docs">Docs</a>
           </nav>
           <span className="spool-footer__note">
             Open-source walkthroughs your coding agents record themselves.

@@ -1,0 +1,280 @@
+/* ============================================================
+   Spool docs: reuses .spool-landing tokens (dark glass, blue/ember),
+   adds the sticky-sidebar doc layout. Scoped under .spool-docs.
+   ============================================================ */
+
+.spool-docs {
+  padding-bottom: 40px;
+}
+
+/* ---------- masthead ---------- */
+.spool-docs__masthead {
+  position: relative;
+  z-index: 2;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 168px 24px 0;
+  text-align: center;
+}
+.spool-docs__eyebrow {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ember);
+  margin-bottom: 16px;
+}
+.spool-docs__title {
+  margin: 0;
+  font-size: clamp(2.2rem, 4.4vw, 3.2rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+.spool-docs__lede {
+  margin: 20px auto 0;
+  max-width: 62ch;
+  font-size: clamp(1.02rem, 1.4vw, 1.18rem);
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ---------- two-column shell ---------- */
+.spool-docs__wrap {
+  position: relative;
+  z-index: 2;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 64px 24px 0;
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 56px;
+  align-items: start;
+}
+
+/* ---------- sidebar ---------- */
+.spool-docs__side {
+  position: sticky;
+  top: 108px;
+  align-self: start;
+  max-height: calc(100vh - 128px);
+  overflow-y: auto;
+}
+.spool-docs__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.spool-docs__nav-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 18px 0 8px 12px;
+}
+.spool-docs__nav-lbl:first-child { margin-top: 0; }
+.spool-docs__nav a {
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--muted);
+  transition: color 0.16s ease, background 0.16s ease;
+}
+.spool-docs__nav a:hover { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
+
+/* ---------- article ---------- */
+.spool-docs__main { min-width: 0; }
+.doc-section {
+  scroll-margin-top: 104px;
+  padding-bottom: 8px;
+}
+.doc-section + .doc-section {
+  margin-top: 64px;
+  padding-top: 60px;
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.doc-section > h2 {
+  margin: 0 0 8px;
+  font-size: clamp(1.5rem, 2.6vw, 1.95rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.14;
+}
+.doc-section > .doc-kicker {
+  margin: 0 0 22px;
+  font-size: 1.02rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.doc-section h3 {
+  margin: 32px 0 10px;
+  font-size: 1.12rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.doc-section p {
+  margin: 0 0 14px;
+  font-size: 0.99rem;
+  line-height: 1.62;
+  color: var(--muted);
+}
+.doc-section p strong { color: var(--ink); font-weight: 600; }
+.doc-section a.link {
+  color: var(--blue);
+  text-decoration: none;
+  box-shadow: inset 0 -1px 0 var(--blue-line);
+  transition: box-shadow 0.16s ease;
+}
+.doc-section a.link:hover { box-shadow: inset 0 -2px 0 var(--blue); }
+
+.doc-section ul {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.doc-section ul li {
+  position: relative;
+  padding-left: 20px;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.doc-section ul li::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0.62em;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--ember);
+}
+.doc-section ul li strong { color: var(--ink); font-weight: 600; }
+
+/* inline code + code blocks: same palette as the landing's .spool-code */
+.doc-section code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  padding: 0.12em 0.4em;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #cdd3e6;
+}
+.doc-pre {
+  margin: 0 0 18px;
+  padding: 16px 18px;
+  border-radius: 13px;
+  background: rgba(4, 5, 12, 0.62);
+  box-shadow: var(--edge-out), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: #cdd3e6;
+  overflow-x: auto;
+  white-space: pre;
+}
+.doc-pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+}
+.doc-pre .c { color: var(--faint); }
+.doc-pre .p { color: #7fe0b0; }
+.doc-pre .k { color: #9fb0ff; }
+.doc-pre .s { color: #ffb488; }
+
+/* callout: the "hosted voice, no key" style notes */
+.doc-note {
+  margin: 0 0 18px;
+  padding: 14px 18px;
+  border-radius: 13px;
+  background: var(--blue-bg);
+  box-shadow: inset 0 0 0 1px var(--blue-line);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.doc-note strong { font-weight: 600; }
+
+/* ---------- CLI reference table ---------- */
+.doc-table-wrap {
+  margin: 0 0 8px;
+  overflow-x: auto;
+  border-radius: 14px;
+  box-shadow: var(--edge-out), inset 0 0 0 1px var(--panel-line);
+  background: var(--panel);
+}
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+  min-width: 560px;
+}
+.doc-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--faint);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 14px 18px;
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.doc-table td {
+  padding: 13px 18px;
+  color: var(--muted);
+  line-height: 1.5;
+  vertical-align: top;
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.doc-table tr:last-child td { box-shadow: none; }
+.doc-table td:first-child {
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.86rem;
+  color: var(--blue);
+}
+.doc-table td code {
+  font-size: 0.82rem;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- responsive: sidebar collapses to a scrolling top rail ---------- */
+@media (max-width: 900px) {
+  .spool-docs__wrap {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding-top: 40px;
+  }
+  .spool-docs__side {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    margin: 0 -24px;
+    padding: 0 24px 4px;
+  }
+  .spool-docs__nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  .spool-docs__nav-lbl { display: none; }
+  .spool-docs__nav a {
+    white-space: nowrap;
+    background: var(--panel);
+    box-shadow: var(--edge-out);
+  }
+  .spool-docs__masthead { padding-top: 128px; }
+}
