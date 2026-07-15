@@ -115,6 +115,26 @@
   margin: 0;
 }
 
+/* --- billing --- */
+.planBadge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), var(--edge-out);
+  border-radius: 999px;
+  padding: 2px 9px;
+  margin-right: 8px;
+}
+.billingNote {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 10px 0 0;
+}
+
 /* Project group heading above a grid; sits between the type scale of .h1 and
    the card titles so groups read as sections without competing with the page h1. */
 .groupHead {

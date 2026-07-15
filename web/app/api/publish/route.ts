@@ -1,10 +1,12 @@
 import { put } from "@vercel/blob";
 import { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
 import { randomBytes } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
 import { BLOB_BASE, blobUrl, type Spool } from "../../spool";
 import { db } from "../../../db";
 import { spools as spoolsTable } from "../../../db/schema";
-import { resolveOwner } from "../../../db/owner";
+import { resolveOwner, LEGACY_OWNER } from "../../../db/owner";
+import { isPro } from "../../../lib/billing";
 import { validateKnowledgeOps, applyKnowledgeOps, type KnowledgeOp } from "../../../lib/knowledgeOps";
 import { fetchKnowledge, putKnowledge, parseProjectRef } from "../../../lib/knowledge";
 import { sendOpsAlert } from "../../../lib/alerts";
@@ -71,6 +73,26 @@ async function handle(req: Request, ctx: { ownerId?: string }) {
   const ownerId = await resolveOwner(bearer);
   if (!ownerId) return bad(401, "unauthorized");
   ctx.ownerId = ownerId;
+
+  // Free tier: 3 published spools lifetime. The gate is on publishing the 4th,
+  // never on viewing. The legacy CLI owner is exempt. Runs before any blob write.
+  if (ownerId !== LEGACY_OWNER) {
+    const [{ n } = { n: 0 }] = await db
+      .select({ n: sql<number>`count(*)` })
+      .from(spoolsTable)
+      .where(eq(spoolsTable.ownerId, ownerId));
+    if (Number(n) >= 3 && !(await isPro(ownerId))) {
+      const origin = new URL(req.url).origin;
+      return new Response(
+        JSON.stringify({
+          error: "free plan includes 3 published spools. Upgrade to keep publishing.",
+          upgradeUrl: `${origin}/dashboard`,
+        }),
+        { status: 402, headers: { "content-type": "application/json" } }
+      );
+    }
+  }
+
   if (!BLOB_BASE) return bad(500, "SPOOL_BLOB_BASE not configured");
 
   let body: Body;

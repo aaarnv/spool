@@ -251,6 +251,13 @@ export async function publishSpool(workdir, opts = {}) {
     body: JSON.stringify(meta),
   });
   if (!res.ok) {
+    // Free-tier publish gate: print the upgrade message cleanly (no stack) and exit.
+    if (res.status === 402) {
+      const info = await res.json().catch(() => ({}));
+      console.error(info.error || "free plan limit reached. Upgrade to keep publishing.");
+      if (info.upgradeUrl) console.error(`Upgrade: ${info.upgradeUrl}`);
+      process.exit(1);
+    }
     throw new Error(`publish failed: ${res.status} ${res.statusText} ${await res.text().catch(() => "")}`);
   }
   const { id, url, uploads, previewUrl, knowledge } = await res.json();

@@ -137,5 +137,17 @@ export const projectKnowledge = pgTable(
   (t) => ({ pk: primaryKey({ columns: [t.ownerId, t.repoOwner, t.repoName] }) })
 );
 
+// One row per owner's billing state. Absent row = free plan. plan is 'free',
+// 'pro' (paid subscription), or 'founder' (perpetual grant, null period). The
+// publish gate reads this; Stripe webhooks are the only writers of paid plans.
+export const billing = pgTable("billing", {
+  ownerId: text("owner_id").primaryKey(),
+  stripeCustomerId: text("stripe_customer_id"),
+  plan: text("plan").notNull().default("free"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export type SpoolRow = typeof spools.$inferSelect;
 export type EditJobRow = typeof editJobs.$inferSelect;
+export type BillingRow = typeof billing.$inferSelect;
