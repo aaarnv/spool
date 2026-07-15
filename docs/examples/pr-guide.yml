@@ -52,6 +52,7 @@ jobs:
             3. Author a self-contained spool/pr-N/explainer.html that walks the change visually,
                then record it headless:
                  spool live spool/pr-N --url "file://$PWD/spool/pr-N/explainer.html"
+               Pass --title with the pull request title when starting spool live.
                spool live prints {"port":N,...} on stdout. Drive it with curl: one POST /step per
                tour stop (name = the stop id, narration = what a reviewer should understand),
                POST /js to advance the explainer between steps, then POST /end.
