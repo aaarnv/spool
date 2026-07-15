@@ -3,6 +3,7 @@ import ShaderBackground from "../components/marketing/ShaderBackground";
 import { SpoolMark } from "../components/marketing/icons";
 import "../components/marketing/landing.css";
 import "./docs.css";
+import DocsNav from "./DocsNav";
 import type { Metadata } from "next";
 
 const GITHUB = "https://github.com/aaarnv/spool";
@@ -92,18 +93,7 @@ export default function Docs() {
 
         <div className="spool-docs__wrap">
           <aside className="spool-docs__side">
-            <nav className="spool-docs__nav" aria-label="Docs sections">
-              {NAV.map((group) => (
-                <div key={group.label}>
-                  <div className="spool-docs__nav-lbl">{group.label}</div>
-                  {group.links.map((l) => (
-                    <a key={l.href} href={l.href}>
-                      {l.text}
-                    </a>
-                  ))}
-                </div>
-              ))}
-            </nav>
+            <DocsNav nav={NAV} />
           </aside>
 
           <main className="spool-docs__main">
