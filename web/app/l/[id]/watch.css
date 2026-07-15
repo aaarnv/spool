@@ -52,6 +52,8 @@
   box-shadow: var(--wv-edge);
 }
 .wv-top-cta:hover { color: #0a0a0b; background: #fff; }
+/* Owner-only embed copy: nav-pill styling on a button element. */
+.wv-top-embed { border: none; background: transparent; font-family: inherit; font-size: 13.5px; cursor: pointer; }
 
 /* ---- caret ---- */
 .wv-caret { color: var(--faint); transition: transform 0.15s ease; display: inline-block; }
@@ -367,6 +369,221 @@
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ==========================================================================
+   Custom player (wv-p-*): Loom-minimal controls over the video. Translucent
+   dark bar, indigo accent, fades out when idle during playback.
+   ========================================================================== */
+.wv-p { position: relative; line-height: 0; overflow: hidden; }
+.wv-p-video { display: block; width: 100%; height: auto; background: #000; cursor: pointer; }
+
+/* ---- tap-to-unmute pill (muted-autoplay fallback) ---- */
+.wv-p-unmute {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--wv-accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 24px -8px rgba(109, 94, 252, 0.8), 0 1px 2px rgba(0, 0, 0, 0.4);
+  animation: wv-p-pop 0.25s ease;
+}
+.wv-p-unmute:hover { filter: brightness(1.08); }
+@keyframes wv-p-pop { from { opacity: 0; transform: translateX(-50%) translateY(-4px); } }
+
+/* ---- center play affordance when paused ---- */
+.wv-p-big {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  padding-left: 4px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(15, 14, 22, 0.55);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.wv-p-big:hover { background: var(--wv-accent); transform: translate(-50%, -50%) scale(1.04); }
+
+/* ---- controls bar ---- */
+.wv-p-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 26px 12px 10px;
+  background: linear-gradient(to top, rgba(8, 8, 12, 0.82), rgba(8, 8, 12, 0));
+  line-height: 1;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+.wv-p-active .wv-p-bar { opacity: 1; transform: none; pointer-events: auto; }
+
+/* ---- scrub track ---- */
+.wv-p-track {
+  position: relative;
+  height: 14px;
+  margin: 0 4px 4px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.wv-p-track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.wv-p-buf {
+  position: absolute;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.32);
+}
+.wv-p-fill {
+  position: absolute;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--wv-accent);
+}
+.wv-p-knob {
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translateY(-50%) scale(0.6);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(109, 94, 252, 0.5);
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.wv-p-track:hover .wv-p-knob { opacity: 1; transform: translateY(-50%) scale(1); }
+
+/* ---- chapter ticks ---- */
+.wv-p-tick {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 9px;
+  margin-left: -1px;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 1px;
+}
+.wv-p-tip {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: #0c0b12;
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.wv-p-tick:hover { background: var(--wv-accent); }
+.wv-p-tick:hover .wv-p-tip { opacity: 1; }
+
+/* ---- control row ---- */
+.wv-p-row { display: flex; align-items: center; gap: 6px; }
+.wv-p-spacer { flex: 1; }
+.wv-p-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.wv-p-btn:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.wv-p-time {
+  padding: 0 6px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wv-p-speed-btn { min-width: 42px; }
+
+/* ---- speed menu ---- */
+.wv-p-speed { position: relative; }
+.wv-p-menu {
+  position: absolute;
+  bottom: 38px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 10px;
+  background: #14131c;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.85), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.wv-p-menu-item {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.wv-p-menu-item:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.wv-p-menu-item.is-on { color: var(--wv-accent); }
+
+/* ---- fullscreen: player fills the screen, bar stays custom ---- */
+.wv-p:fullscreen { display: flex; align-items: center; justify-content: center; background: #000; }
+.wv-p:fullscreen .wv-p-video { width: 100%; height: 100%; max-height: 100vh; object-fit: contain; }
 
 /* ---- responsive ---- */
 @media (max-width: 900px) {
