@@ -56,10 +56,11 @@ async function finishSession(wd, opts) {
   await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
   console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   console.log('── spool render');
-  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg });
+  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview });
   console.log('── spool share');
   await shareSpool(wd);
-  console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
+  const out = opts.preview ? join(wd, 'share', 'preview.mp4') : join(wd, 'final.mp4');
+  console.log(`\nDone: ${out} (+ share/ bundle for agents)`);
 }
 
 program
@@ -136,6 +137,18 @@ program
   });
 
 program
+  .command('lint [dir]')
+  .description('fast static checks on a spool workdir (steps.mjs, timeline, tour, vo); no browser')
+  .option('--json', 'machine-readable output')
+  .action(async (dir, opts) => {
+    const { lintSpool, printLint } = await import(join(root, 'src/lint/lint.mjs'));
+    const report = await lintSpool(resolve(dir || '.'));
+    if (opts.json) console.log(JSON.stringify({ ok: report.errors === 0, ...report }, null, 2));
+    else printLint(report);
+    if (report.errors > 0) process.exit(1);
+  });
+
+program
   .command('finish <workdir>')
   .description('vo → render → share on an existing live/recorded session (no re-record)')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
@@ -143,6 +156,7 @@ program
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
+  .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
     await finishSession(resolve(workdir), opts);
@@ -162,10 +176,11 @@ program
   .description('normalize + Remotion-render the final spool mp4')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
+  .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
-    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg });
+    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview });
   });
 
 program
@@ -190,9 +205,22 @@ program
   .option('--host <host>', 'watch app origin (default: env SPOOL_HOST or ~/.spool.json)')
   .option('--token <token>', 'publish token (default: env SPOOL_PUBLISH_TOKEN or ~/.spool.json)')
   .option('--pr [numberOrUrl]', "comment the watch link on a GitHub PR via gh (no value: current branch's PR)")
+  .option('--force', 'publish even when lint finds errors')
   .action(async (workdir, opts) => {
+    const wd = resolve(workdir);
+    // Pre-publish lint: structural breaks and unmatched tour stops block the
+    // publish (they degrade silently downstream); --force overrides.
+    const { lintSpool, printLint } = await import(join(root, 'src/lint/lint.mjs'));
+    const report = await lintSpool(wd);
+    console.log('── spool lint');
+    printLint(report);
+    if (report.errors > 0 && !opts.force) {
+      console.error(`\n[publish] blocked by ${report.errors} lint error(s); fix them or pass --force.`);
+      process.exit(1);
+    }
+    if (report.errors > 0) console.error(`[publish] --force: publishing despite ${report.errors} lint error(s)`);
     const { publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
-    await publishSpool(resolve(workdir), { host: opts.host, token: opts.token, pr: opts.pr });
+    await publishSpool(wd, { host: opts.host, token: opts.token, pr: opts.pr });
   });
 
 program
@@ -240,6 +268,23 @@ program
     const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
     await shareSpool(wd);
     console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
+  });
+
+program
+  .command('doctor')
+  .description('check the environment (deps, config, host, token) with actionable fixes')
+  .option('--json', 'machine-readable output for agents')
+  .action(async (opts) => {
+    const { doctor } = await import(join(root, 'src/doctor/doctor.mjs'));
+    process.exitCode = await doctor({ json: !!opts.json });
+  });
+
+program
+  .command('open [workdir]')
+  .description('open the published watch link (share/published.json) or the dashboard')
+  .action(async (workdir) => {
+    const { openSpool } = await import(join(root, 'src/open/open.mjs'));
+    await openSpool(workdir || '.');
   });
 
 program.parseAsync();
