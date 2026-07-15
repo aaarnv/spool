@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -260,7 +260,7 @@ export async function publishSpool(workdir, opts = {}) {
     }
     throw new Error(`publish failed: ${res.status} ${res.statusText} ${await res.text().catch(() => "")}`);
   }
-  const { url, uploads, previewUrl, knowledge } = await res.json();
+  const { id, url, uploads, previewUrl, knowledge } = await res.json();
 
   // One grant per big binary: published final.mp4/frames (l/<id>/*) plus source
   // video.mp4 + seg wavs (spools/<id>/src/*) when the spool was published editable.
@@ -278,6 +278,10 @@ export async function publishSpool(workdir, opts = {}) {
     const skipped = Array.isArray(knowledge.skipped) ? knowledge.skipped.length : Number(knowledge.skipped) || 0;
     console.error(`[publish] knowledge: ${knowledge.applied} op(s) applied${skipped > 0 ? `, ${skipped} skipped (caps)` : ""}`);
   }
+
+  // Record the watch link so `spool open` in this workdir reopens it.
+  await mkdir(shareDir, { recursive: true }).catch(() => {});
+  await writeFile(join(shareDir, "published.json"), JSON.stringify({ url, id, publishedAt: new Date().toISOString() }, null, 2) + "\n").catch(() => {});
 
   console.log(url);
 

@@ -1,0 +1,51 @@
+# Proves the setup-spool composite action installs a working recorder on
+# ubuntu-latest: spool on PATH, then a minimal headless live-record session.
+# No publish, no secrets.
+
+name: action-smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - action.yml
+      - .github/workflows/action-smoke.yml
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the local setup-spool action
+        uses: ./
+
+      - name: spool --help
+        shell: bash
+        run: spool --help
+
+      - name: Headless live-record smoke
+        shell: bash
+        run: |
+          html="$RUNNER_TEMP/smoke.html"
+          session="$RUNNER_TEMP/smoke-session"
+          printf '<!doctype html><meta charset="utf-8"><title>smoke</title><h1>spool action smoke</h1>' > "$html"
+
+          spool live "$session" --url "file://$html" > "$RUNNER_TEMP/live.out" 2> "$RUNNER_TEMP/live.err" &
+          live_pid=$!
+          for i in $(seq 1 60); do [ -s "$RUNNER_TEMP/live.out" ] && break; sleep 1; done
+          port=$(node -e 'const l=require("fs").readFileSync(process.argv[1],"utf8").split("\n")[0];console.log(JSON.parse(l).port)' "$RUNNER_TEMP/live.out")
+
+          curl -sfX POST "127.0.0.1:$port/step" -d '{"name":"open","narration":"The smoke page loads."}'
+          sleep 2
+          curl -sfX POST "127.0.0.1:$port/end"
+          wait "$live_pid"
+
+          test -s "$session/video.webm"
+          test -s "$session/timeline.json"
+          echo "smoke ok: video.webm + timeline.json present"
+
+      - name: Dump live stderr on failure
+        if: failure()
+        shell: bash
+        run: cat "$RUNNER_TEMP/live.err" 2>/dev/null || true
