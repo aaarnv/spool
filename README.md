@@ -126,6 +126,23 @@ skill-aware agent (Claude Code, Codex, etc.) the full workflow — live driving,
 narration voice rules, verification, PR comments. Copy it into your agent's skills
 directory (`~/.claude/skills/spool/` or `~/.codex/skills/spool/`).
 
+## GitHub Action
+
+The repo doubles as a composite setup action: `uses: aaarnv/spool@master` installs the CLI,
+ffmpeg and headless chromium on a runner, writes `~/.spool.json` from the `token` input
+(store your spk_ token as a repo secret), and caps render concurrency for CI.
+
+```yaml
+- uses: aaarnv/spool@master
+  with:
+    token: ${{ secrets.SPOOL_TOKEN }}
+```
+
+[docs/examples/pr-guide.yml](./docs/examples/pr-guide.yml) is a copy-paste workflow that
+pairs it with `anthropics/claude-code-action` to author and publish a narrated PR guide on
+every opened pull request (`spool pr`, tour + explainer authoring, headless record,
+`spool publish --pr`).
+
 ## The steps contract
 
 See [CONTRACTS.md](./CONTRACTS.md) for the full data contracts (steps.mjs shape,
