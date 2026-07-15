@@ -184,6 +184,11 @@ export async function renderSpool(opts) {
   const concurrency = process.env.SPOOL_RENDER_CONCURRENCY
     ? Math.max(1, parseInt(process.env.SPOOL_RENDER_CONCURRENCY, 10))
     : Math.max(2, cpus().length - 1);
+  // delayRender defaults to 30s; long takes on a loaded box time out fetching
+  // video segments. SPOOL_RENDER_TIMEOUT_MS overrides (default 120s).
+  const timeoutInMilliseconds = process.env.SPOOL_RENDER_TIMEOUT_MS
+    ? Math.max(30000, parseInt(process.env.SPOOL_RENDER_TIMEOUT_MS, 10))
+    : 120000;
   await renderMedia({
     composition,
     serveUrl,
