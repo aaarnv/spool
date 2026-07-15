@@ -409,9 +409,9 @@ export default function Docs() {
                 The free plan publishes <strong>3 spools</strong> with every feature included, and
                 the links stay live forever. <strong>Pro is $8/mo</strong> for unlimited published
                 spools, PR guides, shared projects, hosted voice, and per-user CI tokens.{" "}
-                <strong>Self-hosting is free forever</strong>: the entire CLI and watch app are MIT
-                licensed, so you can record, narrate, render, and host the whole pipeline yourself
-                with no lock-in. See the{" "}
+                <strong>Self-hosting the pipeline is free forever</strong>: the CLI and render
+                pipeline are MIT licensed, so you can record, narrate, and render locally with no
+                lock-in; every spool is a self-contained final.mp4 plus an agent-readable bundle. See the{" "}
                 <a className="link" href="/#pricing">
                   pricing section
                 </a>{" "}

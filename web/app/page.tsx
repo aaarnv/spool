@@ -276,7 +276,7 @@ export default function Home() {
               <span className="spool-plan__tag spool-plan__tag--os">Open source</span>
               <h3>Self-host</h3>
               <p className="spool-plan__blurb">
-                The entire CLI and watch app, MIT licensed. Run it yourself, anywhere.
+                The CLI and render pipeline, MIT licensed. Record and render yourself, anywhere.
               </p>
               <div className="spool-plan__price">
                 <span className="amt">$0</span>
