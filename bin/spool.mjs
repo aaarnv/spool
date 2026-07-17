@@ -200,6 +200,19 @@ program
   });
 
 program
+  .command('list')
+  .alias('ls')
+  .description('list your recently published spools (title, PR, views, watch link)')
+  .option('--limit <n>', 'max spools to return', '20')
+  .option('--json', 'machine-readable output')
+  .option('--host <url>', 'override publish host')
+  .option('--token <token>', 'override publish token')
+  .action(async (opts) => {
+    const { listSpools } = await import(join(root, 'src/list/list.mjs'));
+    await listSpools({ host: opts.host, token: opts.token, limit: parseInt(opts.limit, 10) || 20, json: !!opts.json });
+  });
+
+program
   .command('publish <workdir>')
   .description('upload the spool + share bundle and get a single shareable watch link')
   .option('--host <host>', 'watch app origin (default: env SPOOL_HOST or ~/.spool.json)')
