@@ -25,6 +25,25 @@ curl -fsSL https://raw.githubusercontent.com/aaarnv/spool/master/install.sh | ba
 You also need `ffmpeg` on PATH (macOS: `brew install ffmpeg`). Run `spool doctor`
 anytime to check your environment and get fix hints for anything missing.
 
+### Preferences
+
+`spool setup` writes first-class defaults to `~/.spool.json` (alongside `host`/`token`):
+
+```bash
+spool setup                                   # interactive on a TTY
+spool setup --browser chrome --engine hosted --yes   # non-interactive
+spool setup --show                            # print effective config (token masked)
+```
+
+| Key | Values | Default | Effect |
+| --- | --- | --- | --- |
+| `browser` | `chromium` \| `chrome` \| `edge` | `chromium` | recording browser (Playwright channel) |
+| `target` | `browser` \| `os` | `browser` | default `spool live` capture target |
+| `engine` | `auto` \| `openai` \| `hosted` \| `local` | `auto` | default VO engine |
+| `bg` | any background name | none | default render background |
+
+Precedence everywhere is explicit flag > env (`SPOOL_BROWSER`/`SPOOL_TARGET`/`SPOOL_ENGINE`/`SPOOL_BG`) > prefs > default. `spool doctor` reports the active profile and its sources.
+
 ## How it works
 
 ```

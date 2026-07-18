@@ -11,6 +11,7 @@ import path from 'path';
 import { CURSOR_INIT_SCRIPT, makeHelpers } from './cursor.js';
 import { PAD_S } from '../render/retime.mjs';
 import { validateStepsModule } from './validate.mjs';
+import { resolveLaunchChannel } from '../config/prefs.mjs';
 
 const SETTLE_MS = 1000; // after goto, let first paint/layout settle
 // After a step's interactions, let the resulting UI paint and the screencast
@@ -40,7 +41,8 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   };
 
   const viewport = config.viewport || { width: 1600, height: 900 };
-  const browser = await chromium.launch({ headless: !headed });
+  const channel = await resolveLaunchChannel();
+  const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
   const contextOpts = { viewport };
   if (!dry) contextOpts.recordVideo = { dir: workdir, size: viewport };
   const context = await browser.newContext(contextOpts);

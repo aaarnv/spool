@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
+import { effectivePrefs, browserChannel } from "../config/prefs.mjs";
 
 const run = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -165,6 +166,28 @@ async function checkOpenAI() {
   return warn("openai-key", "not set", "hosted voice works without it; else set OPENAI_API_KEY (env, ./.env, or ~/.spool.json)");
 }
 
+// Report the active preference profile (browser/target/engine/bg + source). When
+// browser is chrome/edge, verify that channel actually launches on this machine.
+async function checkPrefs() {
+  const eff = await effectivePrefs();
+  const profile = Object.keys(eff)
+    .map((k) => `${k}=${eff[k].value ?? "-"}(${eff[k].source})`)
+    .join("  ");
+  const browser = eff.browser.value;
+  const channel = browserChannel(browser, () => {});
+  if (browser === "chrome" || browser === "edge") {
+    if (!channel) return warn("prefs", profile, `unknown browser "${browser}"; run \`spool setup --browser chromium\``);
+    try {
+      const { chromium } = await import("playwright");
+      const b = await chromium.launch({ channel, headless: true });
+      await b.close();
+    } catch (e) {
+      return warn("prefs", profile, `browser="${browser}" (${channel}) not launchable (${(e && e.message) || e}); install it or run \`spool setup --browser chromium\``);
+    }
+  }
+  return ok("prefs", profile);
+}
+
 async function checkSips() {
   if (platform() !== "darwin") return null;
   try {
@@ -188,6 +211,7 @@ async function runChecks() {
   results.push(await checkHost(host));
   results.push(await checkToken(host, token));
   results.push(await checkOpenAI());
+  results.push(await checkPrefs());
   const sips = await checkSips();
   if (sips) results.push(sips);
   return results;
