@@ -120,14 +120,16 @@ program
 program
   .command('live <workdir>')
   .description('drive once; record + derive steps from the session (HTTP control server)')
-  .option('--target <target>', 'browser | os (macOS full-display screen capture)', 'browser')
+  .option('--target <target>', 'browser | os (macOS full-display screen capture) (default: prefs.target or browser)')
   .option('--url <url>', 'app URL (browser target; else read from an existing steps.mjs config)')
   .option('--title <title>', 'title card text')
   .option('--display <idx>', 'os target: which "Capture screen" index (default: first)')
   .option('--window <name>', 'os target: single-window capture (falls back to full display)')
   .option('--headed', 'show the browser (browser target)')
   .action(async (workdir, opts) => {
-    if (opts.target === 'os') {
+    const { resolveTarget } = await import(join(root, 'src/config/prefs.mjs'));
+    const target = await resolveTarget(opts.target);
+    if (target === 'os') {
       const { liveOsSession } = await import(join(root, 'src/record/live-os.mjs'));
       await liveOsSession({ workdir: resolve(workdir), title: opts.title, display: opts.display, window: opts.window });
       return;
@@ -281,6 +283,26 @@ program
     const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
     await shareSpool(wd);
     console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
+  });
+
+program
+  .command('setup')
+  .description('save installation preferences to ~/.spool.json (browser, target, engine, bg)')
+  .option('--browser <browser>', 'chromium | chrome | edge (Playwright launch channel)')
+  .option('--target <target>', 'default record target: browser | os')
+  .option('--engine <engine>', 'default VO engine: auto | openai | hosted | local')
+  .option('--bg <bg>', 'default render background name')
+  .option('--host <host>', 'publish host origin')
+  .option('--yes', 'write flags without prompting (unspecified keys keep current values)')
+  .option('--show', 'print the effective config (token masked) and exit')
+  .action(async (opts) => {
+    const { runSetup } = await import(join(root, 'src/setup/setup.mjs'));
+    try {
+      await runSetup(opts);
+    } catch (e) {
+      console.error(`[setup] ${(e && e.message) || e}`);
+      process.exit(1);
+    }
   });
 
 program

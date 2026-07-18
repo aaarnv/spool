@@ -11,6 +11,7 @@ import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { normalize, h264Encoder } from "./normalize.mjs";
 import { resolveBgSource } from "./bg-resolve.mjs";
+import { resolveBgPref } from "../config/prefs.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -116,6 +117,8 @@ async function speedUp(src, dst, rate) {
 export async function renderSpool(opts) {
   const { workdir, rate = 1, bg = null, preview = false } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
+  // No explicit --bg: fall back to env SPOOL_BG / prefs.bg before the default.
+  const bgSpec = bg != null ? bg : await resolveBgPref();
   const timeline = await readJson(join(dir, "timeline.json"));
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
 
@@ -139,7 +142,7 @@ export async function renderSpool(opts) {
   // Wallpaper canvas: resolve the requested bg (preset | macOS wallpaper | path |
   // default) and copy the source into the workdir (publicDir) so the composition can
   // staticFile() it. Gradient fallback when the asset is somehow absent.
-  const { source: bgAsset, tag: bgTag } = await resolveBgSource(bg);
+  const { source: bgAsset, tag: bgTag } = await resolveBgSource(bgSpec);
   let background = null;
   if (existsSync(bgAsset)) {
     await copyFile(bgAsset, join(dir, ".spool-bg.jpg"));

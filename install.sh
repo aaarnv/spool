@@ -36,6 +36,7 @@ cat <<'EOT'
   2. Save it:  echo '{"host":"https://spoolkit.dev","token":"spk_..."}' > ~/.spool.json
      That one token covers publishing AND hosted AI voice — no OpenAI key needed.
      (Have your own key? Set OPENAI_API_KEY and it's used automatically instead.)
-  3. Record your first spool:  spool live spool/my-demo --url http://localhost:3000
+  3. Set your preferences (optional):  spool setup   (browser, target, engine, bg)
+  4. Record your first spool:  spool live spool/my-demo --url http://localhost:3000
      Full workflow for agents: skills/spool/SKILL.md — humans: README.md
 EOT

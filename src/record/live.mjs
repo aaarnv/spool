@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CURSOR_INIT_SCRIPT, makeHelpers } from './cursor.js';
+import { resolveLaunchChannel } from '../config/prefs.mjs';
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
@@ -145,7 +146,8 @@ export async function liveSession({ workdir, url, title, headed = false }) {
   if (title || cfg.title) config.title = title || cfg.title;
   const viewport = config.viewport;
 
-  const browser = await chromium.launch({ headless: !headed });
+  const channel = await resolveLaunchChannel();
+  const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
   const context = await browser.newContext({ viewport, recordVideo: { dir, size: viewport } });
   await context.addInitScript(CURSOR_INIT_SCRIPT);
   const page = await context.newPage();
