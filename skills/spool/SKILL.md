@@ -20,13 +20,20 @@ curl -fsSL https://raw.githubusercontent.com/aaarnv/spool/master/install.sh | ba
 updates it. Manual alternative: clone the repo, `npm install && npm link`,
 `npx playwright install chromium`. Also needs node ≥ 20 and ffmpeg on PATH.)
 
-Then configure once — a single dashboard token covers BOTH publishing and hosted AI voice,
-so no OpenAI key is required:
+Then check the connection FIRST — run `spool doctor --json` and read the `token` check. One
+connection covers BOTH publishing and hosted AI voice, so no OpenAI key is required.
 
-```bash
-# token from https://spoolkit.dev/dashboard → Generate token
-echo '{"host":"https://spoolkit.dev","token":"spk_..."}' > ~/.spool.json
-```
+- If the token check is **ok**, you're connected; continue.
+- If it is **not ok**, STOP and ask the human to run `spool login` (it opens a browser to sign
+  in and approve — you cannot complete browser auth yourself).
+- If the human has already handed you a raw `spk_` token, write it directly (no browser needed):
+
+  ```bash
+  # token from https://spoolkit.dev/dashboard → Generate token
+  echo '{"host":"https://spoolkit.dev","token":"spk_..."}' > ~/.spool.json
+  ```
+
+  or pass it via `spool login --paste`.
 
 Voice engine auto-detects: your own `OPENAI_API_KEY` (env / project `.env` /
 `"openaiKey"` in `~/.spool.json`) is used directly when present; otherwise voice runs

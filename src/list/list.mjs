@@ -4,6 +4,10 @@ const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart
 
 export async function listSpools({ host, token, limit = 20, json = false } = {}) {
   const cfg = await resolveConfig({ host, token });
+  if (!cfg.host || !cfg.token) {
+    console.error("Not connected. Run `spool login` (or set SPOOL_HOST / SPOOL_PUBLISH_TOKEN).");
+    process.exit(1);
+  }
   const res = await fetch(`${cfg.host}/api/spools?limit=${limit}`, {
     headers: { authorization: `Bearer ${cfg.token}` },
   });

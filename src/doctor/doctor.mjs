@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
 import { effectivePrefs, browserChannel } from "../config/prefs.mjs";
+import { probeToken } from "../config/probe.mjs";
 
 const run = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -71,7 +72,7 @@ async function checkGh() {
 async function checkConfig() {
   const cfgPath = join(homedir(), ".spool.json");
   if (!existsSync(cfgPath)) {
-    return warn("config", "no ~/.spool.json", "get a token at https://spoolkit.dev/dashboard, then write ~/.spool.json {host, token}");
+    return warn("config", "no ~/.spool.json", "run `spool login` (or manually write ~/.spool.json {host, token} with a token from https://spoolkit.dev/dashboard)");
   }
   let cfg;
   try {
@@ -87,7 +88,7 @@ async function checkConfig() {
   } else if (!String(t).startsWith("spk_")) {
     bits.push(`legacy token (${String(t).slice(0, 6)}…)`);
   }
-  if (bits.length) return warn("config", bits.join(", "), "regenerate a token at https://spoolkit.dev/dashboard");
+  if (bits.length) return warn("config", bits.join(", "), "run `spool login` (or regenerate a token at https://spoolkit.dev/dashboard)");
   return ok("config", `host=${cfg.host}, token=${String(t).slice(0, 6)}…`);
 }
 
@@ -122,29 +123,16 @@ async function checkHost(host) {
   }
 }
 
-// Validate the token against a cheap authed endpoint. POST /api/vo with an empty
-// body: a bad token 401s before any usage is counted; a valid token 400s (missing
-// text) with no side effect. Non-401/403 => auth accepted.
+// Validate the token via probeToken (POST /api/vo, empty body). Rejected => warn.
 async function checkToken(host, token) {
-  if (!token) return warn("token", "no token to verify", "add a token to ~/.spool.json to enable publishing");
+  if (!token) return warn("token", "no token to verify", "run `spool login`, or add a token to ~/.spool.json to enable publishing");
   if (!host) return warn("token", "not verifiable offline (no host)", "set a host to verify the token");
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 5000);
   try {
-    const res = await fetch(`${host}/api/vo`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: "{}",
-      signal: ctrl.signal,
-    });
-    if (res.status === 401 || res.status === 403) {
-      return warn("token", `rejected by ${host} (${res.status})`, "regenerate a token at https://spoolkit.dev/dashboard");
-    }
+    const { ok: valid, status } = await probeToken(host, token);
+    if (!valid) return warn("token", `rejected by ${host} (${status})`, "run `spool login` to reconnect (or regenerate a token at https://spoolkit.dev/dashboard)");
     return ok("token", `accepted by ${host}`);
   } catch (e) {
     return warn("token", `not verifiable (${e.name === "AbortError" ? "timeout" : e.message})`, "host unreachable, skipped");
-  } finally {
-    clearTimeout(timer);
   }
 }
 

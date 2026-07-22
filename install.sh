@@ -32,11 +32,11 @@ command -v ffmpeg >/dev/null || echo "⚠ ffmpeg not found — install it (macOS
 cat <<'EOT'
 
 ✔ spool installed. Two-minute setup:
-  1. Get a publish token: https://spoolkit.dev/dashboard  (sign in → Generate token)
-  2. Save it:  echo '{"host":"https://spoolkit.dev","token":"spk_..."}' > ~/.spool.json
-     That one token covers publishing AND hosted AI voice — no OpenAI key needed.
-     (Have your own key? Set OPENAI_API_KEY and it's used automatically instead.)
-  3. Set your preferences (optional):  spool setup   (browser, target, engine, bg)
-  4. Record your first spool:  spool live spool/my-demo --url http://localhost:3000
+  1. Connect this machine:  spool login   (opens your browser; sign in and approve)
+     One login covers publishing AND hosted AI voice — no OpenAI key needed.
+     (Have your own key? Set OPENAI_API_KEY and it's used automatically instead.
+      Headless box? Run `spool login --paste`.)
+  2. Set your preferences (optional):  spool setup   (browser, target, engine, bg)
+  3. Record your first spool:  spool live spool/my-demo --url http://localhost:3000
      Full workflow for agents: skills/spool/SKILL.md — humans: README.md
 EOT
