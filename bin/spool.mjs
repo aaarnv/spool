@@ -89,6 +89,17 @@ program
   });
 
 program
+  .command('login')
+  .description('connect this machine to spoolkit.dev (opens browser)')
+  .option('--host <url>', 'override the host to connect to')
+  .option('--paste', 'paste an spk_ token instead of the browser flow (headless)')
+  .option('--no-open', 'do not open the browser (print the URL to visit)')
+  .action(async (opts) => {
+    const { login } = await import(join(root, 'src/login/login.mjs'));
+    await login({ host: opts.host, paste: !!opts.paste, open: opts.open !== false });
+  });
+
+program
   .command('dry <workdir>')
   .description('drive the steps without recording or VO (debug selectors/timing)')
   .option('--headed', 'show the browser')
@@ -321,5 +332,26 @@ program
     const { openSpool } = await import(join(root, 'src/open/open.mjs'));
     await openSpool(workdir || '.');
   });
+
+// First-run welcome: bare `spool` with no token yet prints a short guide instead
+// of commander's help. With a token, fall through to normal help.
+if (process.argv.length <= 2) {
+  const { resolveConfig } = await import(join(root, 'src/publish/publish.mjs'));
+  const { token } = await resolveConfig().catch(() => ({}));
+  if (!token) {
+    console.log(
+      [
+        'spool — agents record narrated walkthrough videos of your app: real browser',
+        'video, AI voiceover, word-synced captions, one shareable link.',
+        '',
+        'Get started:',
+        '  1. spool login                 connect this machine (opens your browser)',
+        '  2. spool init my-demo          scaffold a walkthrough, or `spool live` to drive one',
+        '  3. spool doctor                check your environment',
+      ].join('\n')
+    );
+    process.exit(0);
+  }
+}
 
 program.parseAsync();

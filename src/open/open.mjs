@@ -23,7 +23,7 @@ async function resolveUrl(workdir) {
 }
 
 // Hand a URL to the OS opener; print it when there's no opener (or SPOOL_OPEN_PRINT).
-function launch(url) {
+export function launch(url) {
   const cmd = platform() === "darwin" ? "open" : platform() === "linux" ? "xdg-open" : null;
   if (!cmd || process.env.SPOOL_OPEN_PRINT) {
     console.log(url);
