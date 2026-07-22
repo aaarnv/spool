@@ -1,11 +1,9 @@
 import { createInterface } from "node:readline/promises";
 import { hostname } from "node:os";
 import { resolveConfig } from "../publish/publish.mjs";
-import { readPrefs, writePrefs } from "../config/prefs.mjs";
+import { readPrefs, writePrefs, DEFAULT_HOST } from "../config/prefs.mjs";
 import { probeToken } from "../config/probe.mjs";
 import { launch } from "../open/open.mjs";
-
-const DEFAULT_HOST = "https://spoolkit.dev";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Read the spk_ token from stdin; reject anything without the spk_ prefix.

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { DEFAULT_HOST } from "../config/prefs.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
@@ -102,7 +103,7 @@ async function resolveConf() {
       /* handled by checkConfig */
     }
   }
-  const host = (process.env.SPOOL_HOST || cfg.host || "").replace(/\/$/, "");
+  const host = (process.env.SPOOL_HOST || cfg.host || DEFAULT_HOST).replace(/\/$/, "");
   const token = process.env.SPOOL_PUBLISH_TOKEN || cfg.token;
   return { host, token };
 }

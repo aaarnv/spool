@@ -40,8 +40,8 @@ async function promptAll(cfg) {
     const bg = await ask("bg (render background, blank for none)", cfg.bg ?? "");
     if (bg) next.bg = bg;
     else delete next.bg;
-    const host = await ask("host (publish origin)", cfg.host ?? "");
-    if (host) next.host = host;
+    // No host question: the hosted platform is the default. Self-hosters use
+    // --host, SPOOL_HOST, or edit ~/.spool.json directly.
   } finally {
     rl.close();
   }

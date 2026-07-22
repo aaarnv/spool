@@ -129,7 +129,7 @@ async function applyProject() {
 
   const { host, token } = await resolveConfig();
   if (!host || !token) {
-    throw new Error("missing host/token — set SPOOL_HOST + SPOOL_PUBLISH_TOKEN (env), pass them, or write ~/.spool.json");
+    throw new Error("not connected — run `spool login` (or set SPOOL_PUBLISH_TOKEN)");
   }
 
   const res = await fetch(`${host}/api/projects/knowledge`, {
