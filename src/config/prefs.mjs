@@ -8,7 +8,11 @@ import { homedir } from "node:os";
 export const PREFS_PATH = join(homedir(), ".spool.json");
 
 // Built-in defaults for each preference. bg has no default (renderer falls back on its own).
-export const DEFAULTS = { browser: "chromium", target: "browser", engine: "auto", bg: null };
+// The hosted platform is the default publish origin everywhere; self-hosting is
+// opt-in via SPOOL_HOST, --host, or a manual host entry in ~/.spool.json.
+export const DEFAULT_HOST = "https://spoolkit.dev";
+
+export const DEFAULTS ={ browser: "chromium", target: "browser", engine: "auto", bg: null };
 
 // Allowed values per key (bg is free-form). Env var that overrides each pref.
 export const CHOICES = {

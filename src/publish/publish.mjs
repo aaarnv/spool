@@ -1,4 +1,5 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { DEFAULT_HOST } from "../config/prefs.mjs";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -23,9 +24,9 @@ export async function resolveConfig({ host, token } = {}) {
       /* ignore malformed config, fall through to env/args */
     }
   }
-  const h = host || process.env.SPOOL_HOST || cfg.host;
+  const h = host || process.env.SPOOL_HOST || cfg.host || DEFAULT_HOST;
   const t = token || process.env.SPOOL_PUBLISH_TOKEN || cfg.token;
-  return { host: h && h.replace(/\/$/, ""), token: t };
+  return { host: h.replace(/\/$/, ""), token: t };
 }
 
 // Single-PUT a local file straight to Blob storage with a server-minted scoped token.
@@ -227,7 +228,7 @@ export async function publishSpool(workdir, opts = {}) {
   const { host, token } = await resolveConfig(opts);
   if (!host || !token) {
     throw new Error(
-      "missing host/token — set SPOOL_HOST + SPOOL_PUBLISH_TOKEN (env), pass { host, token }, or write ~/.spool.json"
+      "not connected — run `spool login` (or set SPOOL_PUBLISH_TOKEN)"
     );
   }
 

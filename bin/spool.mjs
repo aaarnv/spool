@@ -61,6 +61,38 @@ async function finishSession(wd, opts) {
   await shareSpool(wd);
   const out = opts.preview ? join(wd, 'share', 'preview.mp4') : join(wd, 'final.mp4');
   console.log(`\nDone: ${out} (+ share/ bundle for agents)`);
+  await maybeAutoPublish(wd, opts);
+}
+
+// Finished spools publish by default; --no-publish, a preview render, or a
+// missing account skip it (skips are soft, lint/publish failures exit 1).
+async function maybeAutoPublish(wd, opts) {
+  if (opts.publish === false || opts.preview) return;
+  const { resolveConfig, publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
+  const { host, token } = await resolveConfig();
+  if (!host || !token) {
+    console.log('\nNot published: no account connected. Run `spool login`, then `spool publish` this workdir.');
+    return;
+  }
+  const { lintSpool, printLint } = await import(join(root, 'src/lint/lint.mjs'));
+  const report = await lintSpool(wd);
+  if (report.errors > 0) {
+    console.log('── spool lint');
+    printLint(report);
+    console.error(`\nNot published: lint found errors. Fix them or run \`spool publish ${wd} --force\`.`);
+    process.exit(1);
+  }
+  let pr;
+  if (existsSync(join(wd, 'pr.json'))) {
+    try { pr = JSON.parse(readFileSync(join(wd, 'pr.json'), 'utf8')).number; } catch { /* ignore */ }
+  }
+  console.log('── spool publish');
+  try {
+    await publishSpool(wd, pr ? { pr } : {});
+  } catch (e) {
+    console.error(`Publish failed: ${e.message}\nRetry with \`spool publish ${wd}\`.`);
+    process.exit(1);
+  }
 }
 
 program
@@ -163,13 +195,14 @@ program
 
 program
   .command('finish <workdir>')
-  .description('vo → render → share on an existing live/recorded session (no re-record)')
+  .description('vo → render → share → publish on an existing live/recorded session (no re-record)')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
+  .option('--no-publish', 'skip the automatic publish at the end')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
     await finishSession(resolve(workdir), opts);
@@ -259,7 +292,8 @@ program
 
 program
   .command('build <workdir>')
-  .description('(vo ‖ record) → render → share, end to end')
+  .description('(vo ‖ record) → render → share → publish, end to end')
+  .option('--no-publish', 'skip the automatic publish at the end')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
   .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
@@ -294,6 +328,7 @@ program
     const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
     await shareSpool(wd);
     console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
+    await maybeAutoPublish(wd, opts);
   });
 
 program

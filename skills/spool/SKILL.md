@@ -77,7 +77,9 @@ feature you built) — you drive once and the steps are derived from the session
    shows progress. Aim for 4–8 steps, one idea each.
 4. **Finish.** `POST /end` → writes `video.webm` + `timeline.json` + `keyframes/` + a generated
    `steps.mjs`. Then `spool finish spool/<slug>` → `final.mp4` (or `spool build`, which detects
-   the recorded session and finishes it). Note: fumbles you leave on screen are recorded; a
+   the recorded session and finishes it). Finish/build **publish automatically** when the
+   machine is connected (PR workdirs also comment on their PR); pass `--no-publish` to keep a
+   take local, e.g. while you verify keyframes first. Note: fumbles you leave on screen are recorded; a
    failed `h.click` fails fast (5s locator timeout in live sessions) but those seconds still
    land in that step's window — retry promptly. The generated `steps.mjs` omits failed snippets, so
    re-running `spool build` on it gives a clean take.
@@ -120,9 +122,10 @@ protocol, but **no `page` driver**. You drive the desktop yourself between steps
   check `timeline.json` step starts vs `vo/manifest.json` durations instead. Live sessions
   drop `keyframes/step_NN.png` you can Read immediately.
 - Report the mp4 path. Share (Discord/Slack/etc.) only if asked.
-- **If the demoed change has an open PR**, publish with `spool publish <dir> --pr` (or
-  `--pr <number>`) — it comments the watch link + step index on the PR via `gh`, so the
-  reviewer gets the narrated demo inline. Do this by default when a PR exists.
+- Publishing happens automatically at the end of `spool finish`/`spool build` (a PR workdir's
+  `pr.json` also triggers the PR comment: watch link + step index via `gh`, so the reviewer
+  gets the narrated demo inline). If you finished with `--no-publish`, run
+  `spool publish <dir>` (add `--pr` when a PR exists) once you've verified the take.
 - **If publish exits with a 402 upgrade message** (the free plan's 3-spool limit), relay that
   message and its upgrade link to the user verbatim rather than retrying the publish.
 
@@ -209,7 +212,8 @@ It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
 7. **Finish + publish.** If the recording session taught you something operational (a dev-login
    trick, a selector gotcha, a pre-warm need), write it back into `knowledge-ops.json` via
    `set_recording` ops so the next agent records this repo without re-deriving it. Then
-   `spool finish spool/pr-<n>` → verify keyframes → `spool publish spool/pr-<n> --pr <n>`.
+   `spool finish spool/pr-<n> --no-publish` → verify keyframes → `spool publish spool/pr-<n> --pr <n>`
+   (or let `spool finish` publish directly; it reads `pr.json` and comments on the PR itself).
    Publish merges `context.md` into the bundle and resolves the `related` files, attaches the
    tour + diff, applies the knowledge ops to the project store, and the `--pr` comment posts a
    guide variant (stop table timestamped to the video) on the PR.
