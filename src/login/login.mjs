@@ -39,7 +39,7 @@ async function deviceFlow(host, open) {
   }
   const { code, device, verifyUrl, interval, expiresIn } = await startRes.json();
 
-  console.log(`\nConfirm this code in your browser: ${code}\n`);
+  console.log(`\nEnter this code in your browser to connect: ${code}\n`);
   console.log(`  ${verifyUrl}\n`);
   if (open) launch(verifyUrl);
   console.log("Waiting for approval…");
