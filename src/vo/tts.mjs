@@ -13,10 +13,14 @@ import { pathToFileURL } from 'node:url';
 import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.mjs';
 import { resolveEnginePref } from '../config/prefs.mjs';
 
-const DEFAULT_INSTRUCTIONS = 'an experienced engineer walking a client through their product; confident, familiar, precise — the voice of someone who built this and knows it deeply, never a first-time viewer';
+const DEFAULT_INSTRUCTIONS =
+  'You are a senior engineer casually walking a teammate through a product you built and know deeply. ' +
+  'Delivery: conversational and unscripted-sounding, easy unhurried tempo, natural pauses at commas and sentence ends, ' +
+  'intonation that rises and falls like real speech, light emphasis on product names and key actions. ' +
+  'Tone: warm, confident, slightly understated. Never salesy, never announcer-like, never monotone, never breathy.';
 const round2 = (x) => Math.round(x * 100) / 100;
 
-export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', instructions, speed = 1 } = {}) {
+export async function generateVO({ stepsFile, workdir, engine, voice = 'ash', instructions, speed = 1 } = {}) {
   if (!workdir) throw new Error('generateVO: workdir required');
 
   // Narration source: a steps.mjs snapshot (scripted/browser) when present, else
@@ -101,7 +105,7 @@ async function buildSegment(ctx, { i, name, narration }) {
 
 // Regenerate a SINGLE segment's wav + words in place (the edit worker's re-TTS path).
 // Resolves its own engine/key exactly like generateVO, so callers need only OPENAI_API_KEY.
-export async function synthesizeSegment({ workdir, i, name, narration, engine, voice = 'alloy', instructions, speed = 1 } = {}) {
+export async function synthesizeSegment({ workdir, i, name, narration, engine, voice = 'ash', instructions, speed = 1 } = {}) {
   if (!workdir) throw new Error('synthesizeSegment: workdir required');
   const voDir = join(workdir, 'vo');
   await mkdir(voDir, { recursive: true });

@@ -144,7 +144,7 @@ program
   .command('vo <workdir>')
   .description('generate voiceover segments + word timestamps')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'alloy')
+  .option('--voice <voice>', 'TTS voice', 'ash')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .action(async (workdir, opts) => {
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
@@ -197,7 +197,7 @@ program
   .command('finish <workdir>')
   .description('vo → render → share → publish on an existing live/recorded session (no re-record)')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'alloy')
+  .option('--voice <voice>', 'TTS voice', 'ash')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
@@ -295,7 +295,7 @@ program
   .description('(vo ‖ record) → render → share → publish, end to end')
   .option('--no-publish', 'skip the automatic publish at the end')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'alloy')
+  .option('--voice <voice>', 'TTS voice', 'ash')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
