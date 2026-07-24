@@ -59,10 +59,10 @@ export async function writeGeneratedSteps({ dir, config, steps, prep }) {
 
 // One keyframe per step, pulled from video.webm (post-first-click or step midpoint),
 // so a consuming agent can eyeball the take before running `spool finish`.
-async function writeKeyframes(dir, steps) {
+async function writeKeyframes(dir, steps, videoFile = 'video.webm') {
   const kfDir = path.join(dir, 'keyframes');
   await mkdir(kfDir, { recursive: true });
-  const video = path.join(dir, 'video.webm');
+  const video = path.join(dir, videoFile);
   let dur = Infinity;
   try {
     const { stdout } = await exec(FFPROBE, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nk=1:nw=1', video]);
@@ -147,15 +147,24 @@ export async function liveSession({ workdir, url, title, headed = false }) {
   const viewport = config.viewport;
 
   const channel = await resolveLaunchChannel();
+  // SPOOL_CAPTURE=cdp: high-quality CDP screencast -> capture.mp4 (see screencast.mjs);
+  // default stays Playwright recordVideo -> video.webm.
+  const cdpCapture = process.env.SPOOL_CAPTURE === 'cdp';
   const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
-  const context = await browser.newContext({ viewport, recordVideo: { dir, size: viewport } });
+  const context = await browser.newContext({ viewport, ...(cdpCapture ? {} : { recordVideo: { dir, size: viewport } }) });
   await context.addInitScript(CURSOR_INIT_SCRIPT);
   const page = await context.newPage();
   // Fast-fail selectors: a fumbled /js snippet must not record 30s of dead air into the take.
   page.setDefaultTimeout(5000);
-  const tOrigin = Date.now(); // video t=0
+  let capture = null;
+  let tOrigin = Date.now(); // video t=0 (cdp: re-anchored to the first captured frame below)
+  if (cdpCapture) {
+    const { startScreencastCapture } = await import('./screencast.mjs');
+    capture = await startScreencastCapture(page, dir, viewport);
+    capture.firstFrame.then((ts) => { tOrigin = ts * 1000; });
+  }
   const now = () => (Date.now() - tOrigin) / 1000;
-  const video = page.video();
+  const video = cdpCapture ? null : page.video();
 
   const state = { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) };
   let current = null; // { name, narration, zoom, start, clicks:[], snippets:[] }
@@ -284,13 +293,22 @@ export async function liveSession({ workdir, url, title, headed = false }) {
     timeline.steps = steps.map((s) => ({
       i: s.i, name: s.name, start: s.start, end: s.end, zoom: s.zoom, clicks: s.clicks, narration: s.narration,
     }));
-    await context.close(); // finalizes video.webm
+    if (capture) {
+      const cap = await capture.stop();
+      timeline.video = cap.file;
+      console.log(`[live] cdp capture: ${cap.frames} frames over ${cap.span.toFixed(2)}s -> ${cap.file}`);
+      await context.close();
+    } else {
+      await context.close(); // finalizes video.webm
+    }
     await writeFile(path.join(dir, 'console.jsonl'), telemetry.map((e) => JSON.stringify(e)).join('\n') + (telemetry.length ? '\n' : ''));
-    const src = await video.path();
-    await rename(src, path.join(dir, 'video.webm'));
+    if (video) {
+      const src = await video.path();
+      await rename(src, path.join(dir, 'video.webm'));
+    }
     await writeFile(path.join(dir, 'timeline.json'), JSON.stringify(timeline, null, 2) + '\n');
     await writeGeneratedSteps({ dir, config, steps, prep });
-    await writeKeyframes(dir, steps).catch(() => {});
+    await writeKeyframes(dir, steps, timeline.video).catch(() => {});
     if (failures.length) {
       await mkdir(path.join(dir, 'debug'), { recursive: true }).catch(() => {});
       await writeFile(path.join(dir, 'debug', 'session-notes.md'), sessionNotes(failures)).catch(() => {});
