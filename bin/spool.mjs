@@ -223,10 +223,11 @@ program
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
+  .option('--hq', '2x-supersampled high-quality render (slower; best for launch/marketing takes)')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
-    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview });
+    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq });
   });
 
 program
