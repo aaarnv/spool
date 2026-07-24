@@ -115,7 +115,7 @@ async function speedUp(src, dst, rate) {
  * @param {string|{workdir:string, rate?:number, bg?:string|null, preview?:boolean}} opts
  */
 export async function renderSpool(opts) {
-  const { workdir, rate = 1, bg = null, preview = false } = typeof opts === "string" ? { workdir: opts } : opts;
+  const { workdir, rate = 1, bg = null, preview = false, hq = false } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
   // No explicit --bg: fall back to env SPOOL_BG / prefs.bg before the default.
   const bgSpec = bg != null ? bg : await resolveBgPref();
@@ -202,7 +202,13 @@ export async function renderSpool(opts) {
     concurrency,
     timeoutInMilliseconds,
     // Preview trades quality for speed: half-scale software x264, high crf.
-    ...(preview ? { scale: 0.5, crf: 28, x264Preset: "ultrafast" } : { x264Preset: "veryfast" }),
+    // hq renders 2x-supersampled (the card inset downscales the capture below
+    // native at 1x, and platform players give 4K uploads a higher bitrate ladder).
+    ...(preview
+      ? { scale: 0.5, crf: 28, x264Preset: "ultrafast" }
+      : hq
+        ? { scale: 2, crf: 16, x264Preset: "medium" }
+        : { x264Preset: "veryfast" }),
     onProgress: ({ progress }) => {
       const pct = Math.floor(progress * 100);
       if (pct !== lastPct && pct % 5 === 0) {
@@ -243,11 +249,12 @@ if (isMain) {
   const bIdx = argv.indexOf("--bg");
   const bg = bIdx >= 0 ? argv[bIdx + 1] : null;
   const preview = argv.includes("--preview");
+  const hq = argv.includes("--hq");
   if (!workdir) {
-    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>] [--preview]");
+    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>] [--preview] [--hq]");
     process.exit(1);
   }
-  renderSpool({ workdir, rate, bg, preview })
+  renderSpool({ workdir, rate, bg, preview, hq })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error("[render] failed:", err);
