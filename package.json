@@ -1,6 +1,6 @@
 {
   "name": "@spoolkit/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Agents record their own spools: real browser video, AI voiceover, word-synced captions, Remotion-rendered MP4. No human hits record.",
   "type": "module",
   "bin": {
