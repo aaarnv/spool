@@ -6,3 +6,6 @@ spool-test/
 .claude/
 tasks/
 .spool-bg.jpg
+.vercel
+/spool/
+/undefined/
