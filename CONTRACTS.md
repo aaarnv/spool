@@ -156,9 +156,11 @@ TTS failure). Node runtime; a ~10s wav base64 is ~1–2MB, within the function b
   field) so the session is self-describing; `spool finish` reads it if the `steps.mjs`
   snapshot is missing. Scripted `spool record` omits it (narration lives in `steps.mjs`).
 - `cursor` is an optional top-level `[{ t, x, y }]` motion track (same clock and CSS-pixel
-  coords as `clicks`), written **only** by `SPOOL_CAPTURE=cdp` takes, where the in-page
-  cursor overlay is hidden so the renderer can redraw it at output fps. Its presence is
-  what tells the renderer to draw a cursor: takes without it have one baked into the video.
+  coords as `clicks`), written **only** when `SPOOL_CAPTURE=cdp` and `SPOOL_CURSOR=render`
+  are both set: the in-page overlay is hidden and the renderer redraws the cursor at output
+  fps from this track. Off by default (the interpolated motion reads tweened; the default
+  baked overlay keeps its recorded character). Its presence is what tells the renderer to
+  draw a cursor: takes without it have one baked into the video.
 - **OS target** (`spool live --target os`) sets `target: "os"`, `video: "capture.mp4"`
   (already CFR H264 — `normalize` remuxes it instead of re-encoding), `viewport` = the
   capture pixel dims (arbitrary, not 1600x900; the renderer letterboxes it onto the card),
