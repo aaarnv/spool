@@ -58,7 +58,7 @@ async function finishSession(wd, opts) {
   await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed), format });
   console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   console.log('── spool render');
-  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, format });
+  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq, format });
   console.log('── spool share');
   await shareSpool(wd);
   const out = opts.preview ? join(wd, 'share', 'preview.mp4') : join(wd, 'final.mp4');
@@ -146,7 +146,7 @@ program
   .command('vo <workdir>')
   .description('generate voiceover segments + word timestamps')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'ash')
+  .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--format <format>', 'wide | vertical (picks the narration register)')
   .action(async (workdir, opts) => {
@@ -203,12 +203,13 @@ program
   .command('finish <workdir>')
   .description('vo → render → share → publish on an existing live/recorded session (no re-record)')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'ash')
+  .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
   .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
+  .option('--hq', 'supersampled high-quality render (slower; best for launch/marketing takes)')
   .option('--no-publish', 'skip the automatic publish at the end')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
@@ -304,7 +305,7 @@ program
   .description('(vo ‖ record) → render → share → publish, end to end')
   .option('--no-publish', 'skip the automatic publish at the end')
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'ash')
+  .option('--voice <voice>', 'TTS voice', 'alloy')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')

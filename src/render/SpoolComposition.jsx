@@ -39,6 +39,11 @@ const CARD_SHADOW =
 
 const SCRIM = "rgba(10,10,16,0.55)";
 
+// Same arrow the record overlay draws (src/record/cursor.js). Redrawn here so the
+// motion runs at output fps: the recorded path lands at roughly 5 samples/sec.
+const CURSOR_PATH = "M2,1 L2,20 L7,15.4 L10.1,22.3 L13,21 L9.9,14.2 L16,14.2 Z";
+const RIPPLE_S = 0.5;
+
 // durationInFrames = retimed output windows + a tail so the last caption/VO lands.
 // Vertical returns dims too; wide leaves Root's 1920x1080 hardcode untouched.
 export const calculateSpoolMetadata = ({ props }) => {
@@ -161,6 +166,113 @@ function buildPhrases(manifest, windows, maxWords) {
   }
   return phrases;
 }
+
+// Cursor samples are on the recording clock; map each into its step's output
+// window (the outClicks mapping) so steps stay independent and a freeze-hold
+// holds the last position instead of sliding toward the next step.
+function buildCursorTrack(samples, windows) {
+  const pts = (samples || []).filter((p) => p && Number.isFinite(p.t));
+  if (!pts.length) return null;
+  let carry = null;
+  return windows.map((w) => {
+    const keys = [];
+    let seed = carry;
+    for (const p of pts) {
+      if (p.t <= w.recStart) seed = { x: p.x, y: p.y };
+      else if (p.t <= w.recEnd) keys.push({ t: w.startSec + (p.t - w.recStart), x: p.x, y: p.y });
+    }
+    if (seed) keys.unshift({ t: w.startSec, x: seed.x, y: seed.y });
+    if (keys.length) carry = { x: keys[keys.length - 1].x, y: keys[keys.length - 1].y };
+    return { startSec: w.startSec, endSec: w.endSec, keys };
+  });
+}
+
+function sampleCursor(track, tSec) {
+  if (!track || !track.length) return null;
+  let step = track.find((s) => tSec >= s.startSec && tSec < s.endSec);
+  if (!step) step = tSec < track[0].startSec ? track[0] : track[track.length - 1];
+  const keys = step.keys;
+  if (!keys.length) return null;
+  const t = Math.min(Math.max(tSec, step.startSec), step.endSec);
+  if (t <= keys[0].t) return keys[0];
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return last;
+  for (let i = 1; i < keys.length; i++) {
+    const b = keys[i];
+    if (t > b.t) continue;
+    const a = keys[i - 1];
+    const span = b.t - a.t;
+    if (span <= 0) return b;
+    // Samples are dense enough that the motion easing is already baked into them.
+    const p = (t - a.t) / span;
+    return { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p };
+  }
+  return last;
+}
+
+// Drawn in CAPTURE space: both formats wrap this in the transform that maps the
+// capture onto the canvas, so the arrow lands exactly where the page saw it.
+const CursorLayer = ({ track, clicks, t }) => {
+  const p = sampleCursor(track, t);
+  return (
+    <>
+      {clicks.map((c, i) => {
+        const age = t - c.t;
+        if (age < 0 || age > RIPPLE_S) return null;
+        const k = 1 - Math.pow(1 - age / RIPPLE_S, 3);
+        return (
+          <div
+            key={i}
+            style={{
+              position: "absolute",
+              left: c.x,
+              top: c.y,
+              width: 16,
+              height: 16,
+              margin: "-8px 0 0 -8px",
+              borderRadius: "50%",
+              border: "2px solid rgba(40,120,255,0.9)",
+              boxSizing: "border-box",
+              transform: `scale(${0.3 + 2.3 * k})`,
+              opacity: 0.9 * (1 - k),
+            }}
+          />
+        );
+      })}
+      {p ? (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: 24,
+            height: 24,
+            transform: `translate(${p.x - 1}px, ${p.y - 1}px)`,
+          }}
+        >
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            style={{
+              display: "block",
+              overflow: "visible",
+              filter: "drop-shadow(0 1px 1.5px rgba(0,0,0,.4))",
+            }}
+          >
+            <path
+              d={CURSOR_PATH}
+              fill="#fff"
+              stroke="#000"
+              strokeWidth="1.3"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      ) : null}
+    </>
+  );
+};
 
 const WIDE_CAPTION = {
   fontSize: 34,
@@ -467,6 +579,20 @@ export const SpoolComposition = ({
     });
   }, [manifest, windows]);
 
+  // Absent on takes recorded with a visible overlay (and on every pre-cursor
+  // workdir), which is what keeps those renders untouched.
+  const cursorTrack = React.useMemo(
+    () => buildCursorTrack(timeline?.cursor, windows),
+    [timeline, windows]
+  );
+  const rippleClicks = React.useMemo(
+    () => (cursorTrack ? windows.flatMap((w) => w.outClicks || []) : []),
+    [cursorTrack, windows]
+  );
+  const cursor = cursorTrack ? (
+    <CursorLayer track={cursorTrack} clicks={rippleClicks} t={t} />
+  ) : null;
+
   const tailS = TAIL_S + (isVertical ? CTA_S : 0);
   const videoStyle = isVertical
     ? { width: card.vw, height: card.vh, objectFit: "cover" }
@@ -533,6 +659,7 @@ export const SpoolComposition = ({
             }}
           >
             {stepVideos}
+            {cursor}
           </div>
         </div>
       ) : (
@@ -560,6 +687,22 @@ export const SpoolComposition = ({
             }}
           >
             {stepVideos}
+            {cursor ? (
+              // Capture space -> card space, so the arrow scales with the page.
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  width: card.vw,
+                  height: card.vh,
+                  transform: `scale(${card.scale})`,
+                  transformOrigin: "0 0",
+                }}
+              >
+                {cursor}
+              </div>
+            ) : null}
           </div>
         </AbsoluteFill>
       )}
