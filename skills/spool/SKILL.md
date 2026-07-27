@@ -94,7 +94,7 @@ wide default for client walkthroughs and PR guides.
 1. **Seed the capture before recording.** Write `spool/<slug>/steps.mjs` containing only
    `export const config = { viewport: { width: 1920, height: 1080 } };` (live reads an existing
    config for its viewport), and export `SPOOL_CAPTURE=cdp`. The vertical camera cover-crops and
-   upscales the landscape capture, about 1.19x from 1920x1080 against 1.42x from the 1600x900
+   upscales the landscape capture, about 1.5x from 1920x1080 against 1.8x from the 1600x900
    default, so capture sharpness is the whole ballgame here.
 2. **Record.** `spool live spool/<slug> --url <app-url> --format vertical`, then drive it exactly
    as in the Live path above, with these constraints:

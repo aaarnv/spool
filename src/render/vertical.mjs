@@ -3,7 +3,7 @@
 
 // Stage on the 1080x1920 canvas. Not full-bleed: full-bleed would force a 2.13x
 // cover upscale on a 1600x900 capture, which reads soft.
-export const STAGE = { x: 24, y: 200, w: 1032, h: 1280 };
+export const STAGE = { x: 12, y: 96, w: 1056, h: 1616 };
 
 export const HOOK_S = 2.0;
 export const CTA_S = 1.5;
