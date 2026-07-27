@@ -13,9 +13,14 @@ import {
   useVideoConfig,
 } from "remotion";
 import { buildWindows, FPS, TAIL_S } from "./retime.mjs";
-
-const CANVAS_W = 1920;
-const CANVAS_H = 1080;
+import {
+  buildCameraTrack,
+  duckedMusicVolume,
+  sampleCamera,
+  CTA_S,
+  HOOK_S,
+  STAGE,
+} from "./vertical.mjs";
 
 // Canvas layout: near-full-bleed — the card fills most of the frame with a slim
 // border of canvas, and a compact bottom band keeps captions off the UI.
@@ -27,22 +32,33 @@ const CAPTION_BAND = 92;
 const FONT =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif';
 
+// Shared between the wide card and the vertical stage so both separate from the
+// wallpaper the same way.
+const CARD_SHADOW =
+  "0 0 0 1px rgba(255,255,255,0.06), 0 8px 24px rgba(0,0,0,0.45), 0 40px 90px -24px rgba(0,0,0,0.6)";
+
+const SCRIM = "rgba(10,10,16,0.55)";
+
 // durationInFrames = retimed output windows + a tail so the last caption/VO lands.
+// Vertical returns dims too; wide leaves Root's 1920x1080 hardcode untouched.
 export const calculateSpoolMetadata = ({ props }) => {
   const { totalFrames } = buildWindows(props?.timeline, props?.manifest, FPS);
-  return { durationInFrames: Math.max(1, totalFrames + Math.round(TAIL_S * FPS)) };
+  const isVertical = props?.format === "vertical";
+  const tailS = TAIL_S + (isVertical ? CTA_S : 0);
+  const durationInFrames = Math.max(1, totalFrames + Math.round(tailS * FPS));
+  return isVertical ? { durationInFrames, width: 1080, height: 1920 } : { durationInFrames };
 };
 
 // Geometry of the centered card, derived once from the viewport size.
-function cardLayout(viewport) {
+function cardLayout(viewport, canvasW, canvasH) {
   const vw = viewport?.width ?? 1600;
   const vh = viewport?.height ?? 900;
-  const availW = CANVAS_W - 2 * PAD_X;
-  const availH = CANVAS_H - PAD_TOP - CAPTION_BAND;
+  const availW = canvasW - 2 * PAD_X;
+  const availH = canvasH - PAD_TOP - CAPTION_BAND;
   const scale = Math.min(availW / vw, availH / vh);
   const w = vw * scale;
   const h = vh * scale;
-  const x = (CANVAS_W - w) / 2;
+  const x = (canvasW - w) / 2;
   const y = PAD_TOP + (availH - h) / 2;
   return { vw, vh, scale, w, h, x, y };
 }
@@ -74,8 +90,8 @@ function envelope(t, start, peakAt, holdEnd, end, peak) {
 }
 
 // Resolve the active zoom (scale + origin in canvas px) for the current time.
-function getZoom(t, steps, card) {
-  const center = { x: CANVAS_W / 2, y: CANVAS_H / 2 };
+function getZoom(t, steps, card, canvasW, canvasH) {
+  const center = { x: canvasW / 2, y: canvasH / 2 };
   for (const step of steps) {
     const zoom = step.zoom;
     if (!zoom || zoom === "none") continue;
@@ -113,9 +129,9 @@ function getZoom(t, steps, card) {
   return { scale: 1, ox: center.x, oy: center.y };
 }
 
-// Flatten all VO segments into absolute-timed phrases (≤6 words, split on >0.6s
-// gaps). Each word time is offset by its step's start on the OUTPUT timeline.
-function buildPhrases(manifest, windows) {
+// Flatten all VO segments into absolute-timed phrases (split on >0.6s gaps). Each
+// word time is offset by its step's start on the OUTPUT timeline.
+function buildPhrases(manifest, windows, maxWords) {
   const startByIndex = new Map(windows.map((w) => [w.i, w.startSec]));
   const phrases = [];
   for (const seg of manifest.segments || []) {
@@ -137,7 +153,7 @@ function buildPhrases(manifest, windows) {
     };
     for (let i = 0; i < words.length; i++) {
       const w = words[i];
-      if (cur.length >= 6) flush();
+      if (cur.length >= maxWords) flush();
       else if (cur.length && w.start - cur[cur.length - 1].end > 0.6) flush();
       cur.push(w);
     }
@@ -146,7 +162,29 @@ function buildPhrases(manifest, windows) {
   return phrases;
 }
 
-const CaptionBand = ({ phrases, t }) => {
+const WIDE_CAPTION = {
+  fontSize: 34,
+  paddingBottom: 44,
+  maxWidth: 1280,
+  padding: "16px 30px",
+  borderRadius: 20,
+  gap: "0 11px",
+  spokenWeight: 600,
+  restWeight: 500,
+};
+
+const VERTICAL_CAPTION = {
+  fontSize: 58,
+  paddingBottom: 360,
+  maxWidth: 940,
+  padding: "20px 32px",
+  borderRadius: 24,
+  gap: "0 18px",
+  spokenWeight: 700,
+  restWeight: 600,
+};
+
+const CaptionBand = ({ phrases, t, tokens }) => {
   const FADE = 0.15;
   // Show the phrase covering t, extending a touch past its end for readability.
   let active = null;
@@ -177,24 +215,24 @@ const CaptionBand = ({ phrases, t }) => {
       style={{
         justifyContent: "flex-end",
         alignItems: "center",
-        paddingBottom: 44,
+        paddingBottom: tokens.paddingBottom,
       }}
     >
       <div
         style={{
           opacity,
-          maxWidth: 1280,
+          maxWidth: tokens.maxWidth,
           display: "flex",
           flexWrap: "wrap",
           justifyContent: "center",
-          gap: "0 11px",
-          padding: "16px 30px",
-          borderRadius: 20,
+          gap: tokens.gap,
+          padding: tokens.padding,
+          borderRadius: tokens.borderRadius,
           background: "rgba(16,16,22,0.86)",
           border: "1px solid rgba(255,255,255,0.10)",
           boxShadow: "0 14px 46px rgba(0,0,0,0.42)",
           fontFamily: FONT,
-          fontSize: 34,
+          fontSize: tokens.fontSize,
           lineHeight: 1.15,
         }}
       >
@@ -205,7 +243,7 @@ const CaptionBand = ({ phrases, t }) => {
               key={i}
               style={{
                 color: spoken ? "#ffffff" : "rgba(255,255,255,0.72)",
-                fontWeight: spoken ? 600 : 500,
+                fontWeight: spoken ? tokens.spokenWeight : tokens.restWeight,
               }}
             >
               {w.word}
@@ -265,13 +303,107 @@ const TitleSubtitle = ({ title, frame, firstCaptionStart }) => {
   );
 };
 
+// Vertical opener: the payoff line over a scrim, footage already playing under it.
+const HookCard = ({ hook, t }) => {
+  if (!hook || t > HOOK_S) return null;
+  const opacity = interpolate(t, [0, 0.25, HOOK_S - 0.3, HOOK_S], [0, 1, 1, 0], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  if (opacity <= 0) return null;
+  const y = interpolate(t, [0, 0.25], [18, 0], {
+    easing: Easing.out(Easing.cubic),
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return (
+    <AbsoluteFill
+      style={{
+        opacity,
+        background: SCRIM,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "0 70px",
+      }}
+    >
+      <div
+        style={{
+          transform: `translateY(${y}px)`,
+          textAlign: "center",
+          color: "#fff",
+          fontFamily: FONT,
+          fontSize: 84,
+          fontWeight: 700,
+          lineHeight: 1.1,
+          letterSpacing: "-0.02em",
+        }}
+      >
+        {hook}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+// Vertical closer: holds over the last CTA_S seconds of the freeze.
+const CtaCard = ({ cta, t, durSec }) => {
+  if (!cta || !cta.text) return null;
+  const start = durSec - CTA_S;
+  if (t < start) return null;
+  const opacity = interpolate(t, [start, start + 0.25], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  const y = interpolate(t, [start, start + 0.25], [18, 0], {
+    easing: Easing.out(Easing.cubic),
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+  return (
+    <AbsoluteFill
+      style={{
+        opacity,
+        background: SCRIM,
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "0 70px",
+      }}
+    >
+      <div style={{ transform: `translateY(${y}px)`, textAlign: "center", fontFamily: FONT }}>
+        <div
+          style={{
+            color: "#fff",
+            fontSize: 64,
+            fontWeight: 700,
+            lineHeight: 1.15,
+            letterSpacing: "-0.02em",
+          }}
+        >
+          {cta.text}
+        </div>
+        {cta.url ? (
+          <div
+            style={{
+              marginTop: 26,
+              color: "rgba(255,255,255,0.78)",
+              fontSize: 40,
+              fontWeight: 500,
+            }}
+          >
+            {cta.url}
+          </div>
+        ) : null}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 // One step → a play Sequence (its recorded slice at 1x) then, when the window
 // outlasts the capture, a freeze Sequence holding the slice's last frame. The
 // window is a max() so the played portion always fits; video is never sped up.
-function StepVideo({ w, isLast }) {
+function StepVideo({ w, isLast, tailS, videoStyle }) {
   const src = staticFile("video.mp4");
-  const fill = { width: "100%", height: "100%", objectFit: "cover" };
-  const tail = isLast ? Math.round(TAIL_S * FPS) : 0;
+  const fill = videoStyle || { width: "100%", height: "100%", objectFit: "cover" };
+  const tail = isLast ? Math.round(tailS * FPS) : 0;
   const freezeFrames = w.windowFrames - w.recFrames + tail;
   const lastMediaFrame = Math.max(0, w.outF - 1);
   return (
@@ -290,12 +422,22 @@ function StepVideo({ w, isLast }) {
   );
 }
 
-export const SpoolComposition = ({ timeline, manifest, title, background }) => {
+export const SpoolComposition = ({
+  timeline,
+  manifest,
+  title,
+  background,
+  format,
+  vertical,
+}) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width: canvasW, height: canvasH, durationInFrames } = useVideoConfig();
   const t = frame / fps;
+  const isVertical = format === "vertical";
+  const durSec = durationInFrames / fps;
 
-  const card = cardLayout(timeline?.viewport);
+  const card = cardLayout(timeline?.viewport, canvasW, canvasH);
+  const viewport = { width: card.vw, height: card.vh };
   const { windows } = React.useMemo(
     () => buildWindows(timeline, manifest || { segments: [] }, fps),
     [timeline, manifest, fps]
@@ -305,11 +447,38 @@ export const SpoolComposition = ({ timeline, manifest, title, background }) => {
     () => windows.map((w) => ({ zoom: w.zoom, clicks: w.outClicks, start: w.startSec, end: w.endSec })),
     [windows]
   );
-  const zoom = getZoom(t, zoomSteps, card);
-  const phrases = React.useMemo(
-    () => buildPhrases(manifest || { segments: [] }, windows),
-    [manifest, windows]
+  const zoom = isVertical ? null : getZoom(t, zoomSteps, card, canvasW, canvasH);
+  const camTrack = React.useMemo(
+    () => (isVertical ? buildCameraTrack(windows, viewport) : null),
+    [isVertical, windows, card.vw, card.vh]
   );
+  const cam = isVertical ? sampleCamera(camTrack, t, viewport) : null;
+  const phrases = React.useMemo(
+    () => buildPhrases(manifest || { segments: [] }, windows, isVertical ? 4 : 6),
+    [manifest, windows, isVertical]
+  );
+  // VO intervals on the output clock, used to duck the music bed under speech.
+  const speechWindows = React.useMemo(() => {
+    const startByIndex = new Map(windows.map((w) => [w.i, w.startSec]));
+    return (manifest?.segments || []).map((seg) => {
+      const start = startByIndex.get(seg.i) ?? 0;
+      return { start, end: start + (seg.duration || 0) };
+    });
+  }, [manifest, windows]);
+
+  const tailS = TAIL_S + (isVertical ? CTA_S : 0);
+  const videoStyle = isVertical
+    ? { width: card.vw, height: card.vh, objectFit: "cover" }
+    : undefined;
+  const stepVideos = windows.map((w, idx) => (
+    <StepVideo
+      key={w.i}
+      w={w}
+      isLast={idx === windows.length - 1}
+      tailS={tailS}
+      videoStyle={videoStyle}
+    />
+  ));
 
   return (
     <AbsoluteFill
@@ -334,42 +503,85 @@ export const SpoolComposition = ({ timeline, manifest, title, background }) => {
           />
         </AbsoluteFill>
       ) : null}
-      {/* Zoom wrapper: scales the card about the click origin. Captions and the
-          background stay outside it so only the recording zooms. */}
-      <AbsoluteFill
-        style={{
-          transform: `scale(${zoom.scale})`,
-          transformOrigin: `${zoom.ox}px ${zoom.oy}px`,
-        }}
-      >
+
+      {isVertical ? (
+        // Virtual camera: the capture sits at native size inside a fixed stage and
+        // is panned/scaled as one transform. Captions and cards stay outside it.
         <div
           style={{
             position: "absolute",
-            left: card.x,
-            top: card.y,
-            width: card.w,
-            height: card.h,
-            borderRadius: 16,
+            left: STAGE.x,
+            top: STAGE.y,
+            width: STAGE.w,
+            height: STAGE.h,
+            borderRadius: 28,
             overflow: "hidden",
             background: "#000",
-            // Deep elevation shadow + a faint light rim so the card separates
-            // from the dark wallpaper.
-            boxShadow:
-              "0 0 0 1px rgba(255,255,255,0.06), 0 8px 24px rgba(0,0,0,0.45), 0 40px 90px -24px rgba(0,0,0,0.6)",
+            boxShadow: CARD_SHADOW,
           }}
         >
-          {windows.map((w, idx) => (
-            <StepVideo key={w.i} w={w} isLast={idx === windows.length - 1} />
-          ))}
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: card.vw,
+              height: card.vh,
+              transform: `translate(${cam.tx}px, ${cam.ty}px) scale(${cam.s})`,
+              transformOrigin: "0 0",
+            }}
+          >
+            {stepVideos}
+          </div>
         </div>
-      </AbsoluteFill>
+      ) : (
+        /* Zoom wrapper: scales the card about the click origin. Captions and the
+           background stay outside it so only the recording zooms. */
+        <AbsoluteFill
+          style={{
+            transform: `scale(${zoom.scale})`,
+            transformOrigin: `${zoom.ox}px ${zoom.oy}px`,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: card.x,
+              top: card.y,
+              width: card.w,
+              height: card.h,
+              borderRadius: 16,
+              overflow: "hidden",
+              background: "#000",
+              // Deep elevation shadow + a faint light rim so the card separates
+              // from the dark wallpaper.
+              boxShadow: CARD_SHADOW,
+            }}
+          >
+            {stepVideos}
+          </div>
+        </AbsoluteFill>
+      )}
 
-      <TitleSubtitle
-        title={title}
-        frame={frame}
-        firstCaptionStart={phrases.length ? phrases[0].start : null}
+      {isVertical ? null : (
+        <TitleSubtitle
+          title={title}
+          frame={frame}
+          firstCaptionStart={phrases.length ? phrases[0].start : null}
+        />
+      )}
+      <CaptionBand
+        phrases={phrases}
+        t={t}
+        tokens={isVertical ? VERTICAL_CAPTION : WIDE_CAPTION}
       />
-      <CaptionBand phrases={phrases} t={t} />
+
+      {isVertical ? (
+        <>
+          <HookCard hook={vertical?.hook} t={t} />
+          <CtaCard cta={vertical?.cta} t={t} durSec={durSec} />
+        </>
+      ) : null}
 
       {/* VO: one Audio per segment, placed at its step's start on the OUTPUT timeline. */}
       {(manifest?.segments || []).map((seg) => {
@@ -386,6 +598,16 @@ export const SpoolComposition = ({ timeline, manifest, title, background }) => {
           </Sequence>
         );
       })}
+
+      {isVertical && vertical?.music ? (
+        // "extend" keeps the volume callback on the composition clock across loops.
+        <Audio
+          src={staticFile(vertical.music)}
+          loop
+          loopVolumeCurveBehavior="extend"
+          volume={(f) => duckedMusicVolume(f / fps, speechWindows, durSec)}
+        />
+      ) : null}
     </AbsoluteFill>
   );
 };

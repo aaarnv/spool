@@ -52,7 +52,7 @@ export async function runSetup(opts = {}) {
   const cfg = await readPrefs();
   if (opts.show) return printConfig(cfg);
 
-  const flags = { browser: opts.browser, target: opts.target, engine: opts.engine, bg: opts.bg, host: opts.host };
+  const flags = { browser: opts.browser, target: opts.target, engine: opts.engine, bg: opts.bg, format: opts.format, host: opts.host };
   const anyFlag = Object.values(flags).some((v) => v != null);
   const interactive = !!process.stdin.isTTY && !opts.yes && !anyFlag;
 

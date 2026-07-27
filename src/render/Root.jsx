@@ -11,6 +11,7 @@ const defaultProps = {
   manifest: { segments: [] },
   title: null,
   workdir: "",
+  format: "wide",
 };
 
 export const Root = () => {

@@ -18,9 +18,19 @@ const DEFAULT_INSTRUCTIONS =
   'Delivery: conversational and unscripted-sounding, easy unhurried tempo, natural pauses at commas and sentence ends, ' +
   'intonation that rises and falls like real speech, light emphasis on product names and key actions. ' +
   'Tone: warm, confident, slightly understated. Never salesy, never announcer-like, never monotone, never breathy.';
+
+// Vertical short-form register: same engineer, same room, a much shorter clip.
+export const SHORT_FORM_INSTRUCTIONS =
+  'You are a senior engineer showing a teammate one sharp thing you just built, and you have only a few seconds to land it. ' +
+  'Delivery: bright and quick, the point front-loaded into the opening words, tight pauses, crisp consonants, momentum that never sags. ' +
+  'Tone: confident and genuinely excited about the thing itself. Never announcer-like, never salesy, never shouty, never breathless.';
 const round2 = (x) => Math.round(x * 100) / 100;
 
-export async function generateVO({ stepsFile, workdir, engine, voice = 'ash', instructions, speed = 1 } = {}) {
+// Which register a segment is read in: an explicit `instructions` always wins.
+const registerFor = (instructions, format) =>
+  instructions ?? (format === 'vertical' ? SHORT_FORM_INSTRUCTIONS : DEFAULT_INSTRUCTIONS);
+
+export async function generateVO({ stepsFile, workdir, engine, voice = 'ash', instructions, speed = 1, format = null } = {}) {
   if (!workdir) throw new Error('generateVO: workdir required');
 
   // Narration source: a steps.mjs snapshot (scripted/browser) when present, else
@@ -36,7 +46,7 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'ash', in
   const voDir = join(workdir, 'vo');
   await mkdir(voDir, { recursive: true });
 
-  const instr = instructions ?? DEFAULT_INSTRUCTIONS;
+  const instr = registerFor(instructions, format);
   engine = await resolveEngine(engine);
   const key = engine === 'openai' ? await resolveKey() : null;
   if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
@@ -105,11 +115,11 @@ async function buildSegment(ctx, { i, name, narration }) {
 
 // Regenerate a SINGLE segment's wav + words in place (the edit worker's re-TTS path).
 // Resolves its own engine/key exactly like generateVO, so callers need only OPENAI_API_KEY.
-export async function synthesizeSegment({ workdir, i, name, narration, engine, voice = 'ash', instructions, speed = 1 } = {}) {
+export async function synthesizeSegment({ workdir, i, name, narration, engine, voice = 'ash', instructions, speed = 1, format = null } = {}) {
   if (!workdir) throw new Error('synthesizeSegment: workdir required');
   const voDir = join(workdir, 'vo');
   await mkdir(voDir, { recursive: true });
-  const instr = instructions ?? DEFAULT_INSTRUCTIONS;
+  const instr = registerFor(instructions, format);
   engine = await resolveEngine(engine);
   const key = engine === 'openai' ? await resolveKey() : null;
   if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
@@ -244,7 +254,7 @@ function run(cmd, args) {
 
 function parseArgs(argv) {
   const out = {};
-  const map = { '--steps': 'stepsFile', '--workdir': 'workdir', '--engine': 'engine', '--voice': 'voice', '--instructions': 'instructions', '--speed': 'speed' };
+  const map = { '--steps': 'stepsFile', '--workdir': 'workdir', '--engine': 'engine', '--voice': 'voice', '--instructions': 'instructions', '--speed': 'speed', '--format': 'format' };
   for (let i = 0; i < argv.length; i += 2) {
     const key = map[argv[i]];
     if (!key) throw new Error(`unknown flag: ${argv[i]}`);

@@ -32,6 +32,7 @@ function serializeConfig(config, prep) {
   const lines = ['export const config = {', `  url: ${JSON.stringify(config.url)},`,
     `  viewport: { width: ${vp.width}, height: ${vp.height} },`];
   if (config.title) lines.push(`  title: ${JSON.stringify(config.title)},`);
+  if (config.format) lines.push(`  format: ${JSON.stringify(config.format)},`);
   if (prep && prep.length) {
     lines.push('  prep: async (page, h) => {', prep.map((c) => indent(c, 4)).join('\n'), '  },');
   }
@@ -130,7 +131,7 @@ function readBody(req) {
  * Boot a live recording session and serve its control API on 127.0.0.1:<ephemeral>.
  * Resolves when the session is finalized (via /end or the idle timeout).
  */
-export async function liveSession({ workdir, url, title, headed = false }) {
+export async function liveSession({ workdir, url, title, format, headed = false }) {
   const dir = path.resolve(workdir);
   await mkdir(dir, { recursive: true });
 
@@ -144,6 +145,7 @@ export async function liveSession({ workdir, url, title, headed = false }) {
   if (!resolvedUrl) throw new Error('spool live: no URL (pass --url or provide a steps.mjs with config.url)');
   const config = { url: resolvedUrl, viewport: cfg.viewport || { width: 1600, height: 900 } };
   if (title || cfg.title) config.title = title || cfg.title;
+  if (format || cfg.format) config.format = format || cfg.format;
   const viewport = config.viewport;
 
   const channel = await resolveLaunchChannel();

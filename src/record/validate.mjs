@@ -1,5 +1,6 @@
 // Shared steps.mjs module validation. Used by the record harness (record time)
 // and `spool lint` (static check), so the two can never drift.
+import { CHOICES } from '../config/prefs.mjs';
 
 export function validateStepsModule(mod, stepsFile) {
   const { config, steps } = mod;
@@ -22,6 +23,9 @@ export function validateStepsModule(mod, stepsFile) {
   });
   if (config.prep != null && typeof config.prep !== 'function') {
     throw new Error(`${stepsFile}: config.prep must be an async function`);
+  }
+  if (config.format != null && !CHOICES.format.includes(config.format)) {
+    throw new Error(`${stepsFile}: config.format must be one of: ${CHOICES.format.join(', ')}`);
   }
   return { config, steps };
 }

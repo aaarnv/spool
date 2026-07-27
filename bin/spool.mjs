@@ -49,14 +49,16 @@ async function finishSession(wd, opts) {
   const sfPath = join(wd, 'steps.mjs');
   const sf = existsSync(sfPath) ? sfPath : null;
   const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
-  const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
+  const { renderSpool, resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
   const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
+  // One resolution for the whole finish: VO register and canvas must agree.
+  const format = await resolveWorkdirFormat(wd, opts.format);
   console.log('── spool vo');
   const t0 = Date.now();
-  await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
+  await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed), format });
   console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   console.log('── spool render');
-  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview });
+  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, format });
   console.log('── spool share');
   await shareSpool(wd);
   const out = opts.preview ? join(wd, 'share', 'preview.mp4') : join(wd, 'final.mp4');
@@ -146,9 +148,12 @@ program
   .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
   .option('--voice <voice>', 'TTS voice', 'ash')
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
+  .option('--format <format>', 'wide | vertical (picks the narration register)')
   .action(async (workdir, opts) => {
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
-    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) });
+    const { resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
+    const format = await resolveWorkdirFormat(resolve(workdir), opts.format);
+    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), engine: opts.engine, voice: opts.voice, speed: Number(opts.speed), format });
   });
 
 program
@@ -168,6 +173,7 @@ program
   .option('--title <title>', 'title card text')
   .option('--display <idx>', 'os target: which "Capture screen" index (default: first)')
   .option('--window <name>', 'os target: single-window capture (falls back to full display)')
+  .option('--format <format>', 'wide | vertical short-form (recorded into the session steps.mjs)')
   .option('--headed', 'show the browser (browser target)')
   .action(async (workdir, opts) => {
     const { resolveTarget } = await import(join(root, 'src/config/prefs.mjs'));
@@ -178,7 +184,7 @@ program
       return;
     }
     const { liveSession } = await import(join(root, 'src/record/live.mjs'));
-    await liveSession({ workdir: resolve(workdir), url: opts.url, title: opts.title, headed: !!opts.headed });
+    await liveSession({ workdir: resolve(workdir), url: opts.url, title: opts.title, format: opts.format, headed: !!opts.headed });
   });
 
 program
@@ -201,6 +207,7 @@ program
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
+  .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
   .option('--no-publish', 'skip the automatic publish at the end')
   .action(async (workdir, opts) => {
@@ -222,12 +229,13 @@ program
   .description('normalize + Remotion-render the final spool mp4')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
+  .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
-  .option('--hq', '2x-supersampled high-quality render (slower; best for launch/marketing takes)')
+  .option('--hq', 'supersampled high-quality render (slower; best for launch/marketing takes)')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
-    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq });
+    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq, format: opts.format });
   });
 
 program
@@ -300,6 +308,7 @@ program
   .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
   .option('--rate <rate>', 'global playback speed for the final video', '1')
   .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
+  .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
   .option('--headed', 'show the browser while recording')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
@@ -312,19 +321,21 @@ program
     const sf = stepsPath(workdir);
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
     const { record } = await import(join(root, 'src/record/harness.mjs'));
-    const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
+    const { renderSpool, resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
+    // One resolution for the whole build: VO register and canvas must agree.
+    const format = await resolveWorkdirFormat(wd, opts.format);
     // Record-first, narrate-parallel: VO and capture are independent now, so run
     // them concurrently. Either rejecting fails the build with that error.
     console.log('── spool vo ‖ record');
     const t0 = Date.now();
     await Promise.all([
-      generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed) })
+      generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed), format })
         .then(() => console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
       record({ stepsFile: sf, workdir: wd, headed: !!opts.headed })
         .then(() => console.log(`   record done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
     ]);
     console.log('── spool render');
-    await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg });
+    await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, format });
     console.log('── spool share');
     const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
     await shareSpool(wd);
@@ -334,11 +345,12 @@ program
 
 program
   .command('setup')
-  .description('save installation preferences to ~/.spool.json (browser, target, engine, bg)')
+  .description('save installation preferences to ~/.spool.json (browser, target, engine, bg, format)')
   .option('--browser <browser>', 'chromium | chrome | edge (Playwright launch channel)')
   .option('--target <target>', 'default record target: browser | os')
   .option('--engine <engine>', 'default VO engine: auto | openai | hosted | local')
   .option('--bg <bg>', 'default render background name')
+  .option('--format <format>', 'default render format: wide | vertical')
   .option('--host <host>', 'publish host origin')
   .option('--yes', 'write flags without prompting (unspecified keys keep current values)')
   .option('--show', 'print the effective config (token masked) and exit')

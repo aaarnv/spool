@@ -40,8 +40,14 @@ export const config = {
   url: "http://localhost:4747",            // required
   viewport: { width: 1600, height: 900 },  // optional, this is the default (16:9 fills the rendered frame best)
   title: "Finishing Lab walkthrough",      // optional, used for title card
+  format: "wide",                          // optional, "wide" (1920x1080, the default) | "vertical" (1080x1920)
   // optional: runs before step 0, recorded but not narrated (login, seeding)
   prep: async (page, h) => {},
+
+  // vertical only, all optional (see "Vertical format" under Render layer inputs)
+  hook: "Your diffs explain themselves now",                       // title card, <= 7 words; defaults to `title`
+  cta: { text: "See the full walkthrough", url: "spoolkit.dev" },  // end card; defaults to a generic line + `url`'s host
+  music: "uplift",                         // "uplift" | "calm" | "none" | path to an audio file
 };
 
 export const steps = [
@@ -270,6 +276,10 @@ spool/<slug>/share/
   "url": "http://localhost:4747",
   "video": "../final.mp4",
   "duration": 29.0,
+  "rate": 1,
+  "format": "wide",
+  "width": 1920,
+  "height": 1080,
   "voice": { "engine": "openai", "voice": "alloy" },
   "steps": [
     {
@@ -290,7 +300,9 @@ Consumption: `spool read <workdir-or-share-dir>` prints an agent-oriented digest
 (title, url, per-step narration + timings + frame paths, console error summary) so
 a receiving agent can orient in one command and Read only the frames it needs.
 Paths inside spool.json are share-dir-relative; the bundle is self-contained apart
-from the ../final.mp4 pointer.
+from the ../final.mp4 pointer. `format`/`width`/`height` are additive (version stays 1):
+`format` is copied from `render.json`, the dimensions are probed off the deliverable, and
+all three are absent on bundles built before the vertical format shipped.
 
 ## Render layer inputs
 
@@ -318,6 +330,29 @@ backgrounds` (alias `spool bg`, or `--bg list`) prints the presets + this machin
 wallpapers. Also available on `spool build`/`spool finish`. On publish the resolved
 `.spool-bg.jpg` uploads as `spools/{id}/src/bg.jpg` so the Linux edit worker can re-render
 the same canvas (see docs/EDIT-CONTRACT.md).
+
+**Vertical format (`--format vertical`, or `config.format`).** The canvas becomes 1080x1920.
+The capture itself is unchanged and is never letterboxed: a virtual camera cover-crops the
+landscape recording onto a rounded stage, then pans and zooms to follow that step's clicks
+(`zoom: "auto"`) or drifts gently across it (`"none"`), cutting hard at every step boundary.
+Over that stage sit a hook card for the first ~2s, big burned-in word captions, a music bed
+ducked under the voice, and a CTA card over the last ~1.5s. Because the crop upscales the
+capture, author vertical spools with a 1920x1080 `viewport`. Wide renders are unaffected.
+
+**`render.json`** (written by `spool render`, and re-read by the Fly edit worker so a
+re-render matches):
+
+```json
+{ "rate": 1,
+  "bg": "indigo",
+  "format": "vertical",
+  "vertical": { "hook": "Your diffs explain themselves now",
+                "cta": { "text": "See the full walkthrough", "url": "spoolkit.dev" },
+                "music": "uplift" } }
+```
+
+`vertical` is written only when `format` is `vertical`. It snapshots the resolved authoring
+fields, so a worker re-render with no `steps.mjs` in the workdir frames the short identically.
 
 **Retiming (record-first).** The capture is natural-speed; the renderer maps each step
 onto an output window and concatenates them from t=0:

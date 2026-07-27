@@ -12,15 +12,16 @@ export const PREFS_PATH = join(homedir(), ".spool.json");
 // opt-in via SPOOL_HOST, --host, or a manual host entry in ~/.spool.json.
 export const DEFAULT_HOST = "https://spoolkit.dev";
 
-export const DEFAULTS ={ browser: "chromium", target: "browser", engine: "auto", bg: null };
+export const DEFAULTS ={ browser: "chromium", target: "browser", engine: "auto", bg: null, format: "wide" };
 
 // Allowed values per key (bg is free-form). Env var that overrides each pref.
 export const CHOICES = {
   browser: ["chromium", "chrome", "edge"],
   target: ["browser", "os"],
   engine: ["auto", "openai", "hosted", "local"],
+  format: ["wide", "vertical"],
 };
-const ENV = { browser: "SPOOL_BROWSER", target: "SPOOL_TARGET", engine: "SPOOL_ENGINE", bg: "SPOOL_BG" };
+const ENV = { browser: "SPOOL_BROWSER", target: "SPOOL_TARGET", engine: "SPOOL_ENGINE", bg: "SPOOL_BG", format: "SPOOL_FORMAT" };
 
 // Read ~/.spool.json (unknown keys preserved). Returns {} when absent or malformed.
 export async function readPrefs() {
@@ -87,4 +88,10 @@ export async function resolveEnginePref() {
 // Default render background: explicit > env SPOOL_BG > prefs.bg > null.
 export async function resolveBgPref(explicit) {
   return pick(await readPrefs(), "bg", explicit).value;
+}
+
+// Render format: explicit > env SPOOL_FORMAT > prefs.format > "wide". Callers fold
+// a steps.mjs `config.format` into the explicit slot (see resolveWorkdirFormat).
+export async function resolveFormatPref(explicit) {
+  return pick(await readPrefs(), "format", explicit).value;
 }
