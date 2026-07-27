@@ -6,14 +6,21 @@
 
 // Injected via context.addInitScript — re-runs on every new document (full loads
 // and the initial page of an SPA), so it must be self-contained and idempotent.
-export const CURSOR_INIT_SCRIPT = `(() => {
+// `hidden` is baked in rather than toggled at runtime because each document gets
+// a fresh window: a flag set by evaluate() would be lost on the next navigation.
+export function cursorInitScript({ hidden = false } = {}) {
+  return `(() => {
   if (window.__spoolCursor) return;
   window.__spoolCursor = { x: -100, y: -100 };
+  window.__spoolCursorTrack = [];
+  const HIDDEN = ${hidden ? 'true' : 'false'};
+  const MAX_SAMPLES = 20000;
+  const T0 = performance.timeOrigin || (Date.now() - performance.now());
 
   let root = null, arrow = null;
 
   function build() {
-    if (!document.body || document.getElementById('__spoolCursorRoot')) return;
+    if (HIDDEN || !document.body || document.getElementById('__spoolCursorRoot')) return;
     root = document.createElement('div');
     root.id = '__spoolCursorRoot';
     root.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;margin:0;padding:0;z-index:2147483647;pointer-events:none;';
@@ -42,22 +49,44 @@ export const CURSOR_INIT_SCRIPT = `(() => {
   }
 
   // Listen in the capture phase so page handlers can't stop us seeing the event.
+  // Sampling here rather than on rAF records every position the overlay actually
+  // took, so the render can reproduce the path instead of approximating it.
   document.addEventListener('mousemove', (e) => {
     window.__spoolCursor.x = e.clientX;
     window.__spoolCursor.y = e.clientY;
     if (arrow) arrow.style.transform = 'translate3d(' + (e.clientX - 1) + 'px,' + (e.clientY - 1) + 'px,0)';
+    const track = window.__spoolCursorTrack;
+    if (track.length < MAX_SAMPLES) track.push({ t: T0 + performance.now(), x: e.clientX, y: e.clientY });
   }, true);
   document.addEventListener('mousedown', (e) => { ripple(e.clientX, e.clientY); }, true);
 
   if (document.body) build();
   else document.addEventListener('DOMContentLoaded', build);
 })();`;
+}
+
+export const CURSOR_INIT_SCRIPT = cursorInitScript();
+
+// Pull and clear the page-side buffer. The array lives on `window`, so drain it
+// before anything can navigate the document away.
+export async function drainCursorTrack(page) {
+  try {
+    return await page.evaluate(() => {
+      const t = window.__spoolCursorTrack || [];
+      window.__spoolCursorTrack = [];
+      return t;
+    });
+  } catch {
+    return [];
+  }
+}
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Returns the `h` API handed to steps. `state` holds the last cursor coords so
 // motion stays continuous across steps; logClick records viewport-space clicks.
-export function makeHelpers(page, state, logClick) {
+// onCursorSamples, when given, receives the motion track drained after each move.
+export function makeHelpers(page, state, logClick, onCursorSamples) {
   // Re-assert the pointer after any main-frame navigation: a fresh document
   // starts with the overlay offscreen until it sees a mousemove, so nudge it
   // back to where the cursor logically is.
@@ -73,6 +102,11 @@ export function makeHelpers(page, state, logClick) {
     await page.mouse.move(x, y, { steps });
     state.x = x;
     state.y = y;
+    // Drain here, before the click that follows can navigate the buffer away.
+    if (onCursorSamples) {
+      const samples = await drainCursorTrack(page);
+      if (samples.length) onCursorSamples(samples);
+    }
   }
 
   async function resolvePoint(target, who) {

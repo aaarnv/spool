@@ -12,7 +12,7 @@ import { mkdir, rename, writeFile, readFile, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CURSOR_INIT_SCRIPT, makeHelpers } from './cursor.js';
+import { cursorInitScript, drainCursorTrack, makeHelpers } from './cursor.js';
 import { resolveLaunchChannel } from '../config/prefs.mjs';
 
 const exec = promisify(execFile);
@@ -154,7 +154,9 @@ export async function liveSession({ workdir, url, title, format, headed = false 
   const cdpCapture = process.env.SPOOL_CAPTURE === 'cdp';
   const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
   const context = await browser.newContext({ viewport, ...(cdpCapture ? {} : { recordVideo: { dir, size: viewport } }) });
-  await context.addInitScript(CURSOR_INIT_SCRIPT);
+  // Under cdp, hide the overlay and ship its path as data: both the screencast
+  // (~15fps) and the mousemove stream itself land far below the 60fps output.
+  await context.addInitScript(cursorInitScript({ hidden: cdpCapture }));
   const page = await context.newPage();
   // Fast-fail selectors: a fumbled /js snippet must not record 30s of dead air into the take.
   page.setDefaultTimeout(5000);
@@ -175,7 +177,9 @@ export async function liveSession({ workdir, url, title, format, headed = false 
   const logClick = (x, y) => {
     if (current) current.clicks.push({ x: Math.round(x), y: Math.round(y), t: +now().toFixed(3) });
   };
-  const h = makeHelpers(page, state, logClick);
+  const cursorSamples = []; // {t: epoch ms, x, y}, converted to the video clock at finalize
+  const addCursor = (s) => { for (const p of s) cursorSamples.push(p); };
+  const h = makeHelpers(page, state, logClick, addCursor);
 
   const telemetry = [];
   const trunc = (s) => (typeof s === 'string' && s.length > 2000 ? s.slice(0, 2000) : String(s ?? ''));
@@ -295,6 +299,16 @@ export async function liveSession({ workdir, url, title, format, headed = false 
     timeline.steps = steps.map((s) => ({
       i: s.i, name: s.name, start: s.start, end: s.end, zoom: s.zoom, clicks: s.clicks, narration: s.narration,
     }));
+    // Only when the overlay was hidden: with a visible one the take already has a
+    // cursor baked in and the render layer would draw a second one on top.
+    if (cdpCapture) {
+      addCursor(await drainCursorTrack(page));
+      const cursor = cursorSamples
+        .map((p) => ({ t: +((p.t - tOrigin) / 1000).toFixed(3), x: Math.round(p.x), y: Math.round(p.y) }))
+        .filter((p) => p.t >= 0)
+        .sort((a, b) => a.t - b.t);
+      if (cursor.length) timeline.cursor = cursor;
+    }
     if (capture) {
       const cap = await capture.stop();
       timeline.video = cap.file;
