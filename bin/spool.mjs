@@ -66,6 +66,26 @@ async function finishSession(wd, opts) {
   await maybeAutoPublish(wd, opts);
 }
 
+// --cloud hands the recorded take to the hosted worker instead of doing vo → render
+// → share → publish locally, so it short-circuits before any of that work. It always
+// publishes (the job's product is a watch link), so the local-only flags are errors.
+async function cloudFinishCmd(wd, opts) {
+  if (opts.publish === false) {
+    console.error('--cloud publishes by definition (the job returns a watch link); drop --no-publish.');
+    process.exit(1);
+  }
+  if (opts.preview) {
+    console.error('--preview is a local draft render; drop it to render in the cloud.');
+    process.exit(1);
+  }
+  if (!hasCapture(wd)) {
+    console.error(`Not a recorded session: ${wd} needs video.webm/capture.mp4 + timeline.json (run \`spool live\` or \`spool record\` first).`);
+    process.exit(1);
+  }
+  const { cloudFinish } = await import(join(root, 'src/cloud/cloud.mjs'));
+  await cloudFinish(wd, opts);
+}
+
 // Finished spools publish by default; --no-publish, a preview render, or a
 // missing account skip it (skips are soft, lint/publish failures exit 1).
 async function maybeAutoPublish(wd, opts) {
@@ -210,10 +230,16 @@ program
   .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
   .option('--hq', 'supersampled high-quality render (slower; best for launch/marketing takes)')
+  .option('--cloud', 'render on spoolkit.dev instead of this machine (vo + render + publish server-side)')
   .option('--no-publish', 'skip the automatic publish at the end')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
-    await finishSession(resolve(workdir), opts);
+    const wd = resolve(workdir);
+    if (opts.cloud) {
+      await cloudFinishCmd(wd, opts);
+      return;
+    }
+    await finishSession(wd, opts);
   });
 
 program
@@ -233,10 +259,18 @@ program
   .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
   .option('--hq', 'supersampled high-quality render (slower; best for launch/marketing takes)')
+  .option('--cloud', 'render on spoolkit.dev instead of this machine (same job as `finish --cloud`)')
   .action(async (workdir, opts) => {
     if (await maybeListBackgrounds(opts)) return;
+    const wd = resolve(workdir);
+    // The cloud job is the whole finish (vo → render → share → publish); there is no
+    // render-only variant of it, so --cloud runs the same client here.
+    if (opts.cloud) {
+      await cloudFinishCmd(wd, opts);
+      return;
+    }
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
-    await renderSpool({ workdir: resolve(workdir), rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq, format: opts.format });
+    await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq, format: opts.format });
   });
 
 program
