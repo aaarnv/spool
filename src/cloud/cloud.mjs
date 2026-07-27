@@ -13,7 +13,7 @@ import { resolveBgPref } from '../config/prefs.mjs';
 
 const BLOB_API = process.env.VERCEL_BLOB_API_URL || 'https://blob.vercel-storage.com';
 const POLL_MS = 5000;
-const TIMEOUT_MS = 30 * 60 * 1000;
+const TIMEOUT_MS = 60 * 60 * 1000;
 const POLL_FAILURES_MAX = 3;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -133,7 +133,7 @@ async function uploadGrant(body, { pathname, token, contentType }) {
 }
 
 // Poll until the job lands. Transient poll failures are tolerated (a render outlives
-// the odd 502); a reported error, or 30 minutes, ends it.
+// the odd 502); a reported error, or 60 minutes, ends it.
 async function pollJob(host, token, jobId) {
   const deadline = Date.now() + TIMEOUT_MS;
   let announced = false;
@@ -160,7 +160,7 @@ async function pollJob(host, token, jobId) {
       process.exit(1);
     }
   }
-  console.error(`Timed out after 30 min waiting on job ${jobId} (it may still be running).`);
+  console.error(`Timed out after 60 min waiting on job ${jobId} (it may still be running).`);
   console.error(`Pick the link up with \`spool list\`, or check ${host}/dashboard.`);
   process.exit(1);
 }
