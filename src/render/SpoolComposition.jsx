@@ -20,7 +20,6 @@ import {
   CTA_S,
   HOOK_S,
   STAGE,
-  VERT_FPS,
 } from "./vertical.mjs";
 
 // Canvas layout: near-full-bleed — the card fills most of the frame with a slim
@@ -44,13 +43,10 @@ const SCRIM = "rgba(10,10,16,0.55)";
 // Vertical returns dims too; wide leaves Root's 1920x1080 hardcode untouched.
 export const calculateSpoolMetadata = ({ props }) => {
   const isVertical = props?.format === "vertical";
-  const fps = isVertical ? VERT_FPS : FPS;
-  const { totalFrames } = buildWindows(props?.timeline, props?.manifest, fps);
+  const { totalFrames } = buildWindows(props?.timeline, props?.manifest, FPS);
   const tailS = TAIL_S + (isVertical ? CTA_S : 0);
-  const durationInFrames = Math.max(1, totalFrames + Math.round(tailS * fps));
-  return isVertical
-    ? { durationInFrames, fps, width: 1080, height: 1920 }
-    : { durationInFrames };
+  const durationInFrames = Math.max(1, totalFrames + Math.round(tailS * FPS));
+  return isVertical ? { durationInFrames, width: 1080, height: 1920 } : { durationInFrames };
 };
 
 // Geometry of the centered card, derived once from the viewport size.

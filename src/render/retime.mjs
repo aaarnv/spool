@@ -3,7 +3,7 @@
 // fit its narration. Imported by SpoolComposition (browser bundle) and share.mjs
 // (node), so it stays a dependency-free pure module.
 
-export const FPS = 30;
+export const FPS = 60;
 export const PAD_S = 0.4; // minimum slack past the narration inside a window
 export const TAIL_S = 1; // end hold so the last caption/VO can land
 
