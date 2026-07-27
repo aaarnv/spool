@@ -175,7 +175,7 @@ const WIDE_CAPTION = {
 
 const VERTICAL_CAPTION = {
   fontSize: 58,
-  paddingBottom: 360,
+  paddingBottom: 140,
   maxWidth: 940,
   padding: "20px 32px",
   borderRadius: 24,
