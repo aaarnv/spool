@@ -111,6 +111,44 @@ function resolveVertical(cfg, prior, timeline) {
   };
 }
 
+// Everything a render decides before it touches ffmpeg or Remotion: the canvas, the
+// format, and (vertical) the authored hook/cta/music bed. One resolution pass, so a
+// local render and a cloud render of the same workdir agree.
+async function resolveRenderPlan(dir, { rate = 1, bg = null, format = null } = {}) {
+  // No explicit --bg: fall back to env SPOOL_BG / prefs.bg before the default.
+  const bgSpec = bg != null ? bg : await resolveBgPref();
+  const timeline = await readJson(join(dir, "timeline.json"));
+  const cfg = await readWorkdirConfig(dir);
+  const fmt = await resolveFormatPref(format ?? cfg.format);
+  // Previous stamp: the worker's only source for the vertical authoring fields.
+  const priorRender = existsSync(join(dir, "render.json")) ? await readJson(join(dir, "render.json")).catch(() => ({})) : {};
+  const vertical = fmt === "vertical" ? resolveVertical(cfg, priorRender.vertical || {}, timeline) : null;
+  const bgSource = await resolveBgSource(bgSpec);
+  const music = vertical ? resolveMusicSource(vertical.music) : null;
+  return { rate, timeline, fmt, vertical, bgSource, music, musicTag: vertical ? (music ? music.tag : "none") : null };
+}
+
+// The render.json a plan stamps: the rate final.mp4 runs on, which canvas was used,
+// the format, and (vertical) the resolved authoring fields a re-render needs.
+function planStamp({ rate, bgSource, fmt, vertical, musicTag }) {
+  return {
+    rate: rate && rate !== 1 ? rate : 1,
+    bg: bgSource.tag,
+    format: fmt,
+    ...(vertical ? { vertical: { hook: vertical.hook, cta: vertical.cta, music: musicTag } } : {}),
+  };
+}
+
+/**
+ * The render.json a `spool render <dir>` with these options would stamp, without
+ * rendering: `{ rate, bg, format }` plus `vertical: { hook, cta, music }` on vertical
+ * spools. Same resolution renderSpool uses (steps.mjs config > prior render.json >
+ * defaults), so the cloud client can ship the intent for the worker to render from.
+ */
+export async function resolveRenderIntent(dir, opts = {}) {
+  return planStamp(await resolveRenderPlan(resolve(dir), opts));
+}
+
 // Speed the fully-rendered mp4 by `rate` in one pass: video via setpts, audio via
 // atempo (pitch-preserving). Everything (captions, zooms, VO placement) was laid
 // out in Remotion at natural speed, so compressing the whole clip keeps it in sync.
@@ -161,16 +199,9 @@ async function speedUp(src, dst, rate) {
 export async function renderSpool(opts) {
   const { workdir, rate = 1, bg = null, preview = false, hq = false, format = null } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
-  // No explicit --bg: fall back to env SPOOL_BG / prefs.bg before the default.
-  const bgSpec = bg != null ? bg : await resolveBgPref();
-  const timeline = await readJson(join(dir, "timeline.json"));
+  const plan = await resolveRenderPlan(dir, { rate, bg, format });
+  const { timeline, fmt, vertical, bgSource, music: musicSource, musicTag } = plan;
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
-
-  const cfg = await readWorkdirConfig(dir);
-  const fmt = await resolveFormatPref(format ?? cfg.format);
-  // Previous stamp: the worker's only source for the vertical authoring fields.
-  const priorRender = existsSync(join(dir, "render.json")) ? await readJson(join(dir, "render.json")).catch(() => ({})) : {};
-  const vertical = fmt === "vertical" ? resolveVertical(cfg, priorRender.vertical || {}, timeline) : null;
 
   // normalize video.webm -> video.mp4 (staticFile target)
   await normalize(dir);
@@ -189,27 +220,23 @@ export async function renderSpool(opts) {
   }
   const enrichedManifest = { ...manifest, segments };
 
-  // Wallpaper canvas: resolve the requested bg (preset | macOS wallpaper | path |
-  // default) and copy the source into the workdir (publicDir) so the composition can
-  // staticFile() it. Gradient fallback when the asset is somehow absent.
-  const { source: bgAsset, tag: bgTag } = await resolveBgSource(bgSpec);
+  // Wallpaper canvas: copy the resolved bg (preset | macOS wallpaper | path | default)
+  // into the workdir (publicDir) so the composition can staticFile() it. Gradient
+  // fallback when the asset is somehow absent.
   let background = null;
-  if (existsSync(bgAsset)) {
-    await copyFile(bgAsset, join(dir, ".spool-bg.jpg"));
+  if (existsSync(bgSource.source)) {
+    await copyFile(bgSource.source, join(dir, ".spool-bg.jpg"));
     background = ".spool-bg.jpg";
   }
 
   // Vertical music bed: same staging deal as the wallpaper. The tag is stamped (so a
   // re-render resolves the same bed); the composition gets the workdir-relative copy.
-  let musicTag = null;
   let music = null;
   if (vertical) {
-    const resolved = resolveMusicSource(vertical.music);
-    musicTag = resolved ? resolved.tag : "none";
-    if (resolved && existsSync(resolved.source)) {
-      await copyFile(resolved.source, join(dir, ".spool-music.m4a"));
+    if (musicSource && existsSync(musicSource.source)) {
+      await copyFile(musicSource.source, join(dir, ".spool-music.m4a"));
       music = ".spool-music.m4a";
-    } else if (resolved) {
+    } else if (musicSource) {
       console.warn(`[render] music bed "${musicTag}" not found on disk; rendering without one`);
     }
   }
@@ -300,13 +327,7 @@ export async function renderSpool(opts) {
   // Stamp the rate + bg + format so `spool share`/re-renders know final.mp4's clock
   // differs from timeline.json/video.mp4, which canvas was used, and (vertical) the
   // authored hook/cta/music a worker re-render has no steps.mjs to read.
-  const stamp = {
-    rate: speedUpNeeded ? rate : 1,
-    bg: bgTag,
-    format: fmt,
-    ...(vertical ? { vertical: { hook: vertical.hook, cta: vertical.cta, music: musicTag } } : {}),
-  };
-  await writeFile(join(dir, "render.json"), JSON.stringify(stamp, null, 2) + "\n");
+  await writeFile(join(dir, "render.json"), JSON.stringify(planStamp(plan), null, 2) + "\n");
 
   console.log(`[render] wrote ${finalOut}`);
   return finalOut;

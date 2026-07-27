@@ -381,3 +381,41 @@ reports output-timeline step times, `duration` from `final.mp4`, and a top-level
 
 Render is bundle-cached: the Remotion webpack bundle is persisted under the OS tmpdir keyed
 by a hash of `src/render/**` + the remotion version, and reused across builds when unchanged.
+
+## Cloud render (`spool finish --cloud`)
+
+`--cloud` hands a recorded take to the hosted worker: VO, render, share bundle and publish
+all happen server-side and the CLI prints the watch link. It needs a capture (`video.webm`
+or `capture.mp4`, plus `timeline.json`) and a connected account, but no local `vo/`.
+`spool render --cloud` runs the same job (a cloud render is a finish with no local work).
+`--no-publish` and `--preview` are errors: a cloud job's product is a published link, and a
+preview is by definition a local draft.
+
+The CLI's only local work is the normalize pass (`video.webm`/`capture.mp4` → CFR
+`video.mp4`, the file the worker renders from) and the upload:
+
+1. `POST {host}/api/render-jobs`, Bearer publish token, body `{ title, duration: null,
+   payload: { rate, bg, hq, voice, speed, format }, sources: { hasBg, hasConsole } }`.
+   `payload.bg` is the RAW spec (flag, `SPOOL_BG`, or prefs), not the resolved tag. Returns
+   `{ id, jobId, url, uploads: [{ pathname, contentType, token }] }`. `402` (free cap, carries
+   `upgradeUrl`) and `429` (plan cap) print and exit 1 with nothing uploaded.
+2. One PUT per grant to Blob with the scoped token (`x-api-version: 10`,
+   `x-add-random-suffix: 0`, `x-allow-overwrite: 1`), the same write the worker itself makes.
+   The source set is `spools/{id}/src/{timeline.json,render.json,video.mp4}`, plus `bg.jpg`
+   and `console.jsonl` when the workdir has them.
+3. `POST {host}/api/render-jobs/{jobId}/start` flips the job from `uploading` to `queued` so
+   nothing enters the worker's poll half-uploaded.
+4. `GET {host}/api/render-jobs/{jobId}` every 5s until `status` is `done` (prints the watch
+   url on stdout and writes `share/published.json`, so `spool open` reopens it) or `error`
+   (prints the worker's error, exit 1). Gives up after 30 minutes; the job may still land, so
+   the link is recoverable with `spool list`.
+
+Two inputs the CLI resolves so the worker does not have to:
+
+- **`timeline.json`** ships with per-step `narration`. Live takes already carry it; a scripted
+  workdir keeps its narration in `steps.mjs`, which the worker never sees, so the CLI folds it
+  into the uploaded copy. The workdir file is never modified.
+- **`render.json`** ships the render intent: the same `{ rate, bg, format, vertical }` stamp a
+  local `spool render` would write, resolved identically (`steps.mjs` config > prior
+  `render.json` > defaults). Because bg presets round-trip by name, only a macOS wallpaper or
+  a custom image path uploads `bg.jpg`; a preset is re-resolved on the worker.

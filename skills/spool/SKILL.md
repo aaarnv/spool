@@ -85,6 +85,17 @@ feature you built) — you drive once and the steps are derived from the session
    re-running `spool build` on it gives a clean take.
 5. **Verify + report** (same as below).
 
+## Cloud render (`--cloud`)
+
+`spool finish spool/<slug> --cloud` runs the voiceover, the render, the share bundle and the
+publish on spoolkit.dev instead of this machine, then prints the watch link. Reach for it when
+the box is slow or busy, or when the render toolchain is missing; the local path stays the
+default. It needs a connected account (`spool login`) and a finished recording, and it always
+publishes, so `--no-publish` and `--preview` are errors. `--rate`, `--bg`, `--format`,
+`--voice`, `--speed` and `--hq` all carry over, and `spool render <dir> --cloud` runs the same
+job. The upload is the take's video (tens of MB) and the wait is a few minutes; afterwards
+`spool open spool/<slug>` reopens the link.
+
 ## Short-form vertical spools
 
 For launch clips and social posts: a 1080x1920 cut, 15 to 45 seconds, one idea, hook first.
