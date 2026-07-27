@@ -14,23 +14,26 @@ import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.m
 import { resolveEnginePref } from '../config/prefs.mjs';
 
 const DEFAULT_INSTRUCTIONS =
-  'You are a senior engineer casually walking a teammate through a product you built and know deeply. ' +
-  'Delivery: conversational and unscripted-sounding, easy unhurried tempo, natural pauses at commas and sentence ends, ' +
-  'intonation that rises and falls like real speech, light emphasis on product names and key actions. ' +
-  'Tone: warm, confident, slightly understated. Never salesy, never announcer-like, never monotone, never breathy.';
+  'Affect: a cheerful, knowledgeable guide, the engineer who built this product walking a teammate through it. ' +
+  'Tone: friendly, clear, and reassuring, keeping a calm atmosphere so the listener feels confident about what they are seeing. ' +
+  'Pronunciation: clear, articulate, and steady, with a natural conversational flow and light emphasis on product names and key actions. ' +
+  'Pauses: brief, purposeful pauses after each key action or result, giving the listener a beat to follow along. ' +
+  'Emotion: warm and supportive, with genuine quiet enthusiasm. Never salesy, never announcer-like, never monotone, never breathy.';
 
-// Vertical short-form register: same engineer, same room, a much shorter clip.
+// Vertical short-form register: same guide, a much shorter clip.
 export const SHORT_FORM_INSTRUCTIONS =
-  'You are a senior engineer showing a teammate one sharp thing you just built, and you have only a few seconds to land it. ' +
-  'Delivery: bright and quick, the point front-loaded into the opening words, tight pauses, crisp consonants, momentum that never sags. ' +
-  'Tone: confident and genuinely excited about the thing itself. Never announcer-like, never salesy, never shouty, never breathless.';
+  'Affect: an upbeat guide with a few seconds to show off one sharp thing they just built. ' +
+  'Tone: bright, friendly, and confident, genuinely excited about the thing itself. ' +
+  'Pronunciation: crisp and articulate, quick but never rushed, the point front-loaded into the opening words. ' +
+  'Pauses: tight and deliberate, just enough to let each beat land before the next one. ' +
+  'Emotion: infectious enthusiasm with warmth. Never announcer-like, never salesy, never shouty, never breathless.';
 const round2 = (x) => Math.round(x * 100) / 100;
 
 // Which register a segment is read in: an explicit `instructions` always wins.
 const registerFor = (instructions, format) =>
   instructions ?? (format === 'vertical' ? SHORT_FORM_INSTRUCTIONS : DEFAULT_INSTRUCTIONS);
 
-export async function generateVO({ stepsFile, workdir, engine, voice = 'ash', instructions, speed = 1, format = null } = {}) {
+export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', instructions, speed = 1, format = null } = {}) {
   if (!workdir) throw new Error('generateVO: workdir required');
 
   // Narration source: a steps.mjs snapshot (scripted/browser) when present, else
@@ -115,7 +118,7 @@ async function buildSegment(ctx, { i, name, narration }) {
 
 // Regenerate a SINGLE segment's wav + words in place (the edit worker's re-TTS path).
 // Resolves its own engine/key exactly like generateVO, so callers need only OPENAI_API_KEY.
-export async function synthesizeSegment({ workdir, i, name, narration, engine, voice = 'ash', instructions, speed = 1, format = null } = {}) {
+export async function synthesizeSegment({ workdir, i, name, narration, engine, voice = 'alloy', instructions, speed = 1, format = null } = {}) {
   if (!workdir) throw new Error('synthesizeSegment: workdir required');
   const voDir = join(workdir, 'vo');
   await mkdir(voDir, { recursive: true });
