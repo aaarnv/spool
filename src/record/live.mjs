@@ -152,11 +152,12 @@ export async function liveSession({ workdir, url, title, format, headed = false 
   // SPOOL_CAPTURE=cdp: high-quality CDP screencast -> capture.mp4 (see screencast.mjs);
   // default stays Playwright recordVideo -> video.webm.
   const cdpCapture = process.env.SPOOL_CAPTURE === 'cdp';
+  // SPOOL_CURSOR=render: hide the overlay and draw the cursor at render time from
+  // its sampled path. Off by default: the interpolated glide reads tweened.
+  const renderCursor = cdpCapture && process.env.SPOOL_CURSOR === 'render';
   const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
   const context = await browser.newContext({ viewport, ...(cdpCapture ? {} : { recordVideo: { dir, size: viewport } }) });
-  // Under cdp, hide the overlay and ship its path as data: both the screencast
-  // (~15fps) and the mousemove stream itself land far below the 60fps output.
-  await context.addInitScript(cursorInitScript({ hidden: cdpCapture }));
+  await context.addInitScript(cursorInitScript({ hidden: renderCursor }));
   const page = await context.newPage();
   // Fast-fail selectors: a fumbled /js snippet must not record 30s of dead air into the take.
   page.setDefaultTimeout(5000);
@@ -301,7 +302,7 @@ export async function liveSession({ workdir, url, title, format, headed = false 
     }));
     // Only when the overlay was hidden: with a visible one the take already has a
     // cursor baked in and the render layer would draw a second one on top.
-    if (cdpCapture) {
+    if (renderCursor) {
       addCursor(await drainCursorTrack(page));
       const cursor = cursorSamples
         .map((p) => ({ t: +((p.t - tOrigin) / 1000).toFixed(3), x: Math.round(p.x), y: Math.round(p.y) }))
