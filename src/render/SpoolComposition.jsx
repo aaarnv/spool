@@ -20,6 +20,7 @@ import {
   CTA_S,
   HOOK_S,
   STAGE,
+  VERT_FPS,
 } from "./vertical.mjs";
 
 // Canvas layout: near-full-bleed — the card fills most of the frame with a slim
@@ -42,11 +43,14 @@ const SCRIM = "rgba(10,10,16,0.55)";
 // durationInFrames = retimed output windows + a tail so the last caption/VO lands.
 // Vertical returns dims too; wide leaves Root's 1920x1080 hardcode untouched.
 export const calculateSpoolMetadata = ({ props }) => {
-  const { totalFrames } = buildWindows(props?.timeline, props?.manifest, FPS);
   const isVertical = props?.format === "vertical";
+  const fps = isVertical ? VERT_FPS : FPS;
+  const { totalFrames } = buildWindows(props?.timeline, props?.manifest, fps);
   const tailS = TAIL_S + (isVertical ? CTA_S : 0);
-  const durationInFrames = Math.max(1, totalFrames + Math.round(tailS * FPS));
-  return isVertical ? { durationInFrames, width: 1080, height: 1920 } : { durationInFrames };
+  const durationInFrames = Math.max(1, totalFrames + Math.round(tailS * fps));
+  return isVertical
+    ? { durationInFrames, fps, width: 1080, height: 1920 }
+    : { durationInFrames };
 };
 
 // Geometry of the centered card, derived once from the viewport size.
@@ -401,9 +405,10 @@ const CtaCard = ({ cta, t, durSec }) => {
 // outlasts the capture, a freeze Sequence holding the slice's last frame. The
 // window is a max() so the played portion always fits; video is never sped up.
 function StepVideo({ w, isLast, tailS, videoStyle }) {
+  const { fps } = useVideoConfig();
   const src = staticFile("video.mp4");
   const fill = videoStyle || { width: "100%", height: "100%", objectFit: "cover" };
-  const tail = isLast ? Math.round(tailS * FPS) : 0;
+  const tail = isLast ? Math.round(tailS * fps) : 0;
   const freezeFrames = w.windowFrames - w.recFrames + tail;
   const lastMediaFrame = Math.max(0, w.outF - 1);
   return (

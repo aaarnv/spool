@@ -7,6 +7,8 @@ export const STAGE = { x: 12, y: 96, w: 1056, h: 1616 };
 
 export const HOOK_S = 2.0;
 export const CTA_S = 1.5;
+// Vertical renders at 60fps: the camera is always moving and pans judder at 30.
+export const VERT_FPS = 60;
 
 const CAM_Z_CLICK = 1.25;
 const CAM_LEAD = 0.35;
