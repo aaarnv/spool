@@ -2,7 +2,7 @@ import React from "react";
 import { Composition } from "remotion";
 import { SpoolComposition, calculateSpoolMetadata } from "./SpoolComposition.jsx";
 
-const FPS = 30;
+const FPS = 60;
 
 // The record + vo layers write the real props into the workdir; these defaults
 // only exist so the composition is previewable in the Remotion studio.
