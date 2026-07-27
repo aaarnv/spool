@@ -6,12 +6,13 @@ import { createHash } from "node:crypto";
 import { cpus, tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { normalize, h264Encoder } from "./normalize.mjs";
 import { resolveBgSource } from "./bg-resolve.mjs";
-import { resolveBgPref } from "../config/prefs.mjs";
+import { resolveMusicSource, DEFAULT_MUSIC } from "./music-presets.mjs";
+import { resolveBgPref, resolveFormatPref } from "../config/prefs.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -61,13 +62,53 @@ async function getServeUrl() {
 }
 
 // Mirror the spool's staticFile() targets into the cached bundle's public/ dir.
-async function syncPublic(serveUrl, dir, background) {
+async function syncPublic(serveUrl, dir, background, music) {
   const pub = join(serveUrl, "public");
   await mkdir(pub, { recursive: true });
   await cp(join(dir, "video.mp4"), join(pub, "video.mp4"));
   await rm(join(pub, "vo"), { recursive: true, force: true }).catch(() => {});
   if (existsSync(join(dir, "vo"))) await cp(join(dir, "vo"), join(pub, "vo"), { recursive: true });
   if (background) await cp(join(dir, background), join(pub, background));
+  if (music) await cp(join(dir, music), join(pub, music));
+}
+
+// A workdir's steps.mjs `config`, best-effort: {} when there's no snapshot (OS
+// sessions, worker re-renders) or it fails to import. The counter keeps the
+// cache-buster unique: two imports in the same millisecond would share a URL.
+let importSeq = 0;
+async function readWorkdirConfig(dir) {
+  const sf = join(dir, "steps.mjs");
+  if (!existsSync(sf)) return {};
+  try {
+    return (await import(pathToFileURL(sf).href + `?t=${Date.now()}-${importSeq++}`)).config || {};
+  } catch {
+    return {};
+  }
+}
+
+// Render format for a workdir: flag > steps.mjs config.format > SPOOL_FORMAT > prefs > "wide".
+// Exported so a caller can resolve once and pass the same format to VO and render.
+export async function resolveWorkdirFormat(dir, explicit) {
+  const cfg = await readWorkdirConfig(resolve(dir));
+  return resolveFormatPref(explicit ?? cfg.format);
+}
+
+const hostOf = (u) => {
+  try {
+    return new URL(u).hostname;
+  } catch {
+    return "spoolkit.dev";
+  }
+};
+
+// Vertical authoring fields: steps.mjs config wins, then the previous render.json
+// (the edit worker re-renders from published sources, with no steps.mjs), then defaults.
+function resolveVertical(cfg, prior, timeline) {
+  return {
+    hook: cfg.hook ?? prior.hook ?? timeline.title ?? null,
+    cta: cfg.cta ?? prior.cta ?? { text: "See the full walkthrough", url: hostOf(timeline.url) },
+    music: cfg.music ?? prior.music ?? DEFAULT_MUSIC,
+  };
 }
 
 // Speed the fully-rendered mp4 by `rate` in one pass: video via setpts, audio via
@@ -112,15 +153,24 @@ async function speedUp(src, dst, rate) {
  * `preview` renders a fast half-scale draft (ultrafast x264, crf 28, no --rate
  * pass, no render.json stamp) to <workdir>/share/preview.mp4; final.mp4 untouched.
  *
- * @param {string|{workdir:string, rate?:number, bg?:string|null, preview?:boolean}} opts
+ * `format` picks the canvas: "wide" (1920x1080) or "vertical" (1080x1920 short-form,
+ * with a hook card, a music bed and an end CTA). Null resolves per resolveWorkdirFormat.
+ *
+ * @param {string|{workdir:string, rate?:number, bg?:string|null, preview?:boolean, format?:string|null}} opts
  */
 export async function renderSpool(opts) {
-  const { workdir, rate = 1, bg = null, preview = false, hq = false } = typeof opts === "string" ? { workdir: opts } : opts;
+  const { workdir, rate = 1, bg = null, preview = false, hq = false, format = null } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
   // No explicit --bg: fall back to env SPOOL_BG / prefs.bg before the default.
   const bgSpec = bg != null ? bg : await resolveBgPref();
   const timeline = await readJson(join(dir, "timeline.json"));
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
+
+  const cfg = await readWorkdirConfig(dir);
+  const fmt = await resolveFormatPref(format ?? cfg.format);
+  // Previous stamp: the worker's only source for the vertical authoring fields.
+  const priorRender = existsSync(join(dir, "render.json")) ? await readJson(join(dir, "render.json")).catch(() => ({})) : {};
+  const vertical = fmt === "vertical" ? resolveVertical(cfg, priorRender.vertical || {}, timeline) : null;
 
   // normalize video.webm -> video.mp4 (staticFile target)
   await normalize(dir);
@@ -149,16 +199,33 @@ export async function renderSpool(opts) {
     background = ".spool-bg.jpg";
   }
 
+  // Vertical music bed: same staging deal as the wallpaper. The tag is stamped (so a
+  // re-render resolves the same bed); the composition gets the workdir-relative copy.
+  let musicTag = null;
+  let music = null;
+  if (vertical) {
+    const resolved = resolveMusicSource(vertical.music);
+    musicTag = resolved ? resolved.tag : "none";
+    if (resolved && existsSync(resolved.source)) {
+      await copyFile(resolved.source, join(dir, ".spool-music.m4a"));
+      music = ".spool-music.m4a";
+    } else if (resolved) {
+      console.warn(`[render] music bed "${musicTag}" not found on disk; rendering without one`);
+    }
+  }
+
   const inputProps = {
     timeline,
     manifest: enrichedManifest,
     title: timeline.title || manifest.title || null,
     background,
     workdir: dir,
+    format: fmt,
+    vertical: vertical ? { ...vertical, music } : null,
   };
 
   const serveUrl = await getServeUrl();
-  await syncPublic(serveUrl, dir, background);
+  await syncPublic(serveUrl, dir, background, music);
 
   console.log("[render] selecting composition...");
   const composition = await selectComposition({
@@ -202,12 +269,12 @@ export async function renderSpool(opts) {
     concurrency,
     timeoutInMilliseconds,
     // Preview trades quality for speed: half-scale software x264, high crf.
-    // hq renders 2x-supersampled (the card inset downscales the capture below
-    // native at 1x, and platform players give 4K uploads a higher bitrate ladder).
+    // hq supersamples: 2x wide (the card inset downscales the capture below native
+    // at 1x), 1.5x vertical (platforms transcode shorts back to 1080x1920 anyway).
     ...(preview
       ? { scale: 0.5, crf: 28, x264Preset: "ultrafast" }
       : hq
-        ? { scale: 2, crf: 16, x264Preset: "medium" }
+        ? { scale: fmt === "vertical" ? 1.5 : 2, crf: 16, x264Preset: "medium" }
         : { x264Preset: "veryfast" }),
     onProgress: ({ progress }) => {
       const pct = Math.floor(progress * 100);
@@ -230,9 +297,16 @@ export async function renderSpool(opts) {
     return finalOut;
   }
 
-  // Stamp the rate + bg so `spool share`/re-renders know final.mp4's clock differs
-  // from timeline.json/video.mp4 and which canvas was used.
-  await writeFile(join(dir, "render.json"), JSON.stringify({ rate: speedUpNeeded ? rate : 1, bg: bgTag }, null, 2) + "\n");
+  // Stamp the rate + bg + format so `spool share`/re-renders know final.mp4's clock
+  // differs from timeline.json/video.mp4, which canvas was used, and (vertical) the
+  // authored hook/cta/music a worker re-render has no steps.mjs to read.
+  const stamp = {
+    rate: speedUpNeeded ? rate : 1,
+    bg: bgTag,
+    format: fmt,
+    ...(vertical ? { vertical: { hook: vertical.hook, cta: vertical.cta, music: musicTag } } : {}),
+  };
+  await writeFile(join(dir, "render.json"), JSON.stringify(stamp, null, 2) + "\n");
 
   console.log(`[render] wrote ${finalOut}`);
   return finalOut;
@@ -248,13 +322,15 @@ if (isMain) {
   const rate = rIdx >= 0 ? Number(argv[rIdx + 1]) : 1;
   const bIdx = argv.indexOf("--bg");
   const bg = bIdx >= 0 ? argv[bIdx + 1] : null;
+  const fIdx = argv.indexOf("--format");
+  const format = fIdx >= 0 ? argv[fIdx + 1] : null;
   const preview = argv.includes("--preview");
   const hq = argv.includes("--hq");
   if (!workdir) {
-    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>] [--preview] [--hq]");
+    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>] [--format <wide|vertical>] [--preview] [--hq]");
     process.exit(1);
   }
-  renderSpool({ workdir, rate, bg, preview, hq })
+  renderSpool({ workdir, rate, bg, preview, hq, format })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error("[render] failed:", err);

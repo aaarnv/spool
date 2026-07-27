@@ -27,6 +27,22 @@ async function duration(file) {
   return parseFloat(stdout.trim());
 }
 
+async function dimensions(file) {
+  const { stdout } = await exec(FFPROBE, [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=width,height",
+    "-of",
+    "csv=p=0",
+    file,
+  ]);
+  const [w, h] = stdout.trim().split(",").map(Number);
+  return Number.isFinite(w) && Number.isFinite(h) ? { width: w, height: h } : null;
+}
+
 function mmss(sec) {
   const s = Math.max(0, Math.round(sec));
   const m = Math.floor(s / 60);
@@ -145,16 +161,26 @@ export async function shareSpool(workdir) {
   const durName = first(["final.mp4", "video.mp4", "video.webm"]);
   const videoDur = await duration(join(dir, durName));
 
-  // Rate the render layer applied (final.mp4 is video.mp4's clock ÷ rate).
-  let rate = 1;
+  // render.json carries what the render layer chose: `rate` (final.mp4 is
+  // video.mp4's clock ÷ rate) and `format` (wide | vertical).
+  let render = {};
   if (existsSync(join(dir, "render.json"))) {
     try {
-      rate = (await readJson(join(dir, "render.json"))).rate ?? 1;
+      render = await readJson(join(dir, "render.json"));
     } catch {
-      /* keep default */
+      /* keep defaults */
     }
   }
+  const rate = render.rate ?? 1;
   const deliverable = existsSync(join(dir, "final.mp4")) ? "final.mp4" : durName;
+  const dims = await dimensions(join(dir, deliverable)).catch(() => null);
+
+  // Frames come from the landscape capture in every realistic path, so this is
+  // defensive: keep the long edge at 1280/640 whichever way the source sits.
+  const frameDims = frameName === deliverable ? dims : await dimensions(videoPath).catch(() => null);
+  const portrait = !!frameDims && frameDims.height > frameDims.width;
+  const frameScale = portrait ? "scale=-2:1280" : "scale=1280:-2";
+  const gifScale = portrait ? "scale=-2:640" : "scale=640:-2";
 
   const shareDir = join(dir, "share");
   const framesDir = join(shareDir, "frames");
@@ -201,7 +227,7 @@ export async function shareSpool(workdir) {
       "-update",
       "1",
       "-vf",
-      "scale=1280:-2",
+      frameScale,
       out,
     ]);
     const w = windowByIndex.get(step.i);
@@ -225,7 +251,7 @@ export async function shareSpool(workdir) {
     await writeFile(listPath, concatList + "\n");
     await exec(FFMPEG, [
       "-y", "-f", "concat", "-safe", "0", "-i", listPath,
-      "-vf", "scale=640:-2,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer",
+      "-vf", `${gifScale},split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer`,
       "-loop", "0", gifOut,
     ]).catch((e) => console.error(`[share] preview.gif skipped: ${e.message}`));
     await rm(listPath, { force: true }).catch(() => {});
@@ -244,6 +270,8 @@ export async function shareSpool(workdir) {
     video: `../${deliverable}`,
     duration: Math.round(videoDur * 10) / 10,
     rate,
+    ...(render.format ? { format: render.format } : {}),
+    ...(dims ? { width: dims.width, height: dims.height } : {}),
     voice: { engine: manifest.engine ?? null, voice: manifest.voice ?? null },
     steps,
     ...(pr ? { pr } : {}),

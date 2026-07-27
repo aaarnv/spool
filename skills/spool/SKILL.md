@@ -85,6 +85,41 @@ feature you built) — you drive once and the steps are derived from the session
    re-running `spool build` on it gives a clean take.
 5. **Verify + report** (same as below).
 
+## Short-form vertical spools
+
+For launch clips and social posts: a 1080x1920 cut, 15 to 45 seconds, one idea, hook first.
+Recording, voice, captions and publishing are unchanged; only the render is vertical. Keep the
+wide default for client walkthroughs and PR guides.
+
+1. **Seed the capture before recording.** Write `spool/<slug>/steps.mjs` containing only
+   `export const config = { viewport: { width: 1920, height: 1080 } };` (live reads an existing
+   config for its viewport), and export `SPOOL_CAPTURE=cdp`. The vertical camera cover-crops and
+   upscales the landscape capture, about 1.19x from 1920x1080 against 1.42x from the 1600x900
+   default, so capture sharpness is the whole ballgame here.
+2. **Record.** `spool live spool/<slug> --url <app-url> --format vertical`, then drive it exactly
+   as in the Live path above, with these constraints:
+   - 3 to 5 steps, and keep each step's action in ONE screen region. The camera cannot follow an
+     action that starts top-left and ends bottom-right.
+   - ONE sentence of narration per step, 90 words TOTAL across the spool. That word budget is
+     what lands the finished cut between 15 and 45 seconds.
+   - `zoom: "auto"` drives the camera toward that step's clicks; `"none"` gives a gentle wide
+     drift. Same field, new job.
+   - End the last step settled, with ~2s of `h.pause` under the CTA.
+3. **Author the frame.** `--format vertical` already stamped `format` into the generated
+   `steps.mjs`. Add the rest of the short's furniture to its `config`, then
+   `spool finish spool/<slug>`:
+
+   ```js
+   hook: 'Your diffs explain themselves now',    // <= 7 words, the payoff
+   cta: { text: 'See the full walkthrough', url: 'spoolkit.dev' },
+   music: 'uplift',                              // 'uplift' | 'calm' | 'none' | path to a file
+   ```
+
+   The hook is a title card over the first ~2s, so it has to be the PAYOFF, not the topic:
+   "Your diffs explain themselves now", never "A tour of the new PR guide". Both `hook` and
+   `cta` fall back to the spool title and URL when omitted.
+4. **Verify + report** (below). ffprobe should read 1080x1920 and a 15 to 45s duration.
+
 ## OS capture path — record the whole desktop (macOS)
 
 Use this when the demo leaves the browser: native apps, the terminal, multi-window flows.

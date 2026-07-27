@@ -9,6 +9,8 @@ export const config = {
   title: 'My feature walkthrough',
   // Runs before step 0 — recorded but not narrated. Login, seeding, dismissing banners.
   prep: async (page, h) => {},
+  // Short-form vertical instead: format: 'vertical' plus hook, cta: { text, url }, music.
+  // Full field list: CONTRACTS.md, "steps.mjs".
 };
 
 // Narration voice: the engineer who built this, updating a client — assume
