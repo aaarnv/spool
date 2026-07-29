@@ -264,6 +264,61 @@ It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
    tour + diff, applies the knowledge ops to the project store, and the `--pr` comment posts a
    guide variant (stop table timestamped to the video) on the PR.
 
+## Ship reels (after you ship)
+
+When you finish a user-visible change, offer a **ship reel**: a 20 to 40 second vertical spool of
+what shipped, for the swipeable feed. You are the best producer of one because the app is already
+running, already authenticated, and you still remember what you changed. Full contract:
+`docs/SHIP-REEL-CONTRACT.md` in the spool repo. The shape is fixed:
+
+```
+hook card (first 2s)  ->  2 to 4 stops, one idea each  ->  CTA card (last 1.5s)
+```
+
+Owner voice, present tense, why-first ("the dismiss pill is live now"), never discovery voice
+("let's take a look at"). 55 to 90 words of narration TOTAL, which is what lands the cut between
+20 and 40s. Record the REAL app whenever a URL exists (localhost, staging, preview); explainer
+HTML is the fallback only when nothing runnable exists, and it must show real artifacts (actual
+diff hunks, actual output), never bullet slides.
+
+1. **Scaffold.** With a merged PR: `spool pr <n>` → `spool/pr-<n>/`. That workdir's `pr.json` is
+   what comments the watch link on the PR, and `tour.json` + `diff.patch` give the reel's watch
+   page the diff and the Q&A. It refuses to overwrite an existing `tour.json`, so when the PR
+   already has a guide workdir, copy `pr.json`/`diff.patch`/`context.*` into `spool/reel-<n>/` and
+   author the reel there instead. No PR: any workdir, it publishes as an ordinary vertical spool.
+2. **Seed the viewport BEFORE recording.** Write `spool/<dir>/steps.mjs` containing only
+   `export const config = { viewport: { width: 1920, height: 1080 } };` (live reads viewport from
+   an existing config). The camera crops the landscape capture, so the 1600x900 default renders
+   soft. `export SPOOL_CAPTURE=cdp` for the sharper screencast.
+3. **Record against the running app.**
+   `spool live spool/<dir> --url <app-url> --format vertical --title "<what shipped>"`.
+   `--title` is required: vertical draws no title card, so it is the published title and the
+   hook's fallback. Then drive it as in the Live path, with 2 to 4 steps, ONE sentence each, each
+   step's action inside ONE screen region. The FIRST recorded seconds must show the surface you
+   changed most; do any navigation before the first `/step`.
+4. **Author the frame AFTER `/end`, BEFORE `spool finish`.** The `/end` rewrite keeps only `url`,
+   `viewport`, `title`, `format` and `prep`, so seeding these earlier silently loses them. Add to
+   the generated `steps.mjs` config:
+
+   ```js
+   hook: 'Dismiss a coaching card for good',  // <= 7 words, the payoff, not the topic
+   cta: { text: 'Follow this repo on spoolkit.dev', url: 'spoolkit.dev' },
+   music: 'uplift',                           // 'uplift' | 'calm' | 'none' | path
+   ```
+
+   Never omit `cta`: its default URL is the recorded URL's hostname, so a localhost recording
+   ships a card reading `localhost`.
+5. **Trim `tour.json`** (PR-linked reels only) to exactly the stops you recorded, one per step,
+   `stop.id` equal to the step name, `mode` `"walkthrough"` or `"explainer"`. A stop matching no
+   recorded step is a lint ERROR and blocks the publish. The `only N stop(s)` warning on a 2 or 3
+   stop reel is expected. Author `context.md` and curate `related` as for any guide.
+6. **Finish.** `spool finish spool/<dir> --format vertical` → renders 1080x1920, publishes, and
+   comments the watch link on the PR. Verify with ffprobe (1080x1920, 20 to 40s) and by reading
+   `keyframes/step_NN.png`.
+
+CI runs the same flow on merge (`.github/workflows/ship-reel.yml`), so a repo gets reels whether
+or not an agent was in the loop.
+
 ## Consuming a spool another agent made
 
 `spool read <workdir-or-share-dir>` prints the digest: steps, narration, timings, click
