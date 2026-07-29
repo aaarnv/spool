@@ -1,0 +1,102 @@
+# Vertical ship reel on every merged pull request. Copy into .github/workflows/ in
+# YOUR repo. Reel authoring is agent work (docs/SHIP-REEL-CONTRACT.md), so this pairs
+# the setup-spool action with claude-code-action for the authoring step.
+#
+# Secrets required:
+#   SPOOL_TOKEN              spk_ publish token, minted at https://spoolkit.dev/dashboard
+#   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token` (Claude subscription)
+#
+# Repo variable (optional, strongly recommended):
+#   SPOOL_PREVIEW_URL  a URL where this repo's app is running: a preview deployment, a
+#                      staging environment, or any always-on instance. Set it under
+#                      Settings > Secrets and variables > Actions > Variables. When set,
+#                      the agent records the REAL app there. When unset, it falls back to
+#                      an explainer recording built from the diff, which is a weaker reel.
+#                      A per-PR preview URL can be passed instead by replacing the `vars`
+#                      reference below with your deploy step's output.
+
+name: Ship reel
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  reel:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    # Vertical renders 60fps over the whole cut, so cap the job rather than the render.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # A reel shows what SHIPPED, so record the merge commit, not the PR head.
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      # Installs the spool CLI, ffmpeg and headless chromium; writes ~/.spool.json
+      # from the token; caps SPOOL_RENDER_CONCURRENCY for CI.
+      - uses: aaarnv/spool@master
+        with:
+          token: ${{ secrets.SPOOL_TOKEN }}
+
+      - uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Empty string when the repo variable is unset; the prompt branches on that.
+          SPOOL_PREVIEW_URL: ${{ vars.SPOOL_PREVIEW_URL }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: '--allowedTools "Bash,Read,Write,Edit,Glob,Grep"'
+          prompt: |
+            Publish a Spool ship reel for merged pull request #${{ github.event.pull_request.number }}
+            and comment the watch link on it. A ship reel is a 20 to 40 second VERTICAL spool of what
+            this PR shipped: hook first, owner voice, 2 to 4 stops. Follow the contract at
+            docs/SHIP-REEL-CONTRACT.md in aaarnv/spool.
+
+            Runner constraints: the spool CLI, ffmpeg and headless chromium are installed and
+            SPOOL_RENDER_CONCURRENCY is already capped. Never pass --headed. Never pass --target os.
+            There is no display and no macOS on this runner.
+
+            1. Run: spool pr ${{ github.event.pull_request.number }}
+               This scaffolds spool/pr-N/ with pr.json, diff.patch, tour.json, context.json,
+               context.md. Read pr.json and diff.patch and decide, in one line, what shipped and why
+               a developer who uses this repo cares.
+            2. Choose the footage. Run: echo "$SPOOL_PREVIEW_URL"
+               - Non-empty: that is a running deployment of this repo. curl it once so the first
+                 compile is warm, then record the REAL app there.
+               - Empty: author a self-contained spool/pr-N/explainer.html and record that instead,
+                 with --url "file://$PWD/spool/pr-N/explainer.html". It MUST show real artifacts from
+                 this PR (actual diff hunks, actual output, actual config), never bullet slides.
+            3. Seed the capture viewport BEFORE recording. Write spool/pr-N/steps.mjs containing
+               exactly: export const config = { viewport: { width: 1920, height: 1080 } };
+               The vertical camera crops the landscape capture, so the 1600x900 default renders soft.
+            4. Record 2 to 4 stops, one idea each:
+                 spool live spool/pr-N --url <the url from step 2> --format vertical --title "<the PR title>"
+               ALWAYS pass --title. Vertical renders draw no title card, so --title is the published
+               spool title AND the hook's fallback; a reel published without it is a defect.
+               spool live prints {"port":N,...} on stdout. Drive it with curl in ONE shell script:
+               POST /step per stop (name = the tour stop id, narration = ONE sentence in owner voice,
+               present tense, why-first), POST /js between steps, then POST /end. Total narration is
+               55 to 90 words across the whole reel. The first recorded seconds must show the surface
+               this PR changed most, so do any navigation or login before the first /step.
+            5. Author the vertical frame in the GENERATED spool/pr-N/steps.mjs config, AFTER /end and
+               BEFORE finish. The /end rewrite keeps only url, viewport, title, format and prep, so
+               these must be added afterwards or they are silently lost:
+                 hook: '<7 words or fewer, the payoff, not the topic>',
+                 cta: { text: 'Follow this repo on spoolkit.dev', url: 'spoolkit.dev' },
+                 music: 'uplift',
+               Never omit cta: its default URL is the recorded URL's hostname.
+            6. Rewrite tour.json down to exactly the stops you recorded: one stop per step, stop id
+               equal to the step name, 2 to 4 stops, mode "walkthrough" when you recorded the real
+               app or "explainer" when you recorded explainer.html. A stop matching no recorded step
+               is a lint ERROR and blocks the publish. Also author context.md and curate
+               context.json "related". No em dashes in any authored text.
+            7. Run: spool finish spool/pr-N --format vertical
+               It renders 1080x1920, publishes, and comments the watch link on the PR. Confirm with
+               ffprobe that final.mp4 is 1080x1920 and 20 to 40 seconds.
