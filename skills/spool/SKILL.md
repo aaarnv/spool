@@ -277,9 +277,12 @@ hook card (first 2s)  ->  2 to 4 stops, one idea each  ->  CTA card (last 1.5s)
 
 Owner voice, present tense, why-first ("the dismiss pill is live now"), never discovery voice
 ("let's take a look at"). 55 to 90 words of narration TOTAL, which is what lands the cut between
-20 and 40s. Record the REAL app whenever a URL exists (localhost, staging, preview); explainer
-HTML is the fallback only when nothing runnable exists, and it must show real artifacts (actual
-diff hunks, actual output), never bullet slides.
+20 and 40s. Record the REAL app whenever a URL exists (localhost, staging, preview, or the
+surface where the change's own output lands); explainer HTML is the fallback only when nothing
+runnable exists, and it must show real artifacts (actual diff hunks, actual output), never bullet
+slides. A vertical explainer is authored inside a 640px centred column and reveals by scrolling
+rather than clicking; the contract's "Authoring an explainer for the vertical crop" section has
+the numbers and why.
 
 1. **Scaffold.** With a merged PR: `spool pr <n>` → `spool/pr-<n>/`. That workdir's `pr.json` is
    what comments the watch link on the PR, and `tour.json` + `diff.patch` give the reel's watch

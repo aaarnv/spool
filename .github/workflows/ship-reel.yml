@@ -63,9 +63,16 @@ jobs:
             2. Choose the footage. Run: echo "$SPOOL_PREVIEW_URL"
                - Non-empty: that is a running deployment of this repo. curl it once so the first
                  compile is warm, then record the REAL app there.
-               - Empty: author a self-contained spool/pr-N/explainer.html and record that instead,
-                 with --url "file://$PWD/spool/pr-N/explainer.html". It MUST show real artifacts from
-                 this PR (actual diff hunks, actual output, actual config), never bullet slides.
+               - Empty: do NOT jump straight to an explainer. First ask whether this change's
+                 user-visible OUTPUT already lands on a live surface, even when the diff touches no
+                 UI at all: a spoolkit.dev watch page rendering what this repo produces, a
+                 dashboard, any published artifact. If one qualifies, record that real surface.
+               - Only when nothing qualifies: author a self-contained spool/pr-N/explainer.html and
+                 record it with --url "file://$PWD/spool/pr-N/explainer.html". It MUST show real
+                 artifacts from this PR (actual diff hunks, actual output, actual config), never
+                 bullet slides. Author it inside a 640px centred column and reveal each stop by
+                 scrolling, never clicking: the vertical camera shows about 672px of the 1920px
+                 capture, and a click zooms to 1.25 and pans off centre. See the contract.
             3. Seed the capture viewport BEFORE recording. Write spool/pr-N/steps.mjs containing
                exactly: export const config = { viewport: { width: 1920, height: 1080 } };
                The vertical camera crops the landscape capture, so the 1600x900 default renders soft.

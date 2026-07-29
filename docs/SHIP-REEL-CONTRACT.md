@@ -93,6 +93,12 @@ Recorded footage longer than its narration is what silently blows the budget: th
 `max`, so a 20s fumble in one stop cannot be recovered by trimming words. Keep each stop tight,
 and re-record a stop rather than shipping a long one.
 
+The reverse is not a problem, and reads better than authors expect. When a stop's recorded action
+is shorter than its narration the video freeze-holds its last frame, but the camera keeps moving:
+`sampleCamera` clamps time into the step's whole output window rather than stopping at the recorded
+end, so the drift or the click release plays out under the freeze. A 3s take under 9s of narration
+lands as a slow push, not dead air. Do not pad a stop with pauses to match its narration.
+
 ## Footage rules
 
 **Record the real app whenever a URL exists.** In priority order:
@@ -101,6 +107,14 @@ and re-record a stop rather than shipping a long one.
 2. Staging.
 3. The app running on localhost (the local agent almost always has this already up, warm, and
    authenticated; that is why the local path is first class).
+4. The surface where this change's user-visible OUTPUT already lands: a spoolkit.dev watch page
+   rendering what the change produces, a dashboard, a generated artifact served somewhere. When
+   the output is something you can publish, publish it first and then record the page it lands on.
+
+**"Runnable surface" is scoped to where the result lands, not to whether the merged diff touches
+UI.** Reading a diff, seeing only docs, workflows or backend code, and jumping to an explainer is
+the most common way to get this wrong. A change with no UI of its own very often still has a live
+surface showing what it does. Rule out priority 4 explicitly before falling back.
 
 **Explainer HTML is the fallback ONLY when no runnable surface exists** (a pure refactor, an infra
 change, a library with no UI). An explainer reel must show **real artifacts**: actual diff hunks
@@ -116,6 +130,21 @@ Two constraints the vertical camera imposes on the driving:
 - **Seed the capture viewport to 1920x1080 before recording.** The camera upscales the landscape
   capture into a 1056x1616 stage, about 1.5x from 1920x1080 against 1.8x from the 1600x900
   default. Capture sharpness is the whole ballgame.
+
+### Authoring an explainer for the vertical crop
+
+**Author inside a 640px centred column.** The camera cover-crops the 1920x1080 capture into the
+1056x1616 stage (`STAGE` in `src/render/vertical.mjs`), so at rest only about 706px of the
+capture's width is on screen, and a step with no clicks drifts to `DRIFT_Z` 1.05, tightening that
+to about 672px by the end of every step. A full width page loses roughly two thirds of itself.
+Centre one column, size the type for a phone, and let the vertical space run: the full 1080px
+capture height stays in frame throughout.
+
+**Reveal by scrolling, not by clicking.** A click sets `CAM_Z_CLICK` 1.25 and pans the camera onto
+it, narrowing the visible column to about 565px and pushing it off centre, which crops a centred
+layout. `zoom: "auto"` with no recorded clicks falls back to the drift path, so drive each stop's
+reveal with `page.evaluate(() => document.getElementById("<stop>").scrollIntoView())` and the whole
+column stays framed. Clicks belong in real-app takes, where following the cursor is the point.
 
 ## Authoring flow
 
@@ -226,6 +255,16 @@ captions legible.
 
 ### 7. Verify
 
+- **Explainers, BEFORE recording: preview the crop.** Screenshot the page at 1920x1080, then run
+
+  ```bash
+  ffmpeg -i page.png -vf "crop=672:1080:624:0,scale=1056:1616" crop-preview.png
+  ```
+
+  and read the result. It reproduces exactly what the camera shows at the tightest point of the
+  drift. This check exists because neither lint nor ffprobe can see clipped content: a code line a
+  few pixels too wide for its card is cut silently by `white-space: pre` plus `overflow: hidden`,
+  and ships that way.
 - `ffprobe` reads **1080x1920** and a **20 to 40s** duration.
 - Read `keyframes/step_NN.png`: the opening frame is the changed surface, the camera is centred on
   the action, captions are legible.
