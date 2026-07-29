@@ -118,9 +118,10 @@ surface showing what it does. Rule out priority 4 explicitly before falling back
 
 **Explainer HTML is the fallback ONLY when no runnable surface exists** (a pure refactor, an infra
 change, a library with no UI). An explainer reel must show **real artifacts**: actual diff hunks
-from `diff.patch`, actual command output, actual config or JSON from the repo. Bullet slides with
-the change described in prose are not a reel and must not be published as one. If the only honest
-explainer is three bullets, the change does not warrant a reel.
+from `diff.patch`, actual command output, actual config or JSON from the repo, drawn INTO the
+diagrams described below rather than pasted onto the screen as text. Bullet slides with the change
+described in prose are not a reel and must not be published as one. If the only honest explainer
+is three bullets, the change does not warrant a reel.
 
 Two constraints the vertical camera imposes on the driving:
 
@@ -132,6 +133,19 @@ Two constraints the vertical camera imposes on the driving:
   default. Capture sharpness is the whole ballgame.
 
 ### Authoring an explainer for the vertical crop
+
+**Every stop's main surface is a DIAGRAM.** A spool is a visual medium, so each stop is carried by
+a flow, a pipeline drawn as boxes and arrows, a before and after panel, a labelled anatomy, or an
+animated reveal. Text is labels and annotation on top of that shape. Code, yaml, JSON and config
+appear only as a small excerpt annotated inside a visual, never as the stop's main surface: a
+screenful of syntax-highlighted config is the anti-pattern this rule exists to stop, and it is
+still the anti-pattern when the config is real. "Real artifacts" governs where the content comes
+from, not how it is drawn.
+
+**The litmus test: if a paused frame would work unchanged as a screenshot in a text doc, the stop
+is not visual enough.** Redraw it as a shape that carries the idea, then hang the real strings off
+that shape as labels. Staged CSS reveals of diagram elements read especially well here, because
+the drift camera is already moving under them.
 
 **Author inside a 640px centred column.** The camera cover-crops the 1920x1080 capture into the
 1056x1616 stage (`STAGE` in `src/render/vertical.mjs`), so at rest only about 706px of the
