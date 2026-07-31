@@ -52,7 +52,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          claude_args: '--allowedTools "Bash,Read,Write,Edit,Glob,Grep"'
+          # Reel authoring measured ~103 turns; the default cap silently truncated runs.
+          claude_args: '--max-turns 200 --allowedTools "Bash,Read,Write,Edit,Glob,Grep"'
           prompt: |
             Publish a Spool ship reel for merged pull request #${{ github.event.pull_request.number }}
             and comment the watch link on it. A ship reel is a 20 to 40 second VERTICAL spool of what
@@ -112,3 +113,34 @@ jobs:
             7. Run: spool finish spool/pr-N --format vertical
                It renders 1080x1920, publishes, and comments the watch link on the PR. Confirm with
                ffprobe that final.mp4 is 1080x1920 and 20 to 40 seconds.
+
+      # claude-code-action exits 0 even when the agent stopped early (turn cap, no account
+      # connected, a swallowed comment failure), so assert the artifact this job exists to
+      # produce rather than trusting the step's exit code.
+      - name: Assert the reel published and landed on the PR
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          published="spool/pr-${PR}/share/published.json"
+          if [ ! -f "$published" ]; then
+            gh pr comment "$PR" --body "Spool ship reel did not publish: no share/published.json was written, so the run ended before publishing. Job log: $RUN_URL"
+            echo "::error::no reel was published for PR $PR"
+            exit 1
+          fi
+          url=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "$published" | head -1)
+          if [ -z "$url" ]; then
+            echo "::error::$published exists but carries no url"
+            exit 1
+          fi
+          echo "published: $url"
+          if gh pr view "$PR" --json comments --jq '.comments[].body' | grep -qF "$url"; then
+            echo "watch link is on the PR"
+            exit 0
+          fi
+          gh pr comment "$PR" --body "Ship reel: $url"
+          echo "::error::reel published but the agent posted no comment; CI posted the link"
+          exit 1

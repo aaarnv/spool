@@ -286,7 +286,13 @@ export async function publishSpool(workdir, opts = {}) {
 
   console.log(url);
 
-  if (opts.pr) await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) => console.error(`[publish] PR comment failed: ${e.message}`));
+  // The spool is published and published.json is written, so a failed comment is not a
+  // failed publish; print the link so it can be posted by hand (CI asserts it separately).
+  if (opts.pr) {
+    await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) =>
+      console.error(`[publish] PR comment failed: ${e.message}\n[publish] post it manually: ${url}`),
+    );
+  }
   return url;
 }
 
@@ -298,7 +304,12 @@ export async function commentOnPR(url, spool, pr, previewUrl) {
   });
 
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  const body = spool.pr ? guideBody(url, spool, previewUrl, mmss) : walkthroughBody(url, spool, previewUrl, mmss);
+  // A vertical PR spool is a ship reel, not a guided reading; it gets its own comment.
+  const body = !spool.pr
+    ? walkthroughBody(url, spool, previewUrl, mmss)
+    : spool.format === "vertical"
+      ? reelBody(url, spool, previewUrl, mmss)
+      : guideBody(url, spool, previewUrl, mmss);
 
   const args = ["pr", "comment"];
   if (pr !== true) args.push(String(pr));
@@ -325,16 +336,39 @@ function walkthroughBody(url, spool, previewUrl, mmss) {
   ].join("\n");
 }
 
-// PR-guide comment variant: the tour stops are the rows, timestamped by the step
-// each stop maps to (blank when the stop has no anchored step). No em dashes.
-function guideBody(url, spool, previewUrl, mmss) {
+// Tour stops as table rows, timestamped by the step each stop maps to (blank when the
+// stop has no anchored step). Shared by the guide and reel comment variants.
+function stopRows(spool, mmss) {
   const steps = spool.steps || [];
-  const rows = (spool.pr.stops || [])
+  return (spool.pr.stops || [])
     .map((stop) => {
       const at = typeof stop.step === "number" && steps[stop.step] ? mmss(steps[stop.step].start) : "";
       return `| ${at} | ${stop.heading || stop.id} |`;
     })
     .join("\n");
+}
+
+// Ship-reel comment variant: a merged PR's vertical reel shows what shipped, so it reads
+// as an announcement rather than a reading guide. No em dashes.
+function reelBody(url, spool, previewUrl, mmss) {
+  return [
+    `### 🎬 Ship reel: ${spool.pr.title || spool.title || "what shipped"}`,
+    "",
+    ...(previewUrl ? [`[![watch the ship reel](${previewUrl})](${url})`, ""] : []),
+    `**Watch:** ${url} (${Math.round(spool.duration)}s, narrated)`,
+    "",
+    "| at | stop |",
+    "|---|---|",
+    stopRows(spool, mmss),
+    "",
+    `<sub>What this change shipped, recorded and narrated by the agent that shipped it. Built via [spool](https://spoolkit.dev).</sub>`,
+  ].join("\n");
+}
+
+// PR-guide comment variant: the tour stops are the rows, timestamped by the step
+// each stop maps to (blank when the stop has no anchored step). No em dashes.
+function guideBody(url, spool, previewUrl, mmss) {
+  const rows = stopRows(spool, mmss);
   return [
     `### 🧭 PR guide: ${spool.pr.title || spool.title || "PR"}`,
     "",

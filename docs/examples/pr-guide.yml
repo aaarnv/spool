@@ -3,8 +3,8 @@
 # pairs the setup-spool action with claude-code-action for the authoring step.
 #
 # Secrets required:
-#   SPOOL_TOKEN        spk_ publish token, minted at https://spoolkit.dev/dashboard
-#   ANTHROPIC_API_KEY  key for the authoring agent
+#   SPOOL_TOKEN              spk_ publish token, minted at https://spoolkit.dev/dashboard
+#   CLAUDE_CODE_OAUTH_TOKEN  from `claude setup-token` (Claude subscription)
 
 name: PR guide
 
@@ -34,9 +34,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          claude_args: '--allowedTools "Bash,Read,Write,Edit,Glob,Grep"'
+          # Guide authoring runs long; the default cap silently truncated runs mid-flow.
+          claude_args: '--max-turns 200 --allowedTools "Bash,Read,Write,Edit,Glob,Grep"'
           prompt: |
             Create a narrated Spool PR guide for pull request #${{ github.event.pull_request.number }}
             and comment the watch link on it. The runner already has the spool CLI, ffmpeg and
@@ -58,3 +59,34 @@ jobs:
                POST /js to advance the explainer between steps, then POST /end.
             4. Run: spool finish spool/pr-N --bg paper
             5. Run: spool publish spool/pr-N --pr
+
+      # claude-code-action exits 0 even when the agent stopped early (turn cap, no account
+      # connected, a swallowed comment failure), so assert the artifact this job exists to
+      # produce rather than trusting the step's exit code.
+      - name: Assert the guide published and landed on the PR
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          published="spool/pr-${PR}/share/published.json"
+          if [ ! -f "$published" ]; then
+            gh pr comment "$PR" --body "Spool PR guide did not publish: no share/published.json was written, so the run ended before publishing. Job log: $RUN_URL"
+            echo "::error::no guide was published for PR $PR"
+            exit 1
+          fi
+          url=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "$published" | head -1)
+          if [ -z "$url" ]; then
+            echo "::error::$published exists but carries no url"
+            exit 1
+          fi
+          echo "published: $url"
+          if gh pr view "$PR" --json comments --jq '.comments[].body' | grep -qF "$url"; then
+            echo "watch link is on the PR"
+            exit 0
+          fi
+          gh pr comment "$PR" --body "PR guide: $url"
+          echo "::error::guide published but the agent posted no comment; CI posted the link"
+          exit 1
