@@ -318,22 +318,36 @@ export async function commentOnPR(url, spool, pr, previewUrl) {
   console.error(`[publish] PR comment: ${stdout.trim() || "posted"}`);
 }
 
-// Default walkthrough comment (non-PR spools): step index by start time.
-function walkthroughBody(url, spool, previewUrl, mmss) {
-  const steps = (spool.steps || []).map((s) => `| ${mmss(s.start)} | ${s.name} |`).join("\n");
+// Shared shape of every PR comment: heading, optional inline preview, watch line, a
+// two-column table, footer. The variants below differ only in wording and row source.
+function commentBody({ heading, previewAlt, watchLabel = "Watch", rowLabel, rows, url, previewUrl, duration, footer }) {
   return [
-    `### 🎬 Walkthrough: ${spool.title || "spool"}`,
+    `### ${heading}`,
     "",
     // GIF preview when available: GitHub renders it inline; clicking opens the watch page.
-    ...(previewUrl ? [`[![watch the walkthrough](${previewUrl})](${url})`, ""] : []),
-    `**Watch:** ${url} (${Math.round(spool.duration)}s, narrated)`,
+    ...(previewUrl ? [`[![${previewAlt}](${previewUrl})](${url})`, ""] : []),
+    `**${watchLabel}:** ${url} (${Math.round(duration)}s, narrated)`,
     "",
-    "| at | step |",
+    `| at | ${rowLabel} |`,
     "|---|---|",
-    steps,
+    rows,
     "",
-    `<sub>Recorded and narrated by the agent that shipped this change, via [spool](https://spoolkit.dev). Agents can review without watching: \`spool read\` the share bundle linked on the watch page.</sub>`,
+    `<sub>${footer}</sub>`,
   ].join("\n");
+}
+
+// Default walkthrough comment (non-PR spools): step index by start time.
+function walkthroughBody(url, spool, previewUrl, mmss) {
+  return commentBody({
+    url,
+    previewUrl,
+    duration: spool.duration,
+    heading: `🎬 Walkthrough: ${spool.title || "spool"}`,
+    previewAlt: "watch the walkthrough",
+    rowLabel: "step",
+    rows: (spool.steps || []).map((s) => `| ${mmss(s.start)} | ${s.name} |`).join("\n"),
+    footer: `Recorded and narrated by the agent that shipped this change, via [spool](https://spoolkit.dev). Agents can review without watching: \`spool read\` the share bundle linked on the watch page.`,
+  });
 }
 
 // Tour stops as table rows, timestamped by the step each stop maps to (blank when the
@@ -351,36 +365,32 @@ function stopRows(spool, mmss) {
 // Ship-reel comment variant: a merged PR's vertical reel shows what shipped, so it reads
 // as an announcement rather than a reading guide. No em dashes.
 function reelBody(url, spool, previewUrl, mmss) {
-  return [
-    `### 🎬 Ship reel: ${spool.pr.title || spool.title || "what shipped"}`,
-    "",
-    ...(previewUrl ? [`[![watch the ship reel](${previewUrl})](${url})`, ""] : []),
-    `**Watch:** ${url} (${Math.round(spool.duration)}s, narrated)`,
-    "",
-    "| at | stop |",
-    "|---|---|",
-    stopRows(spool, mmss),
-    "",
-    `<sub>What this change shipped, recorded and narrated by the agent that shipped it. Built via [spool](https://spoolkit.dev).</sub>`,
-  ].join("\n");
+  return commentBody({
+    url,
+    previewUrl,
+    duration: spool.duration,
+    heading: `🎬 Ship reel: ${spool.pr.title || spool.title || "what shipped"}`,
+    previewAlt: "watch the ship reel",
+    rowLabel: "stop",
+    rows: stopRows(spool, mmss),
+    footer: `What this change shipped, recorded and narrated by the agent that shipped it. Built via [spool](https://spoolkit.dev).`,
+  });
 }
 
 // PR-guide comment variant: the tour stops are the rows, timestamped by the step
 // each stop maps to (blank when the stop has no anchored step). No em dashes.
 function guideBody(url, spool, previewUrl, mmss) {
-  const rows = stopRows(spool, mmss);
-  return [
-    `### 🧭 PR guide: ${spool.pr.title || spool.title || "PR"}`,
-    "",
-    ...(previewUrl ? [`[![watch the guided tour](${previewUrl})](${url})`, ""] : []),
-    `**Watch the guided tour:** ${url} (${Math.round(spool.duration)}s, narrated)`,
-    "",
-    "| at | stop |",
-    "|---|---|",
-    rows,
-    "",
-    `<sub>A guided reading of this change, not a review. The watch page has the tour, the full diff, and Q&A grounded in the diff. Built via [spool](https://spoolkit.dev).</sub>`,
-  ].join("\n");
+  return commentBody({
+    url,
+    previewUrl,
+    duration: spool.duration,
+    heading: `🧭 PR guide: ${spool.pr.title || spool.title || "PR"}`,
+    previewAlt: "watch the guided tour",
+    watchLabel: "Watch the guided tour",
+    rowLabel: "stop",
+    rows: stopRows(spool, mmss),
+    footer: `A guided reading of this change, not a review. The watch page has the tour, the full diff, and Q&A grounded in the diff. Built via [spool](https://spoolkit.dev).`,
+  });
 }
 
 // Direct CLI: node src/publish/publish.mjs --workdir <dir> [--host <h>] [--token <t>]

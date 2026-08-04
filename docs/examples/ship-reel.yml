@@ -131,7 +131,7 @@ jobs:
             echo "::error::no reel was published for PR $PR"
             exit 1
           fi
-          url=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "$published" | head -1)
+          url=$(jq -r '.url // empty' "$published" || true)
           if [ -z "$url" ]; then
             echo "::error::$published exists but carries no url"
             exit 1
