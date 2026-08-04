@@ -86,15 +86,14 @@ async function cloudFinishCmd(wd, opts) {
   await cloudFinish(wd, opts);
 }
 
-// Finished spools publish by default; --no-publish or a preview render skip it. A missing
-// account is soft locally but fatal in CI, where an unpublished spool is a silent failure.
+// Finished spools publish by default; --no-publish, a preview render, or a
+// missing account skip it (skips are soft, lint/publish failures exit 1).
 async function maybeAutoPublish(wd, opts) {
   if (opts.publish === false || opts.preview) return;
   const { resolveConfig, publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
   const { host, token } = await resolveConfig();
   if (!host || !token) {
-    console.error('\nNot published: no account connected. Run `spool login`, then `spool publish` this workdir.');
-    if (process.env.CI) process.exit(1);
+    console.log('\nNot published: no account connected. Run `spool login`, then `spool publish` this workdir.');
     return;
   }
   const { lintSpool, printLint } = await import(join(root, 'src/lint/lint.mjs'));
