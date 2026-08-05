@@ -48,14 +48,10 @@ const RIPPLE_S = 0.5;
 // Vertical returns dims too; wide leaves Root's 1920x1080 hardcode untouched.
 export const calculateSpoolMetadata = ({ props }) => {
   const isVertical = props?.format === "vertical";
-  // fps has to be both consumed here AND returned. Using it for the duration math
-  // without returning it leaves Root's 60 as the encoded rate, and the whole cut
-  // desyncs; returning it without using it makes the duration wrong. Never split these.
-  const fps = props?.fps || FPS;
-  const { totalFrames } = buildWindows(props?.timeline, props?.manifest, fps);
+  const { totalFrames } = buildWindows(props?.timeline, props?.manifest, FPS);
   const tailS = TAIL_S + (isVertical ? CTA_S : 0);
-  const durationInFrames = Math.max(1, totalFrames + Math.round(tailS * fps));
-  return isVertical ? { durationInFrames, fps, width: 1080, height: 1920 } : { durationInFrames, fps };
+  const durationInFrames = Math.max(1, totalFrames + Math.round(tailS * FPS));
+  return isVertical ? { durationInFrames, width: 1080, height: 1920 } : { durationInFrames };
 };
 
 // Geometry of the centered card, derived once from the viewport size.
@@ -375,9 +371,8 @@ const CaptionBand = ({ phrases, t, tokens }) => {
 // touch larger, and it clears out just before the first caption lands so the two
 // never stack.
 const TitleSubtitle = ({ title, frame, firstCaptionStart }) => {
-  const { fps } = useVideoConfig();
   if (!title) return null;
-  const t = frame / fps;
+  const t = frame / FPS;
   const rawEnd = firstCaptionStart != null ? firstCaptionStart - 0.15 : 1.4;
   const end = Math.max(0.7, Math.min(rawEnd, 1.8));
   const opacity = interpolate(t, [0, 0.3, end - 0.2, end], [0, 1, 1, 0], {

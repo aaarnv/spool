@@ -6,12 +6,6 @@ import { existsSync } from "node:fs";
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
 const FFPROBE = process.env.FFPROBE || "ffprobe";
-// Keyframe interval for the normalized render input, in frames at the forced 30fps.
-// libx264 only: its default GOP is 250, so an arbitrary seek decodes up to 8s back, and
-// the render seeks per step window with several workers hitting non-adjacent ranges of
-// this same file at once. VideoToolbox already emits one roughly every 12 frames, so
-// forcing 30 there would REDUCE keyframes and make seeks worse.
-const GOP = process.env.SPOOL_NORMALIZE_GOP ? Math.max(1, parseInt(process.env.SPOOL_NORMALIZE_GOP, 10)) : 30;
 
 // Detect the fastest good H264 encoder once per process: Apple's hardware
 // VideoToolbox when present (with a high bitrate so quality stays faithful),
@@ -23,9 +17,9 @@ export async function h264Encoder() {
     const { stdout } = await exec(FFMPEG, ["-hide_banner", "-encoders"]);
     _encoder = /h264_videotoolbox/.test(stdout)
       ? { name: "h264_videotoolbox", args: ["-b:v", "12M", "-maxrate", "16M"] }
-      : { name: "libx264", args: ["-crf", "20", "-preset", "veryfast", "-g", String(GOP)] };
+      : { name: "libx264", args: ["-crf", "20", "-preset", "veryfast"] };
   } catch {
-    _encoder = { name: "libx264", args: ["-crf", "20", "-preset", "veryfast", "-g", String(GOP)] };
+    _encoder = { name: "libx264", args: ["-crf", "20", "-preset", "veryfast"] };
   }
   return _encoder;
 }

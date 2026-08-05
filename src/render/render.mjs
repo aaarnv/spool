@@ -1,4 +1,4 @@
-import { readFile, writeFile, unlink, copyFile, mkdir, cp, rm, readdir } from "node:fs/promises";
+import { readFile, writeFile, unlink, copyFile, mkdir, cp, rm, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -10,7 +10,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundle } from "@remotion/bundler";
 import { selectComposition, renderMedia } from "@remotion/renderer";
 import { normalize, h264Encoder } from "./normalize.mjs";
-import { FPS as DEFAULT_FPS } from "./retime.mjs";
 import { resolveBgSource } from "./bg-resolve.mjs";
 import { resolveMusicSource, DEFAULT_MUSIC } from "./music-presets.mjs";
 import { resolveBgPref, resolveFormatPref } from "../config/prefs.mjs";
@@ -29,24 +28,18 @@ async function readJson(p) {
 // src/render/** + the remotion version, so key the cache dir on their hash and
 // reuse it when unchanged; per-spool static assets are synced into its public/
 // folder each render (staticFile resolves against <serveUrl>/public).
-//
-// Keyed on CONTENT, not mtime: BuildKit does not preserve mtimes through layer
-// export, so an mtime key made the worker image's baked bundle unreachable at
-// runtime (measured: baked 34eaf31f, runtime recomputed 4e07d025 and rebundled).
-// Content hashing also stops a plain `git checkout` from invalidating the cache.
 async function srcHash() {
   const h = createHash("sha1");
   const files = (await readdir(__dirname)).filter((f) => /\.(mjs|jsx|js)$/.test(f)).sort();
   for (const f of files) {
-    h.update(f).update(await readFile(join(__dirname, f)));
+    const s = await stat(join(__dirname, f));
+    h.update(f).update(String(Math.round(s.mtimeMs)));
   }
   h.update(require("remotion/package.json").version);
   return h.digest("hex").slice(0, 16);
 }
 
-// Exported so the worker image can bake the bundle at build time (see worker/Dockerfile);
-// a scale-to-zero machine otherwise re-bundles on every cold start.
-export async function getServeUrl() {
+async function getServeUrl() {
   const cacheDir = join(tmpdir(), `spool-remotion-${await srcHash()}`);
   if (existsSync(join(cacheDir, "index.html"))) {
     console.log("[render] reusing cached Remotion bundle");
@@ -204,7 +197,7 @@ async function speedUp(src, dst, rate) {
  * @param {string|{workdir:string, rate?:number, bg?:string|null, preview?:boolean, format?:string|null}} opts
  */
 export async function renderSpool(opts) {
-  const { workdir, rate = 1, bg = null, preview = false, hq = false, format = null, fps = null } = typeof opts === "string" ? { workdir: opts } : opts;
+  const { workdir, rate = 1, bg = null, preview = false, hq = false, format = null } = typeof opts === "string" ? { workdir: opts } : opts;
   const dir = resolve(workdir);
   const plan = await resolveRenderPlan(dir, { rate, bg, format });
   const { timeline, fmt, vertical, bgSource, music: musicSource, musicTag } = plan;
@@ -248,11 +241,6 @@ export async function renderSpool(opts) {
     }
   }
 
-  // Output frame rate. 60 is the local default (the pans were judged on it); a slower
-  // box can halve the frame count with SPOOL_RENDER_FPS. calculateSpoolMetadata both
-  // consumes this and returns it, so the duration math and the encoded rate agree.
-  const outFps = fps ?? (process.env.SPOOL_RENDER_FPS ? Math.max(1, parseInt(process.env.SPOOL_RENDER_FPS, 10)) : DEFAULT_FPS);
-
   const inputProps = {
     timeline,
     manifest: enrichedManifest,
@@ -260,7 +248,6 @@ export async function renderSpool(opts) {
     background,
     workdir: dir,
     format: fmt,
-    fps: outFps,
     vertical: vertical ? { ...vertical, music } : null,
   };
 
@@ -299,13 +286,6 @@ export async function renderSpool(opts) {
   const timeoutInMilliseconds = process.env.SPOOL_RENDER_TIMEOUT_MS
     ? Math.max(30000, parseInt(process.env.SPOOL_RENDER_TIMEOUT_MS, 10))
     : 120000;
-  // Remotion sizes its frame cache at HALF system memory when unset, which the
-  // concurrent chromium workers then compete with; that is the suspected source of the
-  // worker's memory-pressure SIGKILLs. Only capped where a box asks for it, so machines
-  // with headroom keep the default.
-  const cacheMb = process.env.SPOOL_OFFTHREAD_CACHE_MB
-    ? Math.max(64, parseInt(process.env.SPOOL_OFFTHREAD_CACHE_MB, 10))
-    : null;
   await renderMedia({
     composition,
     serveUrl,
@@ -315,17 +295,14 @@ export async function renderSpool(opts) {
     inputProps,
     concurrency,
     timeoutInMilliseconds,
-    ...(cacheMb ? { offthreadVideoCacheSizeInBytes: cacheMb * 1024 * 1024 } : {}),
     // Preview trades quality for speed: half-scale software x264, high crf.
     // hq supersamples: 2x wide (the card inset downscales the capture below native
     // at 1x), 1.5x vertical (platforms transcode shorts back to 1080x1920 anyway).
-    // The default branch pins crf explicitly rather than inheriting Remotion's, so the
-    // quality floor is ours; 18 is the value it was already using.
     ...(preview
       ? { scale: 0.5, crf: 28, x264Preset: "ultrafast" }
       : hq
         ? { scale: fmt === "vertical" ? 1.5 : 2, crf: 16, x264Preset: "medium" }
-        : { crf: 18, x264Preset: "veryfast" }),
+        : { x264Preset: "veryfast" }),
     onProgress: ({ progress }) => {
       const pct = Math.floor(progress * 100);
       if (pct !== lastPct && pct % 5 === 0) {
@@ -352,10 +329,7 @@ export async function renderSpool(opts) {
   // authored hook/cta/music a worker re-render has no steps.mjs to read.
   await writeFile(join(dir, "render.json"), JSON.stringify(planStamp(plan), null, 2) + "\n");
 
-  // Wall clock is the only handle on render cost; the Fly worker's 32-minute vertical
-  // was invisible because this path never timed itself.
-  const secs = ((Date.now() - t0) / 1000).toFixed(1);
-  console.log(`[render] wrote ${finalOut} (${secs}s, ${composition.durationInFrames} frames @ ${composition.fps}fps)`);
+  console.log(`[render] wrote ${finalOut}`);
   return finalOut;
 }
 
