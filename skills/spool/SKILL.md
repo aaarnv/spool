@@ -113,8 +113,8 @@ wide default for client walkthroughs and PR guides.
      action that starts top-left and ends bottom-right.
    - ONE sentence of narration per step, 90 words TOTAL across the spool. That word budget is
      what lands the finished cut between 15 and 45 seconds.
-   - `zoom: "auto"` drives the camera toward that step's clicks; `"none"` gives a gentle wide
-     drift. Same field, new job.
+   - `zoom: { selector: "..." }` drives the camera to that element; `"none"` (the default)
+     gives a gentle wide drift; `"auto"` follows that step's clicks. Same field, new job.
    - End the last step settled, with ~2s of `h.pause` under the CTA.
 3. **Author the frame.** `--format vertical` already stamped `format` into the generated
    `steps.mjs`. Add the rest of the short's furniture to its `config`, then
@@ -332,33 +332,30 @@ fixes, and file bugs from the captured `console.jsonl`.
 
 ## Narration style
 
-**Voice: the engineer who built it, updating a client who knows the product cold but does not
-read code.** They have full context on what the product is and how it behaves, so never
-introduce it. They do not know how it is built, and do not need to.
+**Voice: the engineer who built it, updating a client — never a first-time viewer.** These
+spools get sent to clients; the narrator owns this codebase and speaks with that familiarity.
 
-- Assume the product, explain the change. "The session tab" needs no introduction; what
-  changed about it does.
-- Say what it does, not how it is wired: "the report card updates the moment a session ends",
-  NOT "the effect refetches on sessionEnd". Keep file names, symbols, types, tables, hooks and
-  framework names out of the narration unless one is on screen and is the point of that step.
 - Speak about state and changes, not discovery: "the session board feeds the report card now",
-  "we've wired up all nine drill modes", NOT "this is X", "let's peek at", "looks like".
-- Confident and specific. Call things by the names the client already uses for them. No
-  marketing tone, no hedging.
+  "we've wired up all nine drill modes" — NOT "this is X", "let's peek at", "looks like".
+- Assume shared context with the listener: "the session tab" (they know the product), not
+  "there's a tab called session".
+- Confident and specific; name the things by their real names. No marketing tone, no hedging.
 - Never claim anything not visible on screen, and never promise roadmap to a client.
-- Mechanics: present tense, contractions always, no em dashes, 1 to 2 short sentences per step.
+- Mechanics: present tense, contractions always, no em dashes, 1–2 short sentences per step.
   Capture is record-first: each step is recorded at natural speed, then the renderer sizes its
-  window to `max(narration+pad, recorded)` and freeze-holds the last frame under the voice, so
+  window to `max(narration+pad, recorded)` and freeze-holds the last frame under the voice — so
   narration much longer than the on-screen action means a static freeze; keep it proportional.
-
-**Exception: PR guides.** A `spool pr` tour is read by an engineer reviewing the diff, so file
-and symbol names are the substance there rather than jargon to avoid. Every other rule above
-still holds.
 
 ## steps.mjs gotchas
 
 - `h.*` helpers (click/type/scroll/hover/pause) produce the smooth cursor — use them for
   anything visible. Raw `page.*` is fine for waits/assertions.
-- `zoom: "auto"` zooms toward clicks in that step; use `"none"` for full-page context steps.
+- `zoom` defaults to `"none"`. To zoom, name the thing the narration is about:
+  `zoom: { selector: ".hero h1" }`. It resolves to that element's box at the end of the step
+  and the renderer frames it, scaling to how big the element is. A selector that does not
+  resolve logs and renders unzoomed rather than aiming somewhere wrong.
+  `"auto"` still exists and aims at that step's clicks, but a click is usually navigation, so
+  it tends to frame a nav link or dead space instead of the subject. Reach for it only when
+  the thing clicked IS the subject.
 - End steps in a settled state (`waitForSelector`), not mid-animation.
 - Full contract: `CONTRACTS.md` in the spool repo.

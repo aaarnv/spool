@@ -46,7 +46,7 @@ function serializeSteps(steps) {
       ? s.snippets.map((c) => indent(c, 6)).join('\n')
       : '      // no recorded actions';
     return ['  {', `    name: ${JSON.stringify(s.name)},`, `    narration: ${JSON.stringify(s.narration || '')},`,
-      `    zoom: ${JSON.stringify(s.zoom ?? 'auto')},`, '    run: async (page, h) => {', run, '    },', '  },'].join('\n');
+      `    zoom: ${JSON.stringify(s.zoom ?? 'none')},`, '    run: async (page, h) => {', run, '    },', '  },'].join('\n');
   }).join('\n');
   return `export const steps = [\n${body}\n];`;
 }
@@ -212,6 +212,29 @@ export async function liveSession({ workdir, url, title, format, headed = false 
   }
 
   // --- session state machine ------------------------------------------------
+  // A `{ selector }` zoom names the thing the narration is about; the renderer needs a
+  // point in capture pixels. Resolved at step CLOSE, against the settled page, because
+  // the element the step is about often does not exist until the step's actions finish.
+  // An unresolvable selector degrades to no zoom rather than pointing somewhere wrong.
+  async function resolveZoom(z) {
+    if (!z || typeof z !== 'object' || typeof z.selector !== 'string') return z;
+    try {
+      const box = await page.locator(z.selector).first().boundingBox({ timeout: 2000 });
+      if (!box || !box.width || !box.height) throw new Error('not visible');
+      return {
+        x: Math.round(box.x + box.width / 2),
+        y: Math.round(box.y + box.height / 2),
+        w: Math.round(box.width),
+        h: Math.round(box.height),
+        selector: z.selector,
+        ...(z.scale ? { scale: z.scale } : {}),
+      };
+    } catch (e) {
+      console.error(`[live] zoom selector ${JSON.stringify(z.selector)} did not resolve (${e.message}); this step renders unzoomed`);
+      return 'none';
+    }
+  }
+
   async function closeStep() {
     if (!current) return;
     await page.waitForTimeout(STEP_SETTLE_MS); // capture the settled end state
@@ -219,7 +242,7 @@ export async function liveSession({ workdir, url, title, format, headed = false 
       i: steps.length,
       name: current.name,
       narration: current.narration,
-      zoom: current.zoom,
+      zoom: await resolveZoom(current.zoom),
       start: current.start,
       end: +now().toFixed(3),
       clicks: current.clicks,
@@ -234,7 +257,9 @@ export async function liveSession({ workdir, url, title, format, headed = false 
       return { status: 400, body: { ok: false, error: 'narration is required (the renderer fits each step window to it)' } };
     }
     await closeStep();
-    current = { name: p.name.trim(), narration: p.narration.trim(), zoom: p.zoom ?? 'auto', start: +now().toFixed(3), clicks: [], snippets: [] };
+    // Default "none": a zoom guessed from clicks lands on whatever was pressed, which on a
+    // real flow is a nav link or dead space, not what the narration is about. Point it or leave it.
+    current = { name: p.name.trim(), narration: p.narration.trim(), zoom: p.zoom ?? 'none', start: +now().toFixed(3), clicks: [], snippets: [] };
     return { status: 200, body: { ok: true, index: steps.length, name: current.name, url: page.url() } };
   }
 

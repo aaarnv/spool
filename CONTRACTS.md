@@ -54,7 +54,7 @@ export const steps = [
   {
     name: "open-board",                    // kebab-case id, unique
     narration: "Here's the finishing lab — every rep gets tracked on this board.",
-    zoom: "auto",                          // "auto" (zoom to clicks in this step) | "none" | {x,y,scale}
+    zoom: "none",                          // "none" (default) | {selector} | {x,y[,scale]} | "auto" (aims at this step's clicks)
     run: async (page, h) => {
       await h.click("text=Start");
       await page.waitForSelector(".board");
@@ -185,7 +185,7 @@ Endpoints (JSON in/out; page ops are serialized so requests can't interleave):
 
 | Method + path | Body | Returns |
 |---|---|---|
-| `POST /step` | `{ name, narration, zoom? }` | `{ ok, index, name, url }` — closes the previous step (250ms settle) and opens a new one. **`narration` is required** (the renderer fits the window to it). `zoom` defaults to `"auto"`. |
+| `POST /step` | `{ name, narration, zoom? }` | `{ ok, index, name, url }` — closes the previous step (250ms settle) and opens a new one. **`narration` is required** (the renderer fits the window to it). `zoom` defaults to `"none"`; pass `{selector}` to frame the thing the narration is about (resolved to a box at step close, and to `"none"` if it does not resolve), `{x,y[,scale]}` for capture-pixel coords, or `"auto"` to aim at this step's clicks. |
 | `POST /js` | `{ code }` | `{ ok, result?, error?, url }` — runs `code` as the body of `async (page, h) => { … }` with the session `page` and the `h` helpers in scope. An error returns `ok:false` and does **not** kill the session (fix the selector and retry). Only successful snippets enter the snapshot. |
 | `GET /status` | — | `{ ok, url, elapsed, completed, current }` — current step index/name, elapsed seconds, url. |
 | `POST /end` | `{ discard? }` | `{ ok, dir, steps, total }` — closes the final step (settle first), stops recording, finalizes the outputs below, then the server exits. `discard:true` throws the take away and exits. |
@@ -209,7 +209,7 @@ export const config = {
   prep: async (page, h) => { /* pre-step-0 snippets */ },
 };
 export const steps = [
-  { name: "…", narration: "…", zoom: "auto", run: async (page, h) => { /* the /js snippets that succeeded, in order */ } },
+  { name: "…", narration: "…", zoom: "none", run: async (page, h) => { /* the /js snippets that succeeded, in order */ } },
 ];
 ```
 

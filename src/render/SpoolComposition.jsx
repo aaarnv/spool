@@ -94,38 +94,53 @@ function envelope(t, start, peakAt, holdEnd, end, peak) {
   });
 }
 
+// Share of the frame a named element should fill. Derived from its box rather than a fixed
+// magnification: a small pill needs far more push than a whole panel to read the same.
+const ZOOM_FILL = 0.62;
+const ZOOM_MIN = 1.08;
+const ZOOM_MAX = 2;
+
+function fitScale(zoom, card) {
+  if (zoom.scale) return zoom.scale;
+  if (!zoom.w || !zoom.h) return 1.35; // hand-authored {x,y} with no box
+  const fit = Math.min((card.vw * ZOOM_FILL) / zoom.w, (card.vh * ZOOM_FILL) / zoom.h);
+  return Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, fit));
+}
+
 // Resolve the active zoom (scale + origin in canvas px) for the current time.
 function getZoom(t, steps, card, canvasW, canvasH) {
   const center = { x: canvasW / 2, y: canvasH / 2 };
   for (const step of steps) {
     const zoom = step.zoom;
     if (!zoom || zoom === "none") continue;
+    if (t <= step.start || t >= step.end) continue;
 
+    // Narration sizes the window, so a step runs far longer than the action inside it. Both
+    // forms ease out against the step's own end instead of a fixed beat after the action:
+    // a ~2s envelope inside a 12s step covered a fifth of it and left the rest flat.
+    const end = step.end - 0.15;
+    if (t >= end) continue;
+
+    // Opt-in only, and it aims at whatever was pressed. Fine when the click IS the subject;
+    // `{selector}` is the way to point at what the narration is actually about.
     if (zoom === "auto") {
       const clicks = step.clicks || [];
       if (!clicks.length) continue;
-      const first = clicks[0];
-      const last = clicks[clicks.length - 1];
-      const t0 = first.t;
-      const start = t0 - 0.5;
-      const peakAt = t0; // reached ~at the click
-      const holdEnd = Math.max(t0 + 1.2, last.t + 0.6);
-      const end = holdEnd + 0.6;
-      if (t <= start || t >= end) continue;
-      const scale = envelope(t, start, peakAt, holdEnd, end, 1.35);
+      const t0 = clicks[0].t;
+      const start = Math.max(step.start, t0 - 0.5);
+      if (t <= start) continue;
+      const holdEnd = Math.max(t0 + 0.8, end - 0.5);
+      const scale = envelope(t, start, t0, holdEnd, end, 1.35);
       if (scale <= 1.0001) continue;
-      const origin = clickToCanvas(first, card);
+      const origin = clickToCanvas(clicks[0], card);
       return { scale, ox: origin.x, oy: origin.y };
     }
 
     if (typeof zoom === "object" && zoom.x != null && zoom.y != null) {
-      const peak = zoom.scale || 1.35;
       const start = step.start;
-      const end = step.end;
-      if (t <= start || t >= end) continue;
       const peakAt = start + 0.6;
-      const holdEnd = end - 0.6;
-      const scale = envelope(t, start, peakAt, Math.max(peakAt, holdEnd), end, peak);
+      const holdEnd = Math.max(peakAt, end - 0.5);
+      const scale = envelope(t, start, peakAt, holdEnd, end, fitScale(zoom, card));
       if (scale <= 1.0001) continue;
       const origin = clickToCanvas(zoom, card);
       return { scale, ox: origin.x, oy: origin.y };
