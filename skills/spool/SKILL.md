@@ -332,19 +332,28 @@ fixes, and file bugs from the captured `console.jsonl`.
 
 ## Narration style
 
-**Voice: the engineer who built it, updating a client — never a first-time viewer.** These
-spools get sent to clients; the narrator owns this codebase and speaks with that familiarity.
+**Voice: the engineer who built it, updating a client who knows the product cold but does not
+read code.** They have full context on what the product is and how it behaves, so never
+introduce it. They do not know how it is built, and do not need to.
 
+- Assume the product, explain the change. "The session tab" needs no introduction; what
+  changed about it does.
+- Say what it does, not how it is wired: "the report card updates the moment a session ends",
+  NOT "the effect refetches on sessionEnd". Keep file names, symbols, types, tables, hooks and
+  framework names out of the narration unless one is on screen and is the point of that step.
 - Speak about state and changes, not discovery: "the session board feeds the report card now",
-  "we've wired up all nine drill modes" — NOT "this is X", "let's peek at", "looks like".
-- Assume shared context with the listener: "the session tab" (they know the product), not
-  "there's a tab called session".
-- Confident and specific; name the things by their real names. No marketing tone, no hedging.
+  "we've wired up all nine drill modes", NOT "this is X", "let's peek at", "looks like".
+- Confident and specific. Call things by the names the client already uses for them. No
+  marketing tone, no hedging.
 - Never claim anything not visible on screen, and never promise roadmap to a client.
-- Mechanics: present tense, contractions always, no em dashes, 1–2 short sentences per step.
+- Mechanics: present tense, contractions always, no em dashes, 1 to 2 short sentences per step.
   Capture is record-first: each step is recorded at natural speed, then the renderer sizes its
-  window to `max(narration+pad, recorded)` and freeze-holds the last frame under the voice — so
+  window to `max(narration+pad, recorded)` and freeze-holds the last frame under the voice, so
   narration much longer than the on-screen action means a static freeze; keep it proportional.
+
+**Exception: PR guides.** A `spool pr` tour is read by an engineer reviewing the diff, so file
+and symbol names are the substance there rather than jargon to avoid. Every other rule above
+still holds.
 
 ## steps.mjs gotchas
 

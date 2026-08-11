@@ -286,7 +286,13 @@ export async function publishSpool(workdir, opts = {}) {
 
   console.log(url);
 
-  if (opts.pr) await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) => console.error(`[publish] PR comment failed: ${e.message}`));
+  // The spool is published and published.json is written, so a failed comment is not a
+  // failed publish; print the link so it can be posted by hand (CI asserts it separately).
+  if (opts.pr) {
+    await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) =>
+      console.error(`[publish] PR comment failed: ${e.message}\n[publish] post it manually: ${url}`),
+    );
+  }
   return url;
 }
 
@@ -298,7 +304,12 @@ export async function commentOnPR(url, spool, pr, previewUrl) {
   });
 
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  const body = spool.pr ? guideBody(url, spool, previewUrl, mmss) : walkthroughBody(url, spool, previewUrl, mmss);
+  // A vertical PR spool is a ship reel, not a guided reading; it gets its own comment.
+  const body = !spool.pr
+    ? walkthroughBody(url, spool, previewUrl, mmss)
+    : spool.format === "vertical"
+      ? reelBody(url, spool, previewUrl, mmss)
+      : guideBody(url, spool, previewUrl, mmss);
 
   const args = ["pr", "comment"];
   if (pr !== true) args.push(String(pr));
@@ -307,46 +318,79 @@ export async function commentOnPR(url, spool, pr, previewUrl) {
   console.error(`[publish] PR comment: ${stdout.trim() || "posted"}`);
 }
 
-// Default walkthrough comment (non-PR spools): step index by start time.
-function walkthroughBody(url, spool, previewUrl, mmss) {
-  const steps = (spool.steps || []).map((s) => `| ${mmss(s.start)} | ${s.name} |`).join("\n");
+// Shared shape of every PR comment: heading, optional inline preview, watch line, a
+// two-column table, footer. The variants below differ only in wording and row source.
+function commentBody({ heading, previewAlt, watchLabel = "Watch", rowLabel, rows, url, previewUrl, duration, footer }) {
   return [
-    `### 🎬 Walkthrough: ${spool.title || "spool"}`,
+    `### ${heading}`,
     "",
     // GIF preview when available: GitHub renders it inline; clicking opens the watch page.
-    ...(previewUrl ? [`[![watch the walkthrough](${previewUrl})](${url})`, ""] : []),
-    `**Watch:** ${url} (${Math.round(spool.duration)}s, narrated)`,
+    ...(previewUrl ? [`[![${previewAlt}](${previewUrl})](${url})`, ""] : []),
+    `**${watchLabel}:** ${url} (${Math.round(duration)}s, narrated)`,
     "",
-    "| at | step |",
+    `| at | ${rowLabel} |`,
     "|---|---|",
-    steps,
+    rows,
     "",
-    `<sub>Recorded and narrated by the agent that shipped this change, via [spool](https://spoolkit.dev). Agents can review without watching: \`spool read\` the share bundle linked on the watch page.</sub>`,
+    `<sub>${footer}</sub>`,
   ].join("\n");
 }
 
-// PR-guide comment variant: the tour stops are the rows, timestamped by the step
-// each stop maps to (blank when the stop has no anchored step). No em dashes.
-function guideBody(url, spool, previewUrl, mmss) {
+// Default walkthrough comment (non-PR spools): step index by start time.
+function walkthroughBody(url, spool, previewUrl, mmss) {
+  return commentBody({
+    url,
+    previewUrl,
+    duration: spool.duration,
+    heading: `🎬 Walkthrough: ${spool.title || "spool"}`,
+    previewAlt: "watch the walkthrough",
+    rowLabel: "step",
+    rows: (spool.steps || []).map((s) => `| ${mmss(s.start)} | ${s.name} |`).join("\n"),
+    footer: `Recorded and narrated by the agent that shipped this change, via [spool](https://spoolkit.dev). Agents can review without watching: \`spool read\` the share bundle linked on the watch page.`,
+  });
+}
+
+// Tour stops as table rows, timestamped by the step each stop maps to (blank when the
+// stop has no anchored step). Shared by the guide and reel comment variants.
+function stopRows(spool, mmss) {
   const steps = spool.steps || [];
-  const rows = (spool.pr.stops || [])
+  return (spool.pr.stops || [])
     .map((stop) => {
       const at = typeof stop.step === "number" && steps[stop.step] ? mmss(steps[stop.step].start) : "";
       return `| ${at} | ${stop.heading || stop.id} |`;
     })
     .join("\n");
-  return [
-    `### 🧭 PR guide: ${spool.pr.title || spool.title || "PR"}`,
-    "",
-    ...(previewUrl ? [`[![watch the guided tour](${previewUrl})](${url})`, ""] : []),
-    `**Watch the guided tour:** ${url} (${Math.round(spool.duration)}s, narrated)`,
-    "",
-    "| at | stop |",
-    "|---|---|",
-    rows,
-    "",
-    `<sub>A guided reading of this change, not a review. The watch page has the tour, the full diff, and Q&A grounded in the diff. Built via [spool](https://spoolkit.dev).</sub>`,
-  ].join("\n");
+}
+
+// Ship-reel comment variant: a merged PR's vertical reel shows what shipped, so it reads
+// as an announcement rather than a reading guide. No em dashes.
+function reelBody(url, spool, previewUrl, mmss) {
+  return commentBody({
+    url,
+    previewUrl,
+    duration: spool.duration,
+    heading: `🎬 Ship reel: ${spool.pr.title || spool.title || "what shipped"}`,
+    previewAlt: "watch the ship reel",
+    rowLabel: "stop",
+    rows: stopRows(spool, mmss),
+    footer: `What this change shipped, recorded and narrated by the agent that shipped it. Built via [spool](https://spoolkit.dev).`,
+  });
+}
+
+// PR-guide comment variant: the tour stops are the rows, timestamped by the step
+// each stop maps to (blank when the stop has no anchored step). No em dashes.
+function guideBody(url, spool, previewUrl, mmss) {
+  return commentBody({
+    url,
+    previewUrl,
+    duration: spool.duration,
+    heading: `🧭 PR guide: ${spool.pr.title || spool.title || "PR"}`,
+    previewAlt: "watch the guided tour",
+    watchLabel: "Watch the guided tour",
+    rowLabel: "stop",
+    rows: stopRows(spool, mmss),
+    footer: `A guided reading of this change, not a review. The watch page has the tour, the full diff, and Q&A grounded in the diff. Built via [spool](https://spoolkit.dev).`,
+  });
 }
 
 // Direct CLI: node src/publish/publish.mjs --workdir <dir> [--host <h>] [--token <t>]

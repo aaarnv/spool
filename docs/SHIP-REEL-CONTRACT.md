@@ -60,7 +60,9 @@ Two hard rules:
 
 ## Narration register
 
-Owner voice: the engineer who shipped it, telling a peer what landed. Present tense, why first.
+Owner voice: the engineer who shipped it, telling someone who uses the product what landed.
+They know the product cold and do not read code, so name the change by what it does rather
+than how it is wired. Present tense, why first.
 
 | write this | not this |
 |---|---|
