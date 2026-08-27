@@ -2,7 +2,7 @@
 // Remotion path: it swaps a per-frame browser screenshot for one filtergraph.
 import { spawn } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { buildWindows, TAIL_S } from "../retime.mjs";
 import { buildCameraTrack, sampleCamera, CTA_S, STAGE } from "../vertical.mjs";
 import {
@@ -21,7 +21,7 @@ import { renderCaptionLayer } from "./captions.mjs";
 import { buildPlanCards } from "../plan/model.mjs";
 import { getPlanTheme, planBgHtml, planStates, renderPlanLayer } from "./plan.mjs";
 import { buildAudio } from "./audio.mjs";
-import { alphaArgs, encodeArgs, pickEncoder } from "./encode.mjs";
+import { encodeArgs, pickEncoder } from "./encode.mjs";
 import { buildGraph, rippleSequence } from "./graph.mjs";
 import {
   CARD_RADIUS,
@@ -126,11 +126,8 @@ function runFfmpeg(args, { nice, label, durSec }) {
   });
 }
 
-/**
- * Render `props` (the same inputProps the composition used to receive) to `out`.
- * `fgOut` additionally writes the composite minus the wallpaper as VP9-with-alpha.
- */
-export async function renderFfmpeg({ dir, props, out, preview = false, master = false, fgOut = null }) {
+/** Render `props` (the same inputProps the composition used to receive) to `out`. */
+export async function renderFfmpeg({ dir, props, out, preview = false, master = false }) {
   const t0 = Date.now();
   const fps = props.fps;
   const isVertical = props.format === "vertical";
@@ -302,7 +299,6 @@ export async function renderFfmpeg({ dir, props, out, preview = false, master = 
     superSample,
     sampleCam: (t) => sampleCamera(camTrack, t, { width: card.vw, height: card.vh }),
     previewScale: preview ? 0.5 : null,
-    fgLayer: Boolean(fgOut),
     segments: props.manifest?.segments || [],
     musicPath: isVertical && props.vertical?.music ? join(dir, props.vertical.music) : null,
     speechWindows: (props.manifest?.segments || []).map((seg) => {
@@ -312,7 +308,7 @@ export async function renderFfmpeg({ dir, props, out, preview = false, master = 
     }),
   };
 
-  const { g, video, fgVideo } = buildGraph(ctx);
+  const { g, video } = buildGraph(ctx);
   const audio = buildAudio(g, ctx);
   const scriptPath = join(assetDir, "graph.txt");
   await writeFile(scriptPath, g.text() + "\n");
@@ -330,11 +326,8 @@ export async function renderFfmpeg({ dir, props, out, preview = false, master = 
     ...encodeArgs(enc),
     "-t", durSec.toFixed(3),
     out,
-    // Second output off the same graph: the footage is decoded and zoomed once.
-    ...(fgVideo ? ["-map", fgVideo, "-an", ...alphaArgs(), "-t", durSec.toFixed(3), fgOut] : []),
   ];
-  if (fgVideo) await mkdir(dirname(fgOut), { recursive: true });
-  console.log(`[render] ffmpeg ${g.n} inputs, ${g.chains.length} chains, ${enc.name} (${enc.tier})${fgVideo ? " + vp9 alpha" : ""}`);
+  console.log(`[render] ffmpeg ${g.n} inputs, ${g.chains.length} chains, ${enc.name} (${enc.tier})`);
   await runFfmpeg(args, { nice: enc.nice, label: "encode", durSec });
 
   if (!process.env.SPOOL_FFMPEG_KEEP) await rm(assetDir, { recursive: true, force: true }).catch(() => {});

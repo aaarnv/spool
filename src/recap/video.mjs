@@ -45,7 +45,6 @@ export function recapIdentity(pr) {
 export async function renderRecapVideo({
   workdir,
   pr,
-  context = null,
   model,
   voice = 'alloy',
   speed = 1,
@@ -61,8 +60,8 @@ export async function renderRecapVideo({
   log(`[recap] ${pr.repo}#${pr.number}: ${pr.files.length} file(s), +${pr.additions} -${pr.deletions}`);
   if (pr.truncation.length) log(`[recap] partial diff — ${pr.truncation.join('; ')}`);
 
-  const authored = await authorRecapVideo({ pr, context, model, log });
-  await writeFile(join(workdir, 'recap.json'), JSON.stringify({ ...recapIdentity(pr), understanding: authored.understanding }, null, 2) + '\n');
+  const authored = await authorRecapVideo({ pr, model, log });
+  await writeFile(join(workdir, 'recap.json'), JSON.stringify(recapIdentity(pr), null, 2) + '\n');
 
   const rendered = await renderAuthoredVideo({
     workdir,
@@ -77,5 +76,5 @@ export async function renderRecapVideo({
     seed: seed || `${pr.repo}#${pr.number}`,
     log,
   });
-  return { ...rendered, mode: authored.mode, pr: recapIdentity(pr), understanding: authored.understanding };
+  return { ...rendered, mode: authored.mode, pr: recapIdentity(pr) };
 }

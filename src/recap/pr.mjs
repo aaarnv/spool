@@ -148,65 +148,6 @@ export async function fetchPullRequest({ owner, repo, number, token, fetchImpl =
   };
 }
 
-/** Files carried into the diagram prompt, ranked by churn. */
-export const DIAGRAM_FILES = 12;
-/** Changed lines kept per file for the diagram prompt. */
-export const DIAGRAM_LINES = 24;
-/**
- * Characters of trimmed diff the diagram prompt may carry, about 1.2k tokens.
- *
- * Halved from 8000 after aaarnv/spool-web#6: the diagram stage took 861s there, and a
- * bigger diff buys more identifiers to misplace rather than a better picture. The diff
- * stays — a box holding a real identifier is the point — it is just bounded.
- */
-export const DIAGRAM_DIFF_CHARS = 4000;
-
-/**
- * The diff as the DIAGRAMMER sees it: changed lines only, biggest files first.
- *
- * The script stage reads the whole capped diff because it is writing prose about the
- * change. The diagram stage needs something different and much smaller — the actual
- * identifiers, values and states it must draw inside its boxes — so context lines,
- * the description and the commit list are all dropped and only `+`/`-` lines and the
- * hunk headers that name the enclosing function survive.
- */
-export function renderDiagramDiff(pr, budget = DIAGRAM_DIFF_CHARS) {
-  const ranked = (pr.files || [])
-    .filter((f) => f.patch)
-    .slice()
-    .sort((a, b) => (b.additions + b.deletions) - (a.additions + a.deletions))
-    .slice(0, DIAGRAM_FILES);
-
-  const blocks = [];
-  let used = 0;
-  for (const f of ranked) {
-    const kept = [];
-    for (const line of f.patch.split('\n')) {
-      if (/^(\+\+\+ b\/|--- a\/)/.test(line)) continue;
-      if (line.startsWith('@@')) {
-        const ctx = line.slice(line.lastIndexOf('@@') + 2).trim();
-        if (ctx) kept.push(`  in ${ctx}`);
-        continue;
-      }
-      if (line[0] !== '+' && line[0] !== '-') continue;
-      kept.push(line.trimEnd().slice(0, 160));
-      if (kept.length >= DIAGRAM_LINES) break;
-    }
-    if (!kept.length) continue;
-    const block = [`--- ${f.path} (+${f.additions} -${f.deletions})`, ...kept].join('\n');
-    if (used + block.length > budget) break;
-    blocks.push(block);
-    used += block.length + 2;
-  }
-  if (!blocks.length) return '';
-  return [
-    `${pr.repo}#${pr.number}: ${pr.title}`,
-    `${pr.changedFiles} file(s), +${pr.additions} -${pr.deletions}`,
-    '',
-    ...blocks,
-  ].join('\n');
-}
-
 /** The fetched pull request as the prompt sees it: a diff, not a JSON blob. */
 export function renderDiff(pr) {
   const lines = [

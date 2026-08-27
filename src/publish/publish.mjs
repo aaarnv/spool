@@ -264,10 +264,7 @@ function grantLocalPath(pathname, { dir, shareDir, finalMp4 }) {
     return join(dir, rel === "bg.jpg" ? ".spool-bg.jpg" : rel);
   }
   const rel = pathname.replace(/^l\/[^/]+\//, "");
-  if (rel === "final.mp4") return finalMp4;
-  // layers/fg.webm sits beside final.mp4 in the workdir, not in the share bundle.
-  if (rel.startsWith("layers/")) return join(dir, rel);
-  return join(shareDir, rel);
+  return rel === "final.mp4" ? finalMp4 : join(shareDir, rel);
 }
 
 /**
@@ -324,8 +321,6 @@ async function publishSpoolInner(workdir, opts = {}, ctx = { attempts: 1 }) {
     ...(planBundle ?? {}),
     ...(replyBundle ?? {}),
     hasPreview: existsSync(join(shareDir, "preview.gif")),
-    // The alpha foreground beside final.mp4, so a later background change is a swap.
-    hasFgLayer: existsSync(join(dir, "layers", "fg.webm")),
   };
 
   const res = await fetch(`${host}/api/publish`, {

@@ -10,55 +10,35 @@ is only: make the app runnable, drive a good walkthrough, run the pipeline, veri
 
 ## Install (once per machine)
 
-If `spool --help` fails, install it from the repo:
+If `spool --help` fails, install it:
 
 ```bash
-git clone git@github.com:aaarnv/spool.git ~/.spool/cli
-cd ~/.spool/cli && npm install && npm link
-npx playwright install chromium
+curl -fsSL https://raw.githubusercontent.com/aaarnv/spool/master/install.sh | bash
 ```
 
-Also needs node ≥ 20 and ffmpeg on PATH (macOS: `brew install ffmpeg`).
+(clones to `~/.spool/cli`, `npm link`s `spool` onto PATH, fetches chromium; re-running
+updates it. Manual alternative: clone the repo, `npm install && npm link`,
+`npx playwright install chromium`. Also needs node ≥ 20 and ffmpeg on PATH.)
 
-The repo is PRIVATE, so this needs repo access, and so do `install.sh` and every
-`raw.githubusercontent.com` path. `@spoolkit/cli` on npm is frozen at `0.3.1` and is far
-behind this CLI, so do not install from npm. Without repo access there is no install today.
+Then check the connection FIRST — run `spool doctor --json` and read the `token` check. One
+connection covers BOTH publishing and hosted AI voice, so no OpenAI key is required.
 
-## First run (once per repo)
-
-Run bare `spool init` from inside the project you are going to record. It is the whole setup:
-environment checks, login, preferences, repo detection, the GitHub App link, and the knowledge
-seed scaffold. Each step prints one line and skips itself when already satisfied, so running it
-on a set-up machine costs nothing.
-
-```bash
-cd <the project you will record>
-spool init
-```
-
-Read the output before doing anything else:
-
-- **Step 1 fails** → STOP and fix what it names (node, ffmpeg, or chromium). It prints the exact
-  command for each. An `openai-key` warning is fine: hosted voice covers it, no key needed.
-- **Step 2 says "not connected, and this is not a terminal"** → STOP and ask the human to run
-  `spool login` themselves. It opens a browser to sign in and approve, and you cannot complete
-  browser auth. If the human has already handed you a raw `spk_` token, write it directly and
-  re-run `spool init`:
+- If the token check is **ok**, you're connected; continue.
+- If it is **not ok**, STOP and ask the human to run `spool login` (it opens a browser to sign
+  in and approve — you cannot complete browser auth yourself).
+- If the human has already handed you a raw `spk_` token, write it directly (no browser needed):
 
   ```bash
   # token from https://spoolkit.dev/dashboard → Generate token
   echo '{"host":"https://spoolkit.dev","token":"spk_..."}' > ~/.spool.json
   ```
 
-  or pass it through with `spool init --paste`. In CI, `spool init --no-login` skips the step.
-- **Step 5** prints the GitHub App install link. Relay it to the human: installing the App is
-  what turns a merged pull request into a recap. You cannot install it yourself.
-- **Step 6** scaffolds `spool/project/`. Author it next, per "Project init" below.
+  or pass it via `spool login --paste`.
 
-One connection covers BOTH publishing and hosted AI voice. The voice engine auto-detects: your
-own `OPENAI_API_KEY` (env / project `.env` / `"openaiKey"` in `~/.spool.json`) is used directly
-when present; otherwise voice runs hosted through the token. `spool doctor` (add `--json` for a
-machine-readable form) re-runs the step 1 checks any time.
+Voice engine auto-detects: your own `OPENAI_API_KEY` (env / project `.env` /
+`"openaiKey"` in `~/.spool.json`) is used directly when present; otherwise voice runs
+hosted through the token above. Sanity check the install: `spool doctor` reports every check
+and names the fix for each one that is not ok.
 
 ## Choosing a path
 
@@ -79,12 +59,6 @@ no re-record. See "Recut".
 2. **Start the session.** `spool live spool/<slug> --url <app-url>` (add `--title "…"`). It
    prints one stdout line `{"port":N,"session":"<dir>"}`; grab `N`. Handle login/prep by
    sending `/js` BEFORE your first `/step` (those become `config.prep`).
-
-   **Signed-in apps.** Pass a saved Playwright storage state: `spool live spool/<slug>
-   --url <app-url> --auth path/to/auth.json` (or set `SPOOL_AUTH_STATE`). Never send cookie
-   values through `/js`: those snippets are redacted out of the generated `steps.mjs`.
-   Every session writes its own login state to `<dir>/auth.json`, which is gitignored and
-   never shared or published, so the next take can reuse it with `--auth <dir>/auth.json`.
 3. **Drive it in ONE continuous script.** Write the whole session as a single shell script and
    run it in ONE command — your thinking time between separate tool calls gets RECORDED as dead
    air in the take. Just drive, and drop a `/marker` where a new idea starts. Template:
@@ -97,11 +71,6 @@ no re-record. See "Recut".
    J js     '{"code":"await h.click(\"#selector\"); await page.waitForSelector(\"#result\"); await h.pause(1500)"}'
    curl -s -X POST localhost:$P/end -H 'content-type: application/json' -d '{}'
    ```
-
-   `chapterId` must be one of `context`, `outcome`, `approach`, `risks`, `decision`. Anything
-   else is recorded as `context` and the reply carries a `warning`; the marker is kept either
-   way, so narration is never lost to a typo. Read the responses: the session also prints every
-   refused call to stderr.
 
    A marker names the boundary it lands on and can carry `narration` and `chapterId`. It does
    NOT bracket the work: the cut still comes from the signals (navigations, clicks that change
@@ -130,27 +99,6 @@ no re-record. See "Recut".
    land in that step's window — retry promptly. The generated `steps.mjs` omits failed snippets, so
    re-running `spool build` on it gives a clean take.
 5. **Verify + report** (same as below).
-
-## Change the background without re-rendering
-
-Every render writes `layers/fg.webm` beside `final.mp4`: the whole composite except the
-wallpaper (card chrome, footage, cursor, ripples, zoom, captions, hook and CTA) in VP9 with
-alpha. `spool bg` composites a new canvas under it in one pass and keeps the existing audio,
-so changing the look costs seconds instead of a full render.
-
-```bash
-spool bg spool/<slug> graphite     # a repo preset: sky (default) | graphite | paper
-spool bg spool/<slug> sonoma       # a macOS wallpaper by name (Mac only)
-spool bg spool/<slug> ~/shot.jpg   # any image path
-```
-
-With no background given, a render on a Mac uses that machine's real Sonoma wallpaper, and
-anywhere else the `sky` preset.
-
-It rewrites `final.mp4` in place and restamps `render.json`. Keyframes and `preview.gif` come
-from the recording, not the deliverable, so the share bundle needs no rebuild. A published
-workdir needs `--publish` to put the new canvas online, and that mints a new watch link. Plan
-Spools and `--rate` takes have no layer, so they still need `spool render`.
 
 ## Recut — fix a boundary without recording again
 
@@ -283,10 +231,9 @@ project's shared knowledge once so future guides and recordings start warm. This
 later recordings instant: the next session reads the recording topics instead of re-deriving the
 dev-server and auth story.
 
-1. **Scaffold.** Bare `spool init` does this as its last step: it detects the repo owner/name via
-   `gh`, fetches the current project store into `spool/project/knowledge.json` (read-only
-   reference), and writes an empty seed ops file `spool/project/knowledge-ops.json`. Needs `gh` on
-   PATH and `gh auth login`. Re-running `spool init` never overwrites ops you have authored.
+1. **Scaffold.** Bare `spool init` (no slug) detects the repo owner/name via `gh`, fetches the
+   current project store into `spool/project/knowledge.json` (read-only reference), and writes an
+   empty seed ops file `spool/project/knowledge-ops.json`. Needs `gh` on PATH and `gh auth login`.
 2. **Survey and author `knowledge-ops.json`.** Read the README, docs, and code layout, then author
    seed ops: one `set_overview`; a `set_subsystem` for each major module a reader needs (5-15); a
    `set_term` for each piece of domain vocabulary; one `add_decision` only if the repo embodies a
@@ -304,9 +251,6 @@ After seeding, any `spool pr` or `spool live` session on this repo starts from t
 topics (they arrive in the scaffold's `knowledge.json` and summary). Keep them current: when the
 boot command, dev-login, or a flaky element changes, record the new reality with `set_recording`
 ops (via `spool pr`'s `knowledge-ops.json`, or a fresh `spool init`).
-
-`spool init <slug>` is a different command and is unchanged: it scaffolds
-`spool/<slug>/steps.mjs` for the scripted path.
 
 ## PR guide (spool pr)
 
@@ -371,27 +315,62 @@ It is a comprehension tool, NOT a code review: no verdicts, no bug hunting.
 
 ## Recaps (after you ship)
 
-You do not record recaps. The `spoolkit` GitHub App does.
+When you finish a user-visible change, offer a **recap**: a 20 to 40 second vertical spool of
+what shipped, for the swipeable feed. You are the best producer of one because the app is already
+running, already authenticated, and you still remember what you changed. Full contract:
+`docs/RECAP-CONTRACT.md` in the spool repo. The shape is fixed:
 
-When a pull request MERGES on a repo with the App installed, the webhook queues a
-`render_recap` job (`web/lib/recapEnqueue.ts`). The Fly worker (`worker/index.mjs`) fetches the
-diff, authors and renders a vertical diagram video from it (`src/packet/`,
-`docs/video/comp/skia/`), publishes it, and comments a poster frame plus the watch link on the
-PR (`web/lib/githubComment.ts`). No browser, no capture, no agent in the loop. There is no
-recap workflow in `.github/workflows/`.
+```
+hook card (first 2s)  ->  2 to 4 stops, one idea each  ->  CTA card (last 1.5s)
+```
 
-So after a merge your only job is to READ the result:
+Owner voice, present tense, why-first ("the dismiss pill is live now"), never discovery voice
+("let's take a look at"). 55 to 90 words of narration TOTAL, which is what lands the cut between
+20 and 40s. Record the REAL app whenever a URL exists (localhost, staging, preview, or the
+surface where the change's own output lands); explainer HTML is the fallback only when nothing
+runnable exists, and it must show real artifacts (actual diff hunks, actual output), never bullet
+slides. A vertical explainer is authored inside a 640px centred column and reveals by scrolling
+rather than clicking; the contract's "Authoring an explainer for the vertical crop" section has
+the numbers and why.
 
-- read the PR comment the App left, or
-- run `spool list` and take the row for that PR.
+1. **Scaffold.** With a merged PR: `spool pr <n>` → `spool/pr-<n>/`. That workdir's `pr.json` is
+   what comments the watch link on the PR, and `tour.json` + `diff.patch` give the recap's watch
+   page the diff and the Q&A. It refuses to overwrite an existing `tour.json`, so when the PR
+   already has a guide workdir, copy `pr.json`/`diff.patch`/`context.*` into `spool/recap-<n>/` and
+   author the recap there instead. No PR: any workdir, it publishes as an ordinary vertical spool.
+2. **Seed the viewport BEFORE recording.** Write `spool/<dir>/steps.mjs` containing only
+   `export const config = { viewport: { width: 1920, height: 1080 } };` (live reads viewport from
+   an existing config). The camera crops the landscape capture, so the 1600x900 default renders
+   soft. `export SPOOL_CAPTURE=cdp` for the sharper screencast.
+3. **Record against the running app.**
+   `spool live spool/<dir> --url <app-url> --format vertical --title "<what shipped>"`.
+   `--title` is required: vertical draws no title card, so it is the published title and the
+   hook's fallback. Then drive it as in the Live path, with 2 to 4 steps, ONE sentence each, each
+   step's action inside ONE screen region. The FIRST recorded seconds must show the surface you
+   changed most; do any navigation before the first `/step`.
+4. **Author the frame AFTER `/end`, BEFORE `spool finish`.** The `/end` rewrite keeps only `url`,
+   `viewport`, `title`, `format` and `prep`, so seeding these earlier silently loses them. Add to
+   the generated `steps.mjs` config:
 
-The comment can take a few minutes: the worker polls, and the render is real work. If it never
-arrives, check the App is installed on the repo and that the PR actually merged — a closed but
-unmerged PR queues nothing. Do not hand-author a replacement recap workdir.
+   ```js
+   hook: 'Dismiss a coaching card for good',  // <= 7 words, the payoff, not the topic
+   cta: { text: 'Follow this repo on spoolkit.dev', url: 'spoolkit.dev' },
+   music: 'uplift',                           // 'uplift' | 'calm' | 'none' | path
+   ```
 
-A hand-recorded vertical spool is still the right answer when somebody ASKS for a walkthrough
-of a shipped change. That is the Live path above with `--format vertical`; see "Short-form
-vertical spools" for the constraints.
+   Never omit `cta`: its default URL is the recorded URL's hostname, so a localhost recording
+   ships a card reading `localhost`.
+5. **Trim `tour.json`** (PR-linked recaps only) to exactly the stops you recorded, one per step,
+   `stop.id` equal to the step name, `mode` `"walkthrough"` or `"explainer"`. A stop matching no
+   recorded step is a lint ERROR and blocks the publish. The `only N stop(s)` warning on a 2 or 3
+   stop recap is expected. Author `context.md` and curate `related` as for any guide.
+6. **Finish.** `spool finish spool/<dir>` → renders 1080x1920, publishes, and comments the watch
+   link on the PR. The format was stamped into `steps.mjs` at capture, so finish carries it and
+   takes no format of its own. Verify with ffprobe (1080x1920, 20 to 40s) and by reading
+   `keyframes/step_NN.png`.
+
+CI runs the same flow on merge (`.github/workflows/recap.yml`), so a repo gets recaps whether
+or not an agent was in the loop.
 
 ## Plan Spools — proposing work before you build it
 

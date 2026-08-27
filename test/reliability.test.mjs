@@ -374,11 +374,8 @@ test('`spool reliability` reports the journal and exits on the verdict', async (
   assert.deepEqual(json.breached, ['render']);
 });
 
-test('the CLI vocabulary and the server contract are the same contract', async (t) => {
-  // The server twin lives in web/, which the OSS mirror strips from the public tree.
-  const twin = join(here, '..', 'web', 'lib', 'planReliability.ts');
-  if (!existsSync(twin)) return t.skip('web/ is not in this tree');
-  const server = await readFile(twin, 'utf8');
+test('the CLI vocabulary and the server contract are the same contract', async () => {
+  const server = await readFile(join(here, '..', 'web', 'lib', 'planReliability.ts'), 'utf8');
   for (const op of RELIABILITY_OPERATIONS) assert.match(server, new RegExp(`"${op}"`), `web/lib/planReliability.ts is missing ${op}`);
   for (const outcome of RELIABILITY_OUTCOMES) assert.match(server, new RegExp(`"${outcome}"`));
   for (const [op, reasons] of Object.entries(FAILURE_REASONS)) {

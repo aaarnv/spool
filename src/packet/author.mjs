@@ -43,10 +43,7 @@ export const ESCALATE = { model: 'gpt-5', effort: null };
 const ESCALATE_AFTER = 2;
 const TEMPERATURE = 0.4;
 const SCRIPT_ATTEMPTS = 3;
-// Two. Measured on aaarnv/spool-web#6: four attempts spent 861s in this stage and the
-// fourth still failed the same finding, because a lint the model cannot satisfy is not
-// made satisfiable by asking again. One draft plus one go with the findings in hand.
-const DIAGRAM_ATTEMPTS = 2;
+const DIAGRAM_ATTEMPTS = 4;
 // A mockup round trip renders and screenshots seven screens, so it is slower per try
 // but its findings are exact; three tries has been enough for every packet measured.
 const MOCKUP_ATTEMPTS = 5;
@@ -137,159 +134,33 @@ export async function complete({ key, model, effort, system, user, envelope }) {
   return out;
 }
 
-// A call that never came back is not a draft the lint rejected. openaiFetch already
-// retries a dropped socket once; past that the throw reaches here, and counting it as
-// an attempt spends a budget the model never got to use. Two long calls timing out in
-// a row retired a recap with "not valid JSON: fetch failed", which is not a finding
-// anybody can fix by drawing differently.
-const TRANSPORT = /fetch failed|ECONN|ETIMEDOUT|EPIPE|socket hang up|network|terminated|-> (?:429|5\d\d)\b/i;
-// Transport retries are free in tokens, so they get their own small budget rather than
-// eating the lint budget.
-const TRANSPORT_RETRIES = 2;
-
 // Draft → lint → hand the findings back. A parse failure is just another finding,
 // exactly as make-video.mjs treats it.
 export async function gated({ attempts, label, draft, lint, repair, log, tierFor }) {
   let findings = [];
   const used = [];
-  let transport = 0;
   for (let attempt = 0; attempt < attempts; attempt++) {
     const extra = findings.length
       ? `\n\nYOUR PREVIOUS DRAFT FAILED THE LINT:\n${findings.join('\n')}\nFix every finding.`
       : '';
     const tier = tierFor ? tierFor(attempt) : null;
     used.push(tier ? tier.model : 'default');
-    // Per-attempt seconds: this stage is the dominant cost of a recap and the only way
-    // to see which attempt spent it is to say so.
-    const t0 = Date.now();
-    const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
     let out;
     try {
       out = await draft(extra, tier);
     } catch (e) {
-      if (TRANSPORT.test(e.message) && transport < TRANSPORT_RETRIES) {
-        transport++;
-        used.pop();
-        attempt--; // the call never returned, so it was not an attempt at the picture
-        log(`${label} attempt ${attempt + 2} (${secs()}s): ${e.message} — retrying, not counted`);
-        continue;
-      }
       findings = [`not valid JSON: ${e.message}`];
-      log(`${label} attempt ${attempt + 1} (${secs()}s): ${findings[0]}`);
+      log(`${label} attempt ${attempt + 1}: ${findings[0]}`);
       continue;
     }
     if (repair) out = repair(out);
     // Mockups only fail in ways a browser can see, so a lint is allowed to render.
     findings = await lint(out);
-    // A lint may split its findings: everything in `soft` is taste, the rest structure.
-    // A lint that says nothing is treated as all-structural, which is what it was.
-    const soft = Array.isArray(findings.soft) ? findings.soft : [];
-    const hard = findings.filter((f) => !soft.includes(f));
-    const last = attempt === attempts - 1;
-    if (!findings.length) {
-      log(`${label} attempt ${attempt + 1} (${tier ? tier.model : 'default'}, ${secs()}s): clean`);
-      return { value: out, attempts: attempt + 1, used, warnings: [] };
-    }
-    // The last attempt is spent on structure alone. Taste findings that survived every
-    // draft are recorded against the job and the render goes ahead.
-    if (last && !hard.length) {
-      log(`${label} attempt ${attempt + 1} (${tier ? tier.model : 'default'}, ${secs()}s): `
-        + `${soft.length} taste finding(s) accepted, structure clean`);
-      for (const f of soft) log('  warn: ' + f);
-      return { value: out, attempts: attempt + 1, used, warnings: soft };
-    }
-    log(`${label} attempt ${attempt + 1} (${tier ? tier.model : 'default'}, ${secs()}s): `
-      + `${findings.length} finding(s)${soft.length ? ` (${hard.length} structural)` : ''}`);
+    if (!findings.length) return { value: out, attempts: attempt + 1, used };
+    log(`${label} attempt ${attempt + 1} (${tier ? tier.model : 'default'}): ${findings.length} finding(s)`);
     for (const f of findings) log('  ' + f);
-    if (last) findings = hard;
   }
   throw new Error(`${label} never passed its lint in ${attempts} attempts: ${findings.join(' | ')}`);
-}
-
-/**
- * The diagram stage, shared by both lanes and re-runnable after the frame gate.
- *
- * `context` is the change itself — the plan packet, or the recap lane's trimmed diff.
- * The prompt used to receive BEATS and nothing else, which made a box holding a real
- * identifier impossible in principle: the model had no identifiers. `priorFindings`
- * carries framelint's pixel findings into attempt one, so a re-author after a failed
- * frame gate starts where the render stopped rather than redrawing blind.
- */
-export async function authorDiagrams({
-  beats, context = '', key, cheap = DEFAULT_DIAGRAM, strong = ESCALATE, priorFindings = [], log = console.error,
-} = {}) {
-  const prompt = await readPrompt('DIAGRAMMER.md');
-  const change = context
-    ? `\n\nTHE CHANGE ITSELF. Every box must hold an artifact from below — an identifier, a value, a state or a count. Do not draw from the beats alone:\n${context}`
-    : '';
-
-  // One call per beat, all in flight: the stage's wall time is its output tokens, and
-  // one call writes five diagrams in series. The retry budget goes per beat too.
-  const runs = await Promise.all(beats.map((beat, i) => gated({
-    attempts: DIAGRAM_ATTEMPTS,
-    label: `diagram lint [${beat.name}]`,
-    log,
-    lint: (spec) => beatFindings(spec, beat, i === beats.length - 1),
-    // Repair first, lint second: the mechanical mistakes cost nothing to fix here and
-    // a retry spent on them is a retry not spent on the picture being wrong.
-    repair: (spec) => {
-      const { spec: fixed, repairs } = repairDiagrams(spec);
-      for (const r of repairs) log('  repaired ' + r);
-      return fixed;
-    },
-    // The cheap tier draws first; the LAST attempt is the strong model, so a beat the
-    // cheap tier cannot draw still ships.
-    tierFor: (attempt) => (attempt < DIAGRAM_ATTEMPTS - 1 ? cheap : strong),
-    draft: (extra, tier) =>
-      complete({
-        key,
-        model: tier.model,
-        effort: tier.effort,
-        envelope: 'diagrams',
-        system: prompt + seedFor(priorFindings, beat) + extra,
-        // The whole script still goes in: a beat drawn without its neighbours repeats
-        // them. Only the ASK narrows, so the output tokens are one beat's, not five.
-        user: `ALL BEATS, so your diagram does not repeat a neighbour's:\n${JSON.stringify(beats)}`
-          + `\n\nDRAW BEAT ${i + 1} OF ${beats.length}${i === beats.length - 1 ? ' — the closing beat, which may return null if it is purely the ask or a sign-off' : ''}.`
-          + ` Return the array with EXACTLY ONE entry, for this beat:\n${JSON.stringify(beat)}`
-          + change,
-      }),
-  })));
-
-  const value = runs.map((r) => r.value[0]);
-  const warnings = runs.flatMap((r) => r.warnings || []);
-  // The per-beat lints ran on one entry each, so the array as a whole is checked once
-  // more here. Structure only: a taste finding each beat's own gate already accepted
-  // is carried out as a warning, not thrown after the drafts are spent.
-  const findings = lintDiagrams(value, beats);
-  const hard = findings.filter((f) => !findings.soft.includes(f) && !warnings.includes(f));
-  if (hard.length) throw new Error(`diagram lint never passed: ${hard.join(' | ')}`);
-  return {
-    value, warnings,
-    attempts: Math.max(...runs.map((r) => r.attempts)),
-    used: runs.flatMap((r) => r.used),
-  };
-}
-
-// diaglint reads the closing-ask exemption off the entry's position, so a one-entry
-// array would exempt every beat. The rule is restored here instead of relaxed.
-function beatFindings(spec, beat, isLast) {
-  if (!Array.isArray(spec) || spec.length !== 1) {
-    return [`[${beat.name}] return exactly one entry, for this beat`];
-  }
-  if (!spec[0]?.diagram && !isLast) {
-    return [`[${beat.name}] no diagram — every beat needs one except a closing ask`];
-  }
-  return lintDiagrams(spec, [beat]);
-}
-
-// framelint tags its findings with the beat they were seen on, so a re-author after a
-// failed frame gate hands each beat its own pixels rather than all five beats'.
-function seedFor(priorFindings, beat) {
-  if (!priorFindings.length) return '';
-  const mine = priorFindings.filter((f) => !f.startsWith('[') || f.startsWith(`[${beat.name}]`));
-  if (!mine.length) return '';
-  return `\n\nTHE RENDERED FRAMES FAILED THE PIXEL GATE:\n${mine.join('\n')}\nFix every finding.`;
 }
 
 /**
@@ -353,8 +224,32 @@ export async function authorPacketVideo({ packet, mode, visual, model, script: s
     };
   }
 
-  const drawing = { beats: script.value, context: `PLAN PACKET:\n${JSON.stringify(packet)}`, key: apiKey, cheap: cheapCfg, strong: strongCfg, log };
-  const diagrams = await authorDiagrams(drawing);
+  const diagramPrompt = await readPrompt('DIAGRAMMER.md');
+  const diagrams = await gated({
+    attempts: DIAGRAM_ATTEMPTS,
+    label: 'diagram lint',
+    log,
+    // Repair first, lint second: the mechanical mistakes cost nothing to fix here and
+    // a retry spent on them is a retry not spent on the picture being wrong.
+    lint: (spec) => lintDiagrams(spec, script.value),
+    repair: (spec) => {
+      const { spec: fixed, repairs } = repairDiagrams(spec);
+      for (const r of repairs) log('  repaired ' + r);
+      return fixed;
+    },
+    // The cheap tier gets ESCALATE_AFTER goes with the findings in hand; past that
+    // the strong model finishes, so a packet the cheap tier cannot draw still ships.
+    tierFor: (attempt) => (attempt < ESCALATE_AFTER ? cheapCfg : strongCfg),
+    draft: (extra, tier) =>
+      complete({
+        key: apiKey,
+        model: tier.model,
+        effort: tier.effort,
+        envelope: 'diagrams',
+        system: diagramPrompt + extra,
+        user: `BEATS:\n${JSON.stringify(script.value)}`,
+      }),
+  });
 
   return {
     mode: register,
@@ -367,9 +262,6 @@ export async function authorPacketVideo({ packet, mode, visual, model, script: s
     // Which model actually drew each attempt, so a caller can see when the cheap
     // tier handed off rather than inferring it from the bill.
     models: { script: script.used, diagrams: diagrams.used },
-    // The frame gate's way back in: same beats, same VO, diagrams redrawn with the
-    // pixel findings in hand.
-    redraw: async (findings) => (await authorDiagrams({ ...drawing, priorFindings: findings })).value,
   };
 }
 

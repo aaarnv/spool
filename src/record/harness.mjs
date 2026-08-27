@@ -60,15 +60,6 @@ async function recordSession({ stepsFile, workdir, headed = false, dry = false }
   const channel = await resolveLaunchChannel();
   const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
   const contextOpts = { viewport };
-  // config.storageState names a file (relative to the workdir), never cookie values.
-  const authInput = process.env.SPOOL_AUTH_STATE || config.storageState;
-  if (authInput) {
-    const authState = path.resolve(workdir, authInput);
-    if (!existsSync(authState)) {
-      throw new Error(`record: storageState file not found: ${authState} (re-run \`spool live --auth <file>\`)`);
-    }
-    contextOpts.storageState = authState;
-  }
   if (!dry) contextOpts.recordVideo = { dir: workdir, size: viewport };
   const context = await browser.newContext(contextOpts);
   await context.addInitScript(CURSOR_INIT_SCRIPT);

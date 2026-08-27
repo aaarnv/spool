@@ -283,23 +283,13 @@ async function hostedSpeech({ host, token }, text, voice, instructions) {
   return { audio: json.audio, words: json.words || [] };
 }
 
-const HOSTED_BACKOFF_MS = [1000, 3000, 8000];
-
-// Retry 5xx and network faults on that backoff; a 4xx (incl. the 429 daily cap)
-// is the server's verdict on this request, so surface it at once.
+// Retry 5xx once with backoff; surface the server's error (incl. 429 daily cap).
 async function hostedFetch(url, opts, attempt = 0) {
-  let res;
-  try {
-    res = await fetch(url, opts);
-  } catch (e) {
-    if (attempt >= HOSTED_BACKOFF_MS.length) throw new Error(`hosted VO unreachable: ${e.message}`);
-    await sleep(HOSTED_BACKOFF_MS[attempt]);
-    return hostedFetch(url, opts, attempt + 1);
-  }
+  const res = await fetch(url, opts);
   if (res.ok) return res;
   const body = await res.text().catch(() => '');
-  if (res.status >= 500 && attempt < HOSTED_BACKOFF_MS.length) {
-    await sleep(HOSTED_BACKOFF_MS[attempt]);
+  if (res.status >= 500 && attempt < 1) {
+    await sleep(1500 * (attempt + 1));
     return hostedFetch(url, opts, attempt + 1);
   }
   let msg = body;

@@ -188,7 +188,7 @@ async function checkSips() {
 }
 
 // Run every check in sequence and return the results array.
-export async function runChecks() {
+async function runChecks() {
   const results = [];
   results.push(await checkNode());
   results.push(await checkFfmpeg());

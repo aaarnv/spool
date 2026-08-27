@@ -29,10 +29,6 @@ export function validateStepsModule(mod, stepsFile) {
       );
     }
   });
-  // A path to a gitignored storage-state file. Values here would be a credential leak.
-  if (config.storageState != null && typeof config.storageState !== 'string') {
-    throw new Error(`${stepsFile}: config.storageState must be a path string, not inline state`);
-  }
   if (config.prep != null && typeof config.prep !== 'function') {
     throw new Error(`${stepsFile}: config.prep must be an async function`);
   }

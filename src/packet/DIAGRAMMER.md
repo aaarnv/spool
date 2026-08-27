@@ -19,28 +19,14 @@ the single worst defect in these videos. If a beat feels like it has no
 mechanism, you have not looked hard enough: draw the state it leaves behind,
 the thing that stays broken, or the shape of what the beat asks for.
 
-EVERY BOX HOLDS A REAL ARTIFACT. A box is a card, not an empty rectangle. Its
-`label` names the part; at least one `badge` INSIDE it carries the artifact the
-change is actually about. You are given THE CHANGE ITSELF below the beats: the
-diff, or the plan packet. Take the artifact from there, verbatim:
-
-- a code identifier: `renderRecapVideo`, `SPOOL_FREE_CLOUD_CAP`, `.dockerignore`
-- a value: `crf 17`, `8 Mbps`, `60s`, `retries = 5`
-- a state: `status queued`, `recap_enabled`, `unlisted`
-- a count: `40 files`, `3 attempts`, `20 rows`
-
-A box with a label and nothing inside it is the single worst defect in these
-videos, and both the lint and the frame gate reject it. Never invent an artifact:
-if a name is not in the change below, do not draw it.
-
-Never fill a beat with a box whose label repeats a phrase the narration already
-says — the caption is already saying it. The label names the part, the badge
-carries the fact, the caption says the sentence.
+Panels carry mechanism, not words. Never fill a beat with a box whose label
+repeats a phrase the narration already says — the caption is already saying it.
+Show the parts, the flow between them, and the mark that says what went wrong.
 
 Return ONLY a JSON array, one entry per beat, same order:
 [{"beat": "<beat name>", "diagram": null | {"shapes": [...], "anims": [...]}}]
 
-Canvas is 480x480. Shapes (each needs a unique "id"):
+Canvas is 480x260. Shapes (each needs a unique "id"):
 - {"id","type":"box","x","y","w","h","stroke":"<hex>","label":"<text above>"}   solid dark panel + sketchy border
 - {"id","type":"squiggle","x","y","color"}                                       two wavy lines (a "rule"/content), ~110 wide
 - {"id","type":"doc","x","y","stroke"}                                           document with text lines, 120x150
@@ -50,13 +36,8 @@ Canvas is 480x480. Shapes (each needs a unique "id"):
 - {"id","type":"wire","x1","y1","x2","y2","color","dashed":true}                 connection line
 - {"id","type":"cross","x","y","color"}                                          a big X, centered at x,y
 - {"id","type":"shield","x","y","color","angle":<deg>}                           a barrier bar, centered at x,y
-- {"id","type":"badge","x","y","text","color"}                                   the artifact inside a box
+- {"id","type":"badge","x","y","text","color"}                                   small text callout
 - {"id","type":"dot","x","y","color"}                                            filled circle (a ping, a pending marker)
-
-MARKS GO ON THE SPACE BETWEEN PANELS. A dot or a shield whose centre lands inside a
-box prints over that box's title or its badge and reads as a smudge. Put a dot on a
-wire or in the gap between two panels, and put a shield on the arrow it stops,
-between the boxes. The linter rejects a dot or a shield drawn inside a panel.
 
 CROSS vs SHIELD — get this right, it inverts the meaning of the frame.
 - cross = this thing is GONE or this path FAILED. Put it ON the thing that dies.
@@ -76,18 +57,6 @@ The two look different on purpose and a viewer reads them at a glance.
 Only box, person, arrow and badge carry text. A "label" on any other shape is
 dropped silently, so put it on the box, person or arrow it belongs to.
 
-BADGES. A badge is the content of a box, so its x,y must sit INSIDE that box's
-rectangle, in the LOWER half, below the box's own title. A badge floating on the
-background is rejected: it reads as a word dropped on stock footage.
-Badge text is at most 24 characters and at most 6 words, and it must also fit the
-box it sits in. WIDEN THE BOX to hold the artifact whenever the row has the space:
-two boxes can each be 200 wide, which holds 24 characters. Shorten the artifact
-only when a three-box row leaves no room, and shorten by cutting, not by
-paraphrasing: `account?: ReactNode` becomes `account?:`, and
-`SPOOL_FREE_CLOUD_CAP=3` becomes `cap = 3`.
-One badge per box, or two when the pair IS the point (before and after, two
-counts). Never repeat the box's own label in its badge.
-
 Anims (applied to shape ids; "at" is seconds into the beat, "dur" seconds):
 - {"target","effect":"pop","at","dur"}        scale-in with overshoot
 - {"target","effect":"drawOn","at","dur"}     strokes draw themselves
@@ -97,12 +66,7 @@ Anims (applied to shape ids; "at" is seconds into the beat, "dur" seconds):
 
 GEOMETRY. Every shape has a FIXED footprint and x,y is not the same corner for
 all of them. This is where specs fail most often, so compute it, do not eyeball
-it. The usable area is x 12..468 and y 12..468.
-
-FILL THE CANVAS. The canvas is SQUARE and the frame gives the diagram a tall band,
-so a single row of boxes across the middle leaves most of that band empty and the
-diagram reads as a strip. Use the height: two rows of panels with the flow running
-down between them, or a row and the state it produces below it.
+it. The usable area is x 12..468 and y 12..248.
 
   type       x,y is        footprint the linter checks
   box        top-left      w x h  (default 160x120)
@@ -115,46 +79,30 @@ down between them, or a row and the state it produces below it.
   dot        centre        18 x 18, from x-9, y-9
   arrow/wire endpoints     not bounds-checked, but keep them on canvas
 
-So a doc at y=350 ends at 500 and is OFF CANVAS — its top-left y cannot exceed
-318. A person at x=11 starts at -14 and is off canvas — its x cannot go below 37.
+So a doc at y=130 ends at 280 and is OFF CANVAS — its top-left y cannot exceed
+98. A person at x=11 starts at -14 and is off canvas — its x cannot go below 37.
 A box 160 wide cannot start past x=308.
 
-A SAFE DEFAULT that always fits and uses the whole canvas: boxes at (24,50) and
-(256,50), both 200x140, with badges at (124,140) and (356,140); an arrow between
-them at (224,120)->(256,120); a third box at (140,290) 200x140 with a badge at
-(240,380); an arrow down to it at (240,190)->(240,290); and a mark (cross, shield
-or dot) at (300,240). Vary it, but check every shape against the table above
-before you return.
-
-A box that carries a badge must be at least 136 wide and 100 tall, or the text
-will not fit under its title. The badge budget is the box width minus 20, at about
-7.5px a character: a 200-wide box holds 24 characters, a 180-wide box 21, a
-160-wide box 18, and a 136-wide box 15. Count the characters of every badge and
-size its box to fit BEFORE you place it.
+A SAFE DEFAULT that always fits: two boxes at (30,60) and (280,60), both
+160x120, an arrow between them at (195,120)->(275,120), and a mark (cross,
+shield or dot) at (235,190). Vary it, but check every shape against the table
+above before you return.
 
 PANELS MUST NOT COLLIDE. This is the most common rejection after bounds. box, doc
 and phone are solid panels: either one sits FULLY inside another (a row inside a
 screen) or their rectangles do not touch at all. Half-overlapping two panels is
-rejected every time. Leave at least 24px of clear space between panel edges, and
-remember doc is 120x150 and phone is 110x125 whatever you intended. Panels closer
-than 24px leave their arrow no length once it docks to their borders, so the row
-draws as one slab with no flow through it, and the linter rejects that too.
+rejected every time. Leave at least 20px of clear space between panel edges, and
+remember doc is 120x150 and phone is 110x125 whatever you intended.
 
-Two panels: (24,60) 200x140 and (256,60) 200x140 — 32px apart, safe, and wide
-enough for a 24-character badge in each.
-Three panels: (12,60) 136x140, (172,60) 136x140, (332,60) 136x140 — 24px apart,
-the tightest legal row. Do not add a fourth panel to a row; use a second row.
+Two panels: (30,60) 160x120 and (280,60) 160x120 — 90px apart, safe.
+Three panels: (16,70) 140x110, (170,70) 140x110, (324,70) 140x110 — 14px apart,
+tight but legal. Do not add a fourth panel to a row; use a mark instead.
 
 Spread left/right for two-sided mechanisms.
-Box and arrow labels are 1-4 words, lowercase, conversational — the renderer
-measures and stacks them, but a long label still crowds the frame. Badges keep
-the change's own casing, because `MAX_FILE_BYTES` lowercased is not the name of
-anything. At least 3 shapes per diagram. The renderer retimes every reveal onto the
-beat's own narration window, so anims choose the EFFECT and the pacing is not yours
-to set: the whole diagram lands inside the first 40% of the beat, sources first.
-
-FLOWS NEVER CROSS. Two arrows meeting in an X reads as a mechanism that doubles
-back. Place the boxes so every flow runs clear of every other one.
+Labels are 1-4 words, lowercase, conversational — the renderer measures and
+stacks them, but a long label still crowds the frame. At least 3 shapes per
+diagram. Stagger anims so the diagram assembles WITH the narration, first
+element within 0.3s.
 
 Colors: green #7ee787 (good/truth), red #ff7b72 (bad/dead), yellow #ffd166
 (action/change), purple #c9a0ff (signals), grey #8b97a8 (neutral).

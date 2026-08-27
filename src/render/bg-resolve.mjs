@@ -16,7 +16,7 @@ import { mkdir, readdir, copyFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, dirname, resolve, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BG_PRESETS, DEFAULT_BG, DEFAULT_MAC_WALLPAPER } from "./bg-presets.mjs";
+import { BG_PRESETS, DEFAULT_BG } from "./bg-presets.mjs";
 
 const exec = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -79,8 +79,7 @@ async function toCachedJpg(key, srcPath) {
  * Never throws on a bad spec — unresolvable specs fall back to the default preset.
  */
 export async function resolveBgSource(bg) {
-  // No spec: the real macOS wallpaper when this machine has it, else the sky preset.
-  if (!bg) bg = (await scanMacWallpapers()).has(DEFAULT_MAC_WALLPAPER) ? DEFAULT_MAC_WALLPAPER : DEFAULT_BG;
+  if (!bg) return presetSource(DEFAULT_BG);
   if (BG_PRESETS[bg]) return presetSource(bg);
 
   // macOS wallpaper by (normalized) name.

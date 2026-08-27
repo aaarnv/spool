@@ -12,26 +12,27 @@
 // lane runs sloplint wrapped in those extra rules (recaplint.mjs) and the plan lane is
 // left exactly as calibrated.
 //
-// The diagram stage is reused verbatim (`authorDiagrams`). What differs is the CHANGE
-// handed to it beside the beats: a plan lane passes its packet, this lane passes the
-// trimmed diff, so a box can hold an identifier the model actually read.
+// The diagram stage is reused verbatim. DIAGRAMMER.md reads BEATS and nothing else:
+// it never sees the packet, so it cannot tell a plan's beats from a recap's, and a
+// second copy of that prompt would be a second copy of the geometry rules to drift.
 import { readFile } from 'node:fs/promises';
 import {
   DEFAULT_DIAGRAM,
   DEFAULT_SCRIPT,
   ESCALATE,
-  authorDiagrams,
   complete,
   gated,
   resolveKey,
 } from '../packet/author.mjs';
 import { lintRecapBeats } from './recaplint.mjs';
-import { renderDiagramDiff, renderDiff, DIAGRAM_DIFF_CHARS } from './pr.mjs';
-import { deriveUnderstanding, renderRecapContext } from './context.mjs';
+import { lintDiagrams, repairDiagrams } from '../packet/diaglint.mjs';
+import { renderDiff } from './pr.mjs';
 
 const PROMPTS = new URL('../packet/', import.meta.url);
 
 const SCRIPT_ATTEMPTS = 3;
+const DIAGRAM_ATTEMPTS = 4;
+const ESCALATE_AFTER = 2;
 
 const readPrompt = (name) => readFile(new URL(name, PROMPTS), 'utf8');
 
@@ -46,7 +47,7 @@ const readPrompt = (name) => readFile(new URL(name, PROMPTS), 'utf8');
  * screen to show, so the mockup lane has nothing to draw; a diff about a UI change is
  * still a MECHANISM story here, because the screen it changed is not ours to render.
  */
-export async function authorRecapVideo({ pr, context = null, model, script: scriptTier, diagram: diagramTier, key, log = console.error } = {}) {
+export async function authorRecapVideo({ pr, model, script: scriptTier, diagram: diagramTier, key, log = console.error } = {}) {
   const apiKey = await resolveKey(key);
   if (!apiKey) throw new Error('recap authoring needs OPENAI_API_KEY (env, ./.env, or "openaiKey" in ~/.spool.json)');
   if (!pr) throw new Error('authorRecapVideo: pr required');
@@ -55,8 +56,7 @@ export async function authorRecapVideo({ pr, context = null, model, script: scri
   const cheapCfg = diagramTier ?? (model ? { model, effort: null } : DEFAULT_DIAGRAM);
   const strongCfg = model ? cheapCfg : ESCALATE;
 
-  const repositoryContext = renderRecapContext(context);
-  const diff = [renderDiff(pr), repositoryContext].filter(Boolean).join('\n\n');
+  const diff = renderDiff(pr);
   const scriptPrompt = await readPrompt('RECAPPER.md');
   const script = await gated({
     attempts: SCRIPT_ATTEMPTS,
@@ -75,12 +75,28 @@ export async function authorRecapVideo({ pr, context = null, model, script: scri
       }),
   });
 
-  // The diagram diff is the dominant input to the dominant cost, so its size is
-  // reported rather than inferred from the bill.
-  const diagramDiff = renderDiagramDiff(pr);
-  log(`[recap] diagram diff: ${diagramDiff.length} chars (cap ${DIAGRAM_DIFF_CHARS})`);
-  const drawing = { beats: script.value, context: diagramDiff, key: apiKey, cheap: cheapCfg, strong: strongCfg, log };
-  const diagrams = await authorDiagrams(drawing);
+  const diagramPrompt = await readPrompt('DIAGRAMMER.md');
+  const diagrams = await gated({
+    attempts: DIAGRAM_ATTEMPTS,
+    label: 'diagram lint',
+    log,
+    lint: (spec) => lintDiagrams(spec, script.value),
+    repair: (spec) => {
+      const { spec: fixed, repairs } = repairDiagrams(spec);
+      for (const r of repairs) log('  repaired ' + r);
+      return fixed;
+    },
+    tierFor: (attempt) => (attempt < ESCALATE_AFTER ? cheapCfg : strongCfg),
+    draft: (extra, tier) =>
+      complete({
+        key: apiKey,
+        model: tier.model,
+        effort: tier.effort,
+        envelope: 'diagrams',
+        system: diagramPrompt + extra,
+        user: `BEATS:\n${JSON.stringify(script.value)}`,
+      }),
+  });
 
   return {
     mode: 'commentary',
@@ -91,12 +107,5 @@ export async function authorRecapVideo({ pr, context = null, model, script: scri
     shots: [],
     attempts: { script: script.attempts, diagrams: diagrams.attempts },
     models: { script: script.used, diagrams: diagrams.used },
-    // Taste findings the gate accepted on its last attempt. Carried so the job can
-    // record what shipped imperfect rather than losing it to the worker's log.
-    warnings: [...(script.warnings || []), ...(diagrams.warnings || [])],
-    // The frame gate's way back in: same beats, same VO, diagrams redrawn with the
-    // pixel findings in hand.
-    redraw: async (findings) => (await authorDiagrams({ ...drawing, priorFindings: findings })).value,
-    understanding: deriveUnderstanding({ pr, beats: script.value, context }),
   };
 }

@@ -56,7 +56,6 @@ export const config = {
   viewport: { width: 1600, height: 900 },  // optional, this is the default (16:9 fills the rendered frame best)
   title: "Finishing Lab walkthrough",      // optional, used for title card
   format: "wide",                          // optional, "wide" (1920x1080, the default) | "vertical" (1080x1920)
-  storageState: "auth.json",               // optional, PATH to a Playwright storageState file (never inline cookies)
   // optional: runs before step 0, recorded but not narrated (login, seeding)
   prep: async (page, h) => {},
 
@@ -221,15 +220,6 @@ Endpoints (JSON in/out; page ops are serialized so requests can't interleave):
 - Actions before the first `/step` (page load, login, prep) are recorded but fall **outside
   step 0's window** (dropped by the renderer), matching the scripted pre-step-0 behavior.
   Those `/js` snippets become `config.prep` in the generated `steps.mjs`.
-- A `/step` or `/marker` naming a `chapterId` that is not one of `context`, `outcome`,
-  `approach`, `risks`, `decision` is recorded as `context` and the response carries a
-  `warning`. The session also prints every refused control call to stderr, so a fumbled
-  curl can never silently cost the take its narration.
-- Login state never enters `steps.mjs`. Any snippet that touches cookies or tokens is
-  replaced by a redaction comment in the snapshot; the session's Playwright storage state
-  is written to `auth.json` in the workdir instead and named by `config.storageState`.
-  `auth.json` is gitignored and is in no share bundle or publish grant. Start a session
-  already signed in with `spool live <dir> --auth <storageState.json>` (or `SPOOL_AUTH_STATE`).
 - Timeout safety: if no request arrives for **5 minutes**, the session finalizes as if `/end`
   were called (no leaked headless browser).
 
@@ -243,8 +233,7 @@ export const config = {
   url: "http://localhost:4747",
   viewport: { width: 1600, height: 900 },
   title: "…",
-  storageState: "auth.json",               // present when the session had a login
-  prep: async (page, h) => { /* pre-step-0 snippets, credentials redacted */ },
+  prep: async (page, h) => { /* pre-step-0 snippets */ },
 };
 export const steps = [
   { name: "…", narration: "…", zoom: "none", run: async (page, h) => { /* the /js snippets that succeeded, in order */ } },
@@ -2871,18 +2860,6 @@ re-render matches):
 `planTheme` is written only for a plan workdir. `vertical` is written only when `format` is
 `vertical`. Both snapshot resolved authoring fields, so a worker re-render with no
 `steps.mjs` in the workdir frames the output identically.
-
-**`layers/fg.webm`** (written beside `final.mp4`, and recorded in `render.json` as
-`"fg": "layers/fg.webm"`). The same composite as `final.mp4` with the wallpaper left out:
-card chrome, footage, cursor, ripples, zoom/pan, captions and the vertical hook/CTA, in VP9
-with alpha at the render's fps. It is a second output of the one filtergraph, so the
-footage is decoded and zoomed once for both. Audio lives in `final.mp4` only.
-
-The layer exists so a background change is one overlay pass (`src/render/bg-swap.mjs`)
-instead of a re-render — the flattened result measures SSIM 0.997 against a full render of
-the same take. It is skipped for plan workdirs (no wallpaper to swap), previews, and
-`--rate` takes (the layer would need the same speed pass); those keep re-rendering. Decode
-it with `-c:v libvpx-vp9`, since the default vp9 decoder drops the alpha channel.
 
 **Retiming (record-first).** The capture is natural-speed; the renderer maps each step
 onto an output window and concatenates them from t=0:

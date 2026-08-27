@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -197,11 +197,8 @@ test('visual baseline manifest covers every card and source mode in every direct
   ]).sort();
   assert.deepEqual(manifest.baselines.map((item) => item.file).sort(), expected);
 
-  // The rendered baselines live in docs/design, which the OSS mirror strips.
-  const baselineDir = join(here, '..', 'docs/design/r2-directions');
-  if (!existsSync(baselineDir)) return;
   for (const baseline of manifest.baselines) {
-    const file = join(baselineDir, baseline.file);
+    const file = join(here, '..', 'docs/design/r2-directions', baseline.file);
     const info = await stat(file);
     assert.ok(info.size > 10_000, `${baseline.file} is not a rendered baseline`);
   }

@@ -1,13 +1,13 @@
 {
   "name": "@spoolkit/cli",
-  "version": "0.4.0",
+  "version": "0.3.1",
   "description": "Agents record their own spools: real browser video, AI voiceover, word-synced captions, ffmpeg-rendered MP4. No human hits record.",
   "type": "module",
   "bin": {
     "spool": "bin/spool.mjs"
   },
   "homepage": "https://spoolkit.dev",
-  "license": "FSL-1.1-Apache-2.0",
+  "license": "MIT",
   "keywords": [
     "spool",
     "walkthrough",
@@ -25,10 +25,6 @@
     "mcp",
     "templates",
     "assets",
-    "skills",
-    "docs/video/comp/layout.mjs",
-    "docs/video/comp/skia",
-    "docs/video/comp/GeistMono.woff2",
     "README.md",
     "LICENSE"
   ],

@@ -86,7 +86,7 @@ async function resolveRenderPlan(dir, { rate = 1, bg = null, format = null, fps 
 
 // The render.json a plan stamps: the rate final.mp4 runs on, which canvas was used,
 // the format, and (vertical) the resolved authoring fields a re-render needs.
-function planStamp({ rate, bgSource, fmt, fps, vertical, musicTag, planTheme }, extra = {}) {
+function planStamp({ rate, bgSource, fmt, fps, vertical, musicTag, planTheme }) {
   return {
     rate: rate && rate !== 1 ? rate : 1,
     bg: bgSource.tag,
@@ -96,7 +96,6 @@ function planStamp({ rate, bgSource, fmt, fps, vertical, musicTag, planTheme }, 
     fps,
     ...(planTheme ? { planTheme } : {}),
     ...(vertical ? { vertical: { hook: vertical.hook, cta: vertical.cta, music: musicTag } } : {}),
-    ...extra,
   };
 }
 
@@ -245,17 +244,13 @@ async function renderSpoolInner(opts) {
     await mkdir(join(dir, "share"), { recursive: true });
   }
   const speedUpNeeded = !preview && rate && rate !== 1;
-  // The alpha foreground (every layer but the wallpaper) rides beside final.mp4 so a
-  // later background change is one overlay pass. A plan take has no wallpaper to swap,
-  // and a --rate take would need the layer sped up in lockstep, so both keep re-rendering.
-  const fgOut = master && !isPlan && !speedUpNeeded ? join(dir, "layers", "fg.webm") : null;
   // At natural speed render straight to final.mp4; otherwise to an intermediate
   // that the speed pass consumes.
   const renderOut = speedUpNeeded ? join(dir, "render.mp4") : finalOut;
   const t0 = Date.now();
   let renderedFrames;
 
-  const res = await renderFfmpeg({ dir, props: inputProps, out: renderOut, preview, master, fgOut });
+  const res = await renderFfmpeg({ dir, props: inputProps, out: renderOut, preview, master });
   renderedFrames = res.frames;
 
   if (speedUpNeeded) {
@@ -273,10 +268,7 @@ async function renderSpoolInner(opts) {
   // Stamp the rate + bg + format so `spool share`/re-renders know final.mp4's clock
   // differs from timeline.json/video.mp4, which canvas was used, and (vertical) the
   // authored hook/cta/music a worker re-render has no steps.mjs to read.
-  await writeFile(
-    join(dir, "render.json"),
-    JSON.stringify(planStamp(plan, fgOut ? { fg: "layers/fg.webm" } : {}), null, 2) + "\n"
-  );
+  await writeFile(join(dir, "render.json"), JSON.stringify(planStamp(plan), null, 2) + "\n");
 
   // Wall clock is the only handle on render cost; the Fly worker's 32-minute vertical
   // was invisible because this path never timed itself.
