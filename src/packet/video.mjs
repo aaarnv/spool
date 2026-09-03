@@ -3,9 +3,8 @@
 // docs/video/tools/make-video.mjs, arranged so a render worker can run it:
 // author (OpenAI, gated) → VO → skia comp render → share bundle.
 //
-// The comp renderer and its ambient pool live under docs/video/comp, which the npm
-// package does not ship. `compRoot()` says so out loud rather than failing deep in a
-// spawn, because packet rendering is a platform capability, not a CLI one.
+// The comp renderer under docs/video/comp ships with the package; its ambient pool
+// does not, so footage ground stays a platform capability.
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -15,6 +14,7 @@ import { join, relative } from 'node:path';
 import { generateVO } from '../vo/tts.mjs';
 import { shareSpool } from '../share/share.mjs';
 import { authorPacketVideo, inferMode, inferVisual } from './author.mjs';
+import { lintFrames } from './framelint.mjs';
 
 export const PACKET_FPS = 60;
 export const PACKET_FORMAT = 'vertical';
@@ -29,13 +29,14 @@ export function compRoot() {
 export function assertComp() {
   if (!compRoot()) {
     throw new Error(
-      'packet rendering needs the comp renderer at docs/video/comp, which the published CLI does not ship — render the packet on spoolkit.dev instead'
+      'packet rendering needs the comp renderer at docs/video/comp, which this install is missing — reinstall @spoolkit/cli, or render the packet on spoolkit.dev'
     );
   }
 }
 
 // Measured on the worker image: ~1.1GB resident per stripe (a 1080x1920 RGBA canvas
-// plus that stripe's own ffmpeg decoding the ambient clip), over a ~250MB floor.
+// plus that stripe's own x264), over a ~250MB floor. Held at the pre-brand-ground
+// figure, which is the safe direction: footage mode still adds an ffmpeg decode.
 const RAM_PER_WORKER = 1.25 * 1024 * 1024 * 1024;
 const RAM_FLOOR = 512 * 1024 * 1024;
 
@@ -58,12 +59,15 @@ function memoryBudget() {
  * workstation and fatal in a container: an 18-core box capped at 8GB asks for nine
  * stripes, needs ~10GB, and gets them SIGKILLed mid-encode. Cores still cap it —
  * memory only ever lowers the number.
+ *
+ * One stripe per core, not one per two. The halving predated the memory guard and
+ * left half of a 4-core render machine idle; memory is the real ceiling now.
  */
 export function skiaWorkers() {
   const env = Number(process.env.SPOOL_SKIA_WORKERS);
   if (Number.isFinite(env) && env > 0) return Math.floor(env);
   const byRam = Math.floor((memoryBudget() - RAM_FLOOR) / RAM_PER_WORKER);
-  return Math.max(1, Math.min(Math.floor(cpus().length / 2), byRam));
+  return Math.max(1, Math.min(cpus().length, byRam));
 }
 
 const run = (cmd, args, opts) =>
@@ -157,33 +161,69 @@ export async function renderAuthoredVideo({
   await writeFile(join(workdir, 'timeline.json'), JSON.stringify(timeline, null, 2) + '\n');
 
   const root = compRoot();
-  const { pickAmbient } = await import(new URL('ambient.mjs', `file://${root}`).href);
-  const ambient = pickAmbient(bg, seed || title || 'packet');
-  log(`[${tag}] rendering ${timeline.duration}s at ${fps}fps (bg ${ambient.slug})...`);
+  // The brand ground is drawn in the scene. Footage is opt-in, and only then does the
+  // ambient pool get loaded or an ffmpeg overlay get built.
+  const ground = process.env.SPOOL_GROUND || 'brand';
+  let ambient = null;
+  if (ground === 'footage') {
+    const { pickAmbient } = await import(new URL('ambient.mjs', `file://${root}`).href);
+    ambient = pickAmbient(bg, seed || title || 'packet');
+  }
+  log(`[${tag}] rendering ${timeline.duration}s at ${fps}fps (ground ${ambient ? ambient.slug : ground})...`);
 
   const out = join(workdir, 'final.mp4');
   // A packet render IS the final cut, so it encodes at the master tier. Without this
   // the worker fell back to the draft encoder, and a published video was the only
   // final.mp4 in the product that was not a master.
-  await run(process.execPath, [join(root, 'skia', 'render-skia.mjs'), join(root, 'skia', 'scene-auto.mjs'), workdir, out, String(fps), '--master'], {
-    env: {
-      ...process.env,
-      SPOOL_SKIA_WORKERS: String(skiaWorkers()),
-      SPOOL_AMBIENT_FILE: ambient.src,
-      SPOOL_AMBIENT_DUR: String(ambient.clipDur),
-      SPOOL_AMBIENT_DIM: String(ambient.dim ?? 1),
-    },
-  });
-  await rm(join(workdir, `.skia-final`), { recursive: true, force: true }).catch(() => {});
+  const encode = async () => {
+    await run(process.execPath, [join(root, 'skia', 'render-skia.mjs'), join(root, 'skia', 'scene-auto.mjs'), workdir, out, String(fps), '--master'], {
+      env: {
+        ...process.env,
+        SPOOL_SKIA_WORKERS: String(skiaWorkers()),
+        SPOOL_GROUND: ground,
+        ...(ambient ? {
+          SPOOL_AMBIENT_FILE: ambient.src,
+          SPOOL_AMBIENT_DUR: String(ambient.clipDur),
+          SPOOL_AMBIENT_DIM: String(ambient.dim ?? 1),
+        } : {}),
+      },
+    });
+    await rm(join(workdir, `.skia-final`), { recursive: true, force: true }).catch(() => {});
+  };
+  await encode();
+
+  // The frame gate. Everything before this judged a spec; this is the first thing in
+  // the lane that looks at the rendered pixels, so it is the first thing that can see
+  // an empty box. A failure buys exactly one redraw, because the beats and the VO are
+  // already correct and only the diagram layer is being asked again.
+  const gateWarnings = [];
+  if (authored.visual !== 'mockup') {
+    let gate = await lintFrames({ video: out, workdir, log });
+    if (gate.findings.length && typeof authored.redraw === 'function') {
+      log(`[${tag}] frame gate: ${gate.findings.length} finding(s), redrawing the diagrams`);
+      for (const m of gate.findings) log('  ' + m);
+      authored.diagrams = await authored.redraw(gate.findings);
+      await writeFile(join(workdir, 'diagrams.json'), JSON.stringify(authored.diagrams, null, 2) + '\n');
+      await encode();
+      gate = await lintFrames({ video: out, workdir, log });
+    }
+    for (const w of gate.warnings) log(`[${tag}] frame gate warning: ${w}`);
+    gateWarnings.push(...gate.warnings);
+    if (gate.findings.length) {
+      throw new Error(`frame lint failed after one re-author (${gate.findings.length} finding(s)): ${gate.findings.join(' | ')}`);
+    }
+    log(`[${tag}] frame gate: clean`);
+  }
 
   // The render stamp share.mjs and any later cloud edit read back.
   await writeFile(
     join(workdir, 'render.json'),
-    JSON.stringify({ rate: 1, bg: ambient.slug, format: PACKET_FORMAT, fps, visual: authored.visual, ...stamp }, null, 2) + '\n'
+    JSON.stringify({ rate: 1, bg: ambient ? ambient.slug : ground, format: PACKET_FORMAT, fps, visual: authored.visual, ...stamp }, null, 2) + '\n'
   );
 
   const shareDir = await shareSpool(workdir);
-  return { shareDir, out, visual: authored.visual, beats: authored.beats.length, duration: timeline.duration, title };
+  return { shareDir, out, visual: authored.visual, beats: authored.beats.length, duration: timeline.duration, title,
+    warnings: [...(authored.warnings || []), ...gateWarnings] };
 }
 
 /**

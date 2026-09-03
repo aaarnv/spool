@@ -5,10 +5,11 @@ swipeable developer feed. One swipe, one change, caught up.
 
 Two producers make them and they must produce the same artifact:
 
-- **Local agent** (first class): an agent that just shipped a user-visible change records the recap
-  while the app is still running and it still remembers what it did.
-- **CI on merge**: `.github/workflows/recap.yml` runs the same flow from a fresh runner after
-  a PR merges.
+- **The `spoolkit` GitHub App** (how recaps are actually made today): a PR merge queues a
+  `render_recap` job (`web/lib/recapEnqueue.ts`) and the worker (`worker/index.mjs`) renders a
+  vertical diagram video from the diff, then comments the watch link on the PR. No capture.
+- **Local agent**: an agent records a vertical spool by hand when somebody asks for a
+  walkthrough of the change while the app is still running.
 
 A recap is **not a new CLI mode**. It is an ordinary vertical spool (`--format vertical`) with a
 fixed shape, a fixed register, and a fixed length budget. This file pins that shape so both
@@ -299,7 +300,8 @@ recap the entry point to the whole change rather than a dead end.
 
 Publish defaults apply unchanged: automatic at the end of `spool finish`, lint errors block, a 402
 means the free plan's published-spool limit is reached (relay that message verbatim, do not retry).
-The limit counts LIVE spools only, so a failed recap render never consumes a slot.
+The limit counts LIVE spools published in the current UTC month only, so a failed recap render
+never consumes a slot and last month's spools do not either.
 
 ## Degradation rules
 

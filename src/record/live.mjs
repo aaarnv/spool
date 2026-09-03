@@ -25,6 +25,13 @@ const SETTLE_MS = 1000; // after goto, let first paint/layout settle
 const STEP_SETTLE_MS = 250; // per-step end-state settle (same as the scripted harness)
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // finalize a forgotten session instead of leaking a browser
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+export const AUTH_FILE = 'auth.json'; // storage state; gitignored, never shared or published
+
+// A login snippet carries live cookie/token values. Those must never be written
+// into steps.mjs; the session's storage state goes to auth.json instead.
+const SECRETISH = /addCookies\s*\(|document\.cookie\s*=|storageState|(?:local|session)Storage\.setItem\s*\(\s*['"`][^'"`]*(?:token|auth|session|jwt|secret|key)/i;
+const REDACTED = `// [redacted login snippet]. Credentials are never written here.\n// Session state is saved to ${AUTH_FILE}; re-run with \`spool live --auth ${AUTH_FILE}\`.`;
+const scrub = (code) => (SECRETISH.test(code) ? REDACTED : code);
 
 const errln = (s) => process.stderr.write(s + '\n');
 const indent = (code, n) =>
@@ -36,8 +43,10 @@ function serializeConfig(config, prep) {
     `  viewport: { width: ${vp.width}, height: ${vp.height} },`];
   if (config.title) lines.push(`  title: ${JSON.stringify(config.title)},`);
   if (config.format) lines.push(`  format: ${JSON.stringify(config.format)},`);
+  // A path, never the values: the file it names is gitignored and out of every bundle.
+  if (config.storageState) lines.push(`  storageState: ${JSON.stringify(config.storageState)},`);
   if (prep && prep.length) {
-    lines.push('  prep: async (page, h) => {', prep.map((c) => indent(c, 4)).join('\n'), '  },');
+    lines.push('  prep: async (page, h) => {', prep.map((c) => indent(scrub(c), 4)).join('\n'), '  },');
   }
   lines.push('};');
   return lines.join('\n');
@@ -46,7 +55,7 @@ function serializeConfig(config, prep) {
 function serializeSteps(steps) {
   const body = steps.map((s) => {
     const run = s.snippets && s.snippets.length
-      ? s.snippets.map((c) => indent(c, 6)).join('\n')
+      ? s.snippets.map((c) => indent(scrub(c), 6)).join('\n')
       : '      // no recorded actions';
     return ['  {', `    name: ${JSON.stringify(s.name)},`,
       ...(s.chapterId ? [`    chapterId: ${JSON.stringify(s.chapterId)},`] : []),
@@ -136,7 +145,7 @@ function readBody(req) {
  * Boot a live recording session and serve its control API on 127.0.0.1:<ephemeral>.
  * Resolves when the session is finalized (via /end or the idle timeout).
  */
-export async function liveSession({ workdir, url, title, format, headed = false }) {
+export async function liveSession({ workdir, url, title, format, auth, headed = false }) {
   const dir = path.resolve(workdir);
   await mkdir(dir, { recursive: true });
 
@@ -153,6 +162,18 @@ export async function liveSession({ workdir, url, title, format, headed = false 
   if (format || cfg.format) config.format = format || cfg.format;
   const viewport = config.viewport;
 
+  // Reuse a saved login instead of scripting one: --auth <storageState.json> or
+  // SPOOL_AUTH_STATE. Playwright loads it into the context; nothing is copied into steps.mjs.
+  const authInput = auth || process.env.SPOOL_AUTH_STATE || null;
+  let authState = null;
+  if (authInput) {
+    authState = path.resolve(authInput);
+    if (!existsSync(authState)) {
+      throw new Error(`spool live: --auth file not found: ${authState}`);
+    }
+    errln(`[live] loading login state from ${authState}`);
+  }
+
   const channel = await resolveLaunchChannel();
   // SPOOL_CAPTURE=cdp: high-quality CDP screencast -> capture.mp4 (see screencast.mjs);
   // default stays Playwright recordVideo -> video.webm.
@@ -161,7 +182,11 @@ export async function liveSession({ workdir, url, title, format, headed = false 
   // its sampled path. Off by default: the interpolated glide reads tweened.
   const renderCursor = cdpCapture && process.env.SPOOL_CURSOR === 'render';
   const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
-  const context = await browser.newContext({ viewport, ...(cdpCapture ? {} : { recordVideo: { dir, size: viewport } }) });
+  const context = await browser.newContext({
+    viewport,
+    ...(authState ? { storageState: authState } : {}),
+    ...(cdpCapture ? {} : { recordVideo: { dir, size: viewport } }),
+  });
   await context.addInitScript(cursorInitScript({ hidden: renderCursor }));
   const page = await context.newPage();
   // Fast-fail selectors: a fumbled /js snippet must not record 30s of dead air into the take.
@@ -260,16 +285,22 @@ export async function liveSession({ workdir, url, title, format, headed = false 
     current = null;
   }
 
+  // An unknown chapterId is a typo in a long curl. Rejecting it drops the step or
+  // marker, and the take loses that narration, so coerce and say so loudly instead.
+  function coerceChapterId(p, where) {
+    if (p.chapterId == null || isChapterId(p.chapterId)) return null;
+    const msg = `${where}: chapterId ${JSON.stringify(p.chapterId)} is not one of ${CHAPTER_IDS.join(', ')}; recorded as "context"`;
+    errln(`[live] ${msg}`);
+    p.chapterId = 'context';
+    return msg;
+  }
+
   async function doStep(p) {
     if (typeof p.name !== 'string' || !p.name.trim()) return { status: 400, body: { ok: false, error: 'name is required' } };
     if (typeof p.narration !== 'string' || !p.narration.trim()) {
       return { status: 400, body: { ok: false, error: 'narration is required (the renderer fits each step window to it)' } };
     }
-    // Optional plan chapter anchor. Rejected rather than dropped: a typo would
-    // publish a plan summary item that seeks nowhere.
-    if (p.chapterId != null && !isChapterId(p.chapterId)) {
-      return { status: 400, body: { ok: false, error: `chapterId must be one of: ${CHAPTER_IDS.join(', ')}` } };
-    }
+    const warning = coerceChapterId(p, 'step');
     await closeStep();
     signals.log({ kind: 'marker', name: p.name.trim(), ...(p.chapterId ? { chapterId: p.chapterId } : {}), narration: p.narration.trim() });
     // Default "none": a zoom guessed from clicks lands on whatever was pressed, which on a
@@ -283,16 +314,17 @@ export async function liveSession({ workdir, url, title, format, headed = false 
       clicks: [],
       snippets: [],
     };
-    return { status: 200, body: { ok: true, index: steps.length, name: current.name, ...chapterField(current), url: page.url() } };
+    return {
+      status: 200,
+      body: { ok: true, index: steps.length, name: current.name, ...chapterField(current), url: page.url(), ...(warning ? { warning } : {}) },
+    };
   }
 
   // A marker names a boundary without bracketing the work around it. The cut still
   // comes from the signals; this only says what to call it and where a chapter starts.
   function doMarker(p) {
     if (typeof p.name !== 'string' || !p.name.trim()) return { status: 400, body: { ok: false, error: 'name is required' } };
-    if (p.chapterId != null && !isChapterId(p.chapterId)) {
-      return { status: 400, body: { ok: false, error: `chapterId must be one of: ${CHAPTER_IDS.join(', ')}` } };
-    }
+    const warning = coerceChapterId(p, 'marker');
     if (p.narration != null && typeof p.narration !== 'string') {
       return { status: 400, body: { ok: false, error: 'narration must be a string when given' } };
     }
@@ -302,7 +334,7 @@ export async function liveSession({ workdir, url, title, format, headed = false 
       ...(p.chapterId ? { chapterId: p.chapterId } : {}),
       ...(p.narration && p.narration.trim() ? { narration: p.narration.trim() } : {}),
     });
-    return { status: 200, body: { ok: true, marker: sig.name, at: sig.t, url: page.url() } };
+    return { status: 200, body: { ok: true, marker: sig.name, at: sig.t, url: page.url(), ...(warning ? { warning } : {}) } };
   }
 
   // Failure forensics: screenshot + recent telemetry (+ candidates on locator-ish
@@ -383,6 +415,16 @@ export async function liveSession({ workdir, url, title, format, headed = false 
         .sort((a, b) => a.t - b.t);
       if (cursor.length) timeline.cursor = cursor;
     }
+    // Login state to its own file, so steps.mjs points at it by path instead of
+    // carrying cookie values. Gitignored, and in no share bundle or publish grant.
+    try {
+      const st = await context.storageState();
+      if ((st.cookies || []).length || (st.origins || []).length) {
+        await writeFile(path.join(dir, AUTH_FILE), JSON.stringify(st, null, 2) + '\n', { mode: 0o600 });
+        config.storageState = AUTH_FILE;
+        errln(`[live] login state -> ${path.join(dir, AUTH_FILE)} (gitignored; never shared or published)`);
+      }
+    } catch { /* best-effort: a take with no login simply has no auth.json */ }
     if (capture) {
       const cap = await capture.stop();
       timeline.video = cap.file;
@@ -446,6 +488,11 @@ export async function liveSession({ workdir, url, title, format, headed = false 
   }
 
   function sendJson(res, statusCode, body, cb) {
+    // A refused control call is otherwise invisible: curl swallows the body and the
+    // take quietly loses that step or marker.
+    if (statusCode >= 400 || (body && body.ok === false)) {
+      errln(`[live] rejected (${statusCode}): ${JSON.stringify(body)}`);
+    }
     res.writeHead(statusCode, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body), cb);
   }

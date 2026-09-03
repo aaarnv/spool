@@ -37,12 +37,13 @@ const tmp = resolve(dirname(outPath), '.skia-' + basename(outPath, '.mp4'));
 await rm(tmp, { recursive: true, force: true });
 await mkdir(tmp, { recursive: true });
 
-// Encoder tier: videotoolbox for previews, x264 slow for masters, x264 veryfast if
-// the hardware encoder is missing.
+// Encoder tier: videotoolbox for previews, x264 medium for masters, x264 veryfast if
+// the hardware encoder is missing. slow/crf17 shipped 8 Mbps social clips for no
+// visible gain over medium/crf20, at roughly twice the encode time.
 const encoders = await run('ffmpeg', ['-hide_banner', '-encoders']).then((r) => r.stdout).catch(() => '');
 const hasVT = encoders.includes('h264_videotoolbox');
 const encode = master
-  ? ['-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p']
+  ? ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-pix_fmt', 'yuv420p']
   : hasVT
     ? ['-c:v', 'h264_videotoolbox', '-b:v', '12M', '-profile:v', 'high', '-pix_fmt', 'yuv420p']
     : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '19', '-pix_fmt', 'yuv420p'];

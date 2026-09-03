@@ -131,7 +131,11 @@ function sprites(g, ctx, main, scale) {
   return cur;
 }
 
-/** bg → chrome + footage (zoomed on wide, camera-cropped on vertical) → captions → cards. */
+/**
+ * bg → chrome + footage (zoomed on wide, camera-cropped on vertical) → captions → cards.
+ * With ctx.fgLayer the same layers are also composited onto a transparent canvas, so a
+ * later background swap is one overlay pass instead of a re-render.
+ */
 export function buildGraph(ctx) {
   const g = new Graph();
   const { fps, canvasW, canvasH, durSec, isVertical, card } = ctx;
@@ -197,29 +201,46 @@ export function buildGraph(ctx) {
   }
 
   const mediaOn = ctx.isPlan ? `:enable='${spansExpr(ctx.planMediaSpans)}'` : "";
-  g.chain(`[${bgIdx}:v]format=yuv420p[bgf];[bgf][${cardLayer}]overlay=0:0:shortest=1${mediaOn}[stage]`);
+
+  // The alpha branch forks here: everything downstream of the wallpaper is drawn a
+  // second time onto a transparent canvas of the same size.
+  let mainCard = cardLayer;
+  let fg = null;
+  if (ctx.fgLayer) {
+    // The card layer is already a full-canvas yuva420p frame, so it IS the alpha base;
+    // a synthesised transparent source loses its alpha in format negotiation.
+    g.chain(`[${cardLayer}]split=2[cdm][cdf]`);
+    mainCard = "cdm";
+    fg = "cdf";
+  }
+  g.chain(`[${bgIdx}:v]format=yuv420p[bgf];[bgf][${mainCard}]overlay=0:0:shortest=1${mediaOn}[stage]`);
 
   let out = "stage";
-  if (ctx.assets.planList) {
-    const i = g.input(["-f", "concat", "-safe", "0", "-i", ctx.assets.planList]);
-    g.chain(`[${i}:v]fps=${fps},setpts=PTS-STARTPTS[pl];[${out}][pl]overlay=0:0:eof_action=pass[pld]`);
-    out = "pld";
-  }
-  if (ctx.assets.captionList) {
-    const i = g.input(["-f", "concat", "-safe", "0", "-i", ctx.assets.captionList]);
-    const c = ctx.captionClip;
-    g.chain(`[${i}:v]fps=${fps},setpts=PTS-STARTPTS[cl];[${out}][cl]overlay=${c.x}:${c.y}:eof_action=pass[capd]`);
-    out = "capd";
-  }
-  if (ctx.assets.overlayList) {
-    const i = g.input(["-f", "concat", "-safe", "0", "-i", ctx.assets.overlayList]);
-    g.chain(`[${i}:v]fps=${fps},setpts=PTS-STARTPTS[ol];[${out}][ol]overlay=0:0:eof_action=pass[ovd]`);
-    out = "ovd";
-  }
+  // One concat-driven layer, overlaid on the flattened stack and (when forked) on the
+  // transparent one. `format=yuv420` keeps the alpha branch planar with alpha.
+  const layer = (list, x, y, tag) => {
+    const i = g.input(["-f", "concat", "-safe", "0", "-i", list]);
+    g.chain(`[${i}:v]fps=${fps},setpts=PTS-STARTPTS[${tag}l]`);
+    let main = `${tag}l`;
+    if (fg) {
+      g.chain(`[${tag}l]split=2[${tag}a][${tag}b]`);
+      main = `${tag}a`;
+    }
+    g.chain(`[${out}][${main}]overlay=${x}:${y}:eof_action=pass[${tag}m]`);
+    out = `${tag}m`;
+    if (fg) {
+      g.chain(`[${fg}][${tag}b]overlay=${x}:${y}:eof_action=pass:format=yuv420[${tag}f]`);
+      fg = `${tag}f`;
+    }
+  };
+  if (ctx.assets.planList) layer(ctx.assets.planList, 0, 0, "pl");
+  if (ctx.assets.captionList) layer(ctx.assets.captionList, ctx.captionClip.x, ctx.captionClip.y, "cap");
+  if (ctx.assets.overlayList) layer(ctx.assets.overlayList, 0, 0, "ov");
 
   const half = ctx.previewScale
     ? `,scale=${Math.round((canvasW * ctx.previewScale) / 2) * 2}:${Math.round((canvasH * ctx.previewScale) / 2) * 2}`
     : "";
   g.chain(`[${out}]format=yuv420p${half}[vout]`);
-  return { g, video: "[vout]" };
+  if (fg) g.chain(`[${fg}]format=${ZOOM_FMT}[fgout]`);
+  return { g, video: "[vout]", fgVideo: fg ? "[fgout]" : null };
 }

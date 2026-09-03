@@ -11,7 +11,8 @@ tasks
 **/final.mp4
 .DS_Store
 
-# The ambient pool is gitignored and hundreds of MB; the committed fallback clip is
-# the one mp4 the packet renderer actually needs in the image.
+# Renders draw the brand ground, so the image needs no footage at all. The pool is
+# hundreds of MB and stays out; the fallback clip stays in so SPOOL_GROUND=footage
+# still renders, on that one clip, without a rebuild.
 docs/video/comp/ambient
 !docs/video/comp/ambient.mp4

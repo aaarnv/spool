@@ -14,7 +14,7 @@ function validate(key, value) {
 }
 
 // Print the effective config: resolved preferences (with source) + host/token, token masked.
-async function printConfig(cfg) {
+export async function printConfig(cfg) {
   const eff = await effectivePrefs();
   console.log("spool preferences (effective):");
   for (const key of Object.keys(DEFAULTS)) {

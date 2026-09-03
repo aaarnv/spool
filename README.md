@@ -9,6 +9,10 @@ is the producer.
 Inspired by [BuilderIO/agent-native](https://github.com/BuilderIO/agent-native)'s Clips,
 inverted: there a human records and the agent watches; here the agent is the producer.
 
+Recaps are the exception, and nothing records them. When a PR merges on a repo with the
+`spoolkit` GitHub App installed, the webhook queues a `render_recap` job and the worker renders
+a vertical diagram video straight from the diff, then comments the watch link on the PR.
+
 ## Install
 
 ```bash
@@ -16,12 +20,19 @@ npm i -g @spoolkit/cli
 npx playwright install chromium
 ```
 
-The published package is frozen at `0.3.1`. This repo is private, so `install.sh` and every
-`raw.githubusercontent.com` path only work for people who already have repo access. With
-access, clone the repo and run `npm install && npm link` to get the current CLI.
-
-You also need `ffmpeg` on PATH (macOS: `brew install ffmpeg`). Run `spool doctor`
+You also need `ffmpeg` on PATH (macOS: `brew install ffmpeg`) and node >= 20. Run `spool doctor`
 anytime to check your environment and get fix hints for anything missing.
+
+`0.4.0` is the first npm release since `0.3.1`, and it ships the current CLI. The repo is
+[aaarnv/spool](https://github.com/aaarnv/spool).
+
+To work on spool itself, install from a clone instead:
+
+```bash
+git clone git@github.com:aaarnv/spool.git && cd spool
+npm install && npm link
+npx playwright install chromium
+```
 
 ### Preferences
 
@@ -42,6 +53,36 @@ spool setup --show                            # print effective config (token ma
 Precedence is explicit flag > env (`SPOOL_BROWSER`/`SPOOL_TARGET`/`SPOOL_ENGINE`) > prefs >
 default. `spool doctor` reports the active profile and its sources. Everything else the
 renderer decides for itself — see [Defaults](#defaults).
+
+## First run
+
+Bare `spool init` is the whole setup, on this machine and on this repo. Run it once from
+inside the project you want to record:
+
+```bash
+cd <your-project>
+spool init
+```
+
+It walks six steps, prints one line each, and skips any step that is already satisfied:
+
+1. **Environment** runs the `spool doctor` checks. A missing node, ffmpeg, or chromium stops
+   the run and prints that check's fix. A missing OpenAI key is only a warning: hosted voice
+   covers it.
+2. **Login** starts the browser device flow when `~/.spool.json` has no token. Add `--paste`
+   to type an `spk_` token instead. Off a terminal it prints the command to run and stops.
+   `--no-login` skips this step for CI.
+3. **Preferences** writes the defaults in [Preferences](#preferences) when you have never set
+   one, then prints the effective config.
+4. **Repository** reads the GitHub owner and name with `gh`. Outside a repo, steps 5 and 6 are
+   skipped.
+5. **GitHub App** prints the install link. Installing it is what turns a merged pull request
+   into a recap.
+6. **Knowledge** scaffolds `spool/project/`, where you author what this repo is so later
+   recordings start warm. Nothing is sent until you run `spool init --apply`.
+
+`spool init <slug>` is unrelated and unchanged: it scaffolds `spool/<slug>/steps.mjs` for the
+scripted path.
 
 ## How it works
 
@@ -234,16 +275,17 @@ every opened pull request (`spool pr`, tour + explainer authoring, headless reco
 
 ## Defaults
 
-Spool has one way to make a video, and it is the good one. There is no `--hq`, no `--bg`,
-no `--rate`: every knob below is decided for you, and every one of them was a flag somebody
-had to get right before.
+Spool has one way to make a video, and it is the good one. There is no `--hq` and no `--rate`,
+and no render flag picks a background: every knob below is decided for you, and every one of
+them was a flag somebody had to get right before. (Changing the canvas after the fact is its
+own command, `spool bg`, because it costs seconds instead of a render.)
 
 | What | House default | Why it is not a flag |
 | --- | --- | --- |
 | Frame rate | 60fps | The renderer retimes to the narration either way; 30 only ever looked worse. |
 | Encode | hardware H264 for a `--preview` draft, libx264 `-preset slow -crf 17` for every `final.mp4` | The tier follows the purpose: a draft nobody publishes, or a master that gets published. |
 | Format | `wide` for walkthroughs, `vertical` for packet videos | Stamped into the session at capture by `spool live --format`, then read from the workdir by everything downstream. |
-| Background | repo preset `indigo`; packet videos get an ambient clip hashed from the packet | The same plan renders the same way on any machine, and nobody picks a wallpaper per video. |
+| Background | the machine's real Sonoma wallpaper on a Mac, else the `sky` preset; packet videos get an ambient clip hashed from the packet | The video sits on the desktop it was recorded on, and nobody picks a wallpaper per video. |
 | Narration | house voice, tempo 1.0, engine auto-detected (your key → hosted → local) | One voice is the product's voice. The engine is whichever one this machine can actually reach. |
 | Plan narration | rewritten by `gpt-5`, falling back to the deterministic script | The fallback is silent and always correct, so there was never a reason to opt in. |
 | Plan theme | `warm-briefing` | The founder picked it (SPL-DECISIONS #17). |
@@ -285,8 +327,8 @@ Publishing now also uploads the render sources (normalized `video.mp4`, `timelin
 `render.json`, and the `vo/` segments) alongside the final video, so a spool can be edited
 after the fact without re-recording. On the watch page the owner describes a change in
 plain language ("drop the third step", "re-record the intro narration", "speed it up 1.25x");
-that becomes a validated ops list and an `edit_jobs` row. A small always-on Fly worker
-(`spool-render`, in [`worker/`](./worker)) polls for jobs, pulls the sources, applies the
+that becomes a validated ops list and an `edit_jobs` row. A small always-on render worker
+(closed source, part of the hosted service) polls for jobs, pulls the sources, applies the
 ops — re-generating only changed narration segments via the same OpenAI TTS path — re-renders
 with the repo's own `renderSpool`, and overwrites the published video/bundle in Blob. Spools
 published before this feature (no sources) show as re-publish-to-edit. Full shapes:
@@ -305,10 +347,13 @@ published before this feature (no sources) show as re-publish-to-edit. Full shap
   plan cards, hook/CTA — is screenshotted once by Playwright from the product's own CSS,
   so captions stay designed type rather than burned SRT, while ffmpeg does the per-frame
   compositing. The WebM → CFR H264 pass exists because VFR VP8 seeks badly.
-- **The canvas is house-picked.** The background behind the card is a repo preset
-  (`indigo` by default); packet videos get an ambient clip chosen deterministically from the
-  packet, so the same plan always looks the same. Published spools can be re-skinned from the
-  web editor via the `set_bg` op (repo presets only), and `SPOOL_BG` overrides one local run.
+- **The canvas is house-picked.** The background behind the card is this machine's real Sonoma
+  wallpaper on a Mac, and the `sky` preset everywhere else (`src/render/bg-resolve.mjs`); packet
+  videos get an ambient clip chosen deterministically from the packet, so the same plan always
+  looks the same. A rendered spool is re-skinned in seconds with `spool bg <workdir> <bg>`, which
+  composites a new canvas under the saved `layers/fg.webm`; published spools can also be re-skinned
+  from the web editor via the `set_bg` op (repo presets only), and `SPOOL_BG` overrides one local
+  render.
 - **Dry-run first (scripted path).** `spool dry` drives the steps in a visible browser with
   no VO or video, so the agent can fix selectors/timing before spending TTS calls and render
   minutes. The live path
@@ -316,3 +361,24 @@ published before this feature (no sources) show as re-publish-to-edit. Full shap
 - **Live is record-derived.** `spool live` inverts authoring: instead of writing a driver and
   debugging it, the agent drives the real app once over an HTTP control port and the steps are
   derived from the session, then emitted as a reproducible `steps.mjs` snapshot.
+
+## License
+
+Spool is open core. The CLI, the agent skill, the MCP server, the render pipeline and the
+GitHub Action are in this repository under the [Functional Source
+License](LICENSE), version 1.1 with an Apache 2.0 future license (`FSL-1.1-Apache-2.0`,
+which upstream now names `FSL-1.1-ALv2`).
+
+Use it for anything except a Competing Use: shipping it as a commercial product or service
+that substitutes for Spool or for spoolkit.dev. Internal use, non-commercial education,
+non-commercial research and professional services all count as Permitted Purposes. Every
+version converts to Apache 2.0 two years after it ships.
+
+The hosted app on spoolkit.dev — the feed, the GitHub App, the render worker and billing —
+is closed source and stays in a private repository.
+
+Earlier releases are unaffected: `@spoolkit/cli` up to 0.3.1 on npm remains MIT.
+
+The two bundled music beds in `assets/` are CC0 from FreePD.com ("Arpent" and "Wisdom in
+the Sun" by Kevin MacLeod), trimmed and gain-matched. CC0 waives attribution; this note is
+provenance only.

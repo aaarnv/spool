@@ -89,10 +89,13 @@ execSync(`node "${join(repo, 'bin/spool.mjs')}" vo "${work}" --engine ${engine} 
 // SPOOL_V0_ENGINE=chrome falls back to the screenshot renderer.
 const renderer = process.env.SPOOL_V0_ENGINE === 'chrome'
   ? 'docs/video/comp/render.mjs' : 'docs/video/comp/skia/render-skia.mjs';
-// Seed the pick with the packet name, so re-rendering a packet keeps its background.
-const bg = pickAmbient(flag('bg', 'random'), basename(packetPath, '.json'));
-console.log(`background: ${bg.slug} (${bg.clipDur}s)`);
+// The brand ground is the default. --bg names a footage clip, which is what asks for
+// the footage ground; seed the pick with the packet name so a re-render keeps it.
+const wantsFootage = process.env.SPOOL_GROUND === 'footage' || Boolean(flag('bg', ''));
+const bg = wantsFootage ? pickAmbient(flag('bg', 'random'), basename(packetPath, '.json')) : null;
+console.log(`ground: ${bg ? `${bg.slug} (${bg.clipDur}s)` : 'brand'}`);
 execSync(`node "${join(repo, renderer)}" "${join(repo, 'docs/video/comp/auto.html')}" "${work}" "${resolve(outPath)}" 30`,
-  { cwd: repo, stdio: 'inherit', env: { ...process.env, SPOOL_AMBIENT_FILE: bg.src,
-    SPOOL_AMBIENT_DUR: String(bg.clipDur), SPOOL_AMBIENT_DIM: String(bg.dim ?? 1) } });
+  { cwd: repo, stdio: 'inherit', env: { ...process.env, SPOOL_GROUND: bg ? 'footage' : 'brand',
+    ...(bg ? { SPOOL_AMBIENT_FILE: bg.src, SPOOL_AMBIENT_DUR: String(bg.clipDur),
+      SPOOL_AMBIENT_DIM: String(bg.dim ?? 1) } : {}) } });
 console.log(`\nfinished: ${outPath}`);

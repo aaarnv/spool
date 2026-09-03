@@ -49,6 +49,9 @@ sources: {
 }
 ```
 
+The publish body also carries `hasFgLayer: true` when the workdir has `layers/fg.webm`,
+which grants `l/{id}/layers/fg.webm` beside `final.mp4` (see Background swap).
+
 Spools published before this feature have `has_sources = false` and are not editable
 (UI says re-publish to enable editing).
 
@@ -85,7 +88,7 @@ edit_jobs:
   {"op":"set_title",    "title": "…"},
   {"op":"set_zoom",     "i": 1, "zoom": "none" | "auto" | {"x":0,"y":0}},
   {"op":"set_rate",     "rate": 1.25},
-  {"op":"set_bg",       "bg": "graphite" | "paper" | "indigo"},
+  {"op":"set_bg",       "bg": "graphite" | "paper" | "indigo" | "sky"},
   {"op":"set_bounds",   "i": 1, "start": 12.5, "end": 20},
   {"op":"split",        "i": 1, "at": 8.5},
   {"op":"merge",        "i": 2}
@@ -125,10 +128,27 @@ way they're resolved on the author's machine and the resolved pixels ride along 
 **Background precedence on re-render** (worker): an explicit `set_bg` op (a repo preset)
 wins; else the published `src/bg.jpg` is reused as-is (preserves a macOS wallpaper / custom
 canvas across the re-render); else the `render.json` `bg` tag (a repo preset resolves from
-the image, a macOS-name tag can't and falls back to `DEFAULT_BG` = `indigo`). Spools
+the image, a macOS-name tag can't and falls back to `DEFAULT_BG` = `sky`; on a Mac with no spec the default is the Sonoma wallpaper). Spools
 published before this feature have no `src/bg.jpg`, so a re-render falls back to `DEFAULT_BG`
 — but their existing published video already has the original canvas baked in, so only a
 re-render is affected.
+
+**Background swap** (worker fast path). A render writes `layers/fg.webm` next to
+`final.mp4`: the whole composite except the wallpaper — card chrome, footage, cursor,
+ripples, zoom/pan, captions, hook/CTA — as VP9 with alpha at the final fps. It is
+published to `l/{id}/layers/fg.webm`, and `render.json` records `fg: "layers/fg.webm"`.
+
+When an edit job's ops are ALL `set_bg`, the worker downloads that layer plus the
+published `final.mp4`, bakes the new canvas the same way a render does, and runs one
+ffmpeg pass: canvas under layer, audio copied from the old `final.mp4`. It uploads
+`l/{id}/final.mp4` and nothing else — keyframes and `preview.gif` come from the
+recording, not the deliverable, so a canvas change cannot alter them. The job result
+records `{path: "bg-swap"}`; a full re-render records `{path: "rerender"}`.
+
+The layer is absent for Plan Spools (their canvas is the themed card surface, not a
+wallpaper), for `--rate` takes (the layer would need the same speed pass), for previews,
+and for anything published before this feature. In every one of those cases a `set_bg`
+job falls back to the full re-render, which is also what regenerates the layer.
 
 ## Web API (spool-web)
 
@@ -160,7 +180,7 @@ Auth: `Authorization: Bearer ${EDIT_WORKER_SECRET}` (env on both sides).
   finalize (sets `finished_at`; `done` revalidates the watch page cache tag). All require the
   current `leaseToken` — a reclaimed job's old worker gets 409 (NULL lease = legacy job, accepted).
 
-## Worker (worker/ dir in this repo, deployed as Fly app `spool-render`, region syd)
+## Worker (closed source, deployed as part of the hosted service)
 
 Node 20 + ffmpeg + Playwright chromium (the render's static layers are browser
 screenshots). Imports the repo's own

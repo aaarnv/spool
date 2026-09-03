@@ -184,8 +184,10 @@ program
 
 program
   .command('init [slug]')
-  .description('with <slug>: scaffold spool/<slug>/steps.mjs; bare: seed this repo\'s project knowledge')
+  .description('bare: set this machine and repo up to record; with <slug>: scaffold spool/<slug>/steps.mjs')
   .option('--apply', 'apply the authored project seed ops (bare init only)')
+  .option('--no-login', 'skip the login step (bare init only, for CI)')
+  .option('--paste', 'paste an spk_ token instead of the browser login flow (bare init only)')
   .action(async (slug, opts) => {
     if (slug) {
       const workdir = resolve('spool', slug);
@@ -199,8 +201,13 @@ program
       console.log(`Created ${dest}\nNext: edit the steps, then \`spool dry ${workdir}\` to debug the driver.`);
       return;
     }
-    const { initProject } = await import(join(root, 'src/project/init.mjs'));
-    await initProject({ apply: !!opts.apply });
+    if (opts.apply) {
+      const { initProject } = await import(join(root, 'src/project/init.mjs'));
+      await initProject({ apply: true });
+      return;
+    }
+    const { onboard } = await import(join(root, 'src/project/onboard.mjs'));
+    process.exitCode = await onboard({ doLogin: opts.login !== false, paste: !!opts.paste });
   });
 
 program
@@ -290,6 +297,7 @@ program
   .option('--url <url>', 'app URL (browser target; else read from an existing steps.mjs config)')
   .option('--title <title>', 'title card text')
   .option('--format <format>', 'wide walkthrough | vertical recap (recorded into the session steps.mjs)')
+  .option('--auth <file>', 'Playwright storageState JSON to start signed in (or SPOOL_AUTH_STATE)')
   .action(async (workdir, opts) => {
     await assertPlan(resolve(workdir), 'recording');
     const { resolveTarget } = await import(join(root, 'src/config/prefs.mjs'));
@@ -300,7 +308,7 @@ program
       return;
     }
     const { liveSession } = await import(join(root, 'src/record/live.mjs'));
-    await liveSession({ workdir: resolve(workdir), url: opts.url, title: opts.title, format: opts.format });
+    await liveSession({ workdir: resolve(workdir), url: opts.url, title: opts.title, format: opts.format, auth: opts.auth });
   });
 
 program
@@ -348,6 +356,33 @@ program
     }
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
     await renderSpool({ workdir: wd, preview: !!opts.preview });
+  });
+
+program
+  .command('bg <workdir> <bg>')
+  .description('swap a rendered spool\'s canvas from layers/fg.webm (no re-render)')
+  .option('--publish', 'publish the swapped take (mints a new watch link)')
+  .option('--host <host>', 'watch app origin (default: env SPOOL_HOST or ~/.spool.json)')
+  .option('--token <token>', 'publish token (default: env SPOOL_PUBLISH_TOKEN or ~/.spool.json)')
+  .action(async (workdir, bg, opts) => {
+    const wd = resolve(workdir);
+    const { swapWorkdirBackground } = await import(join(root, 'src/render/bg-swap.mjs'));
+    // A missing layer or final.mp4 is an expected answer, not a crash.
+    try {
+      await swapWorkdirBackground(wd, bg);
+    } catch (err) {
+      console.error(`[bg] ${(err && err.message) || err}`);
+      process.exit(1);
+    }
+    if (!opts.publish) {
+      const published = join(wd, 'share', 'published.json');
+      if (existsSync(published)) {
+        console.error('[bg] this workdir is published; pass --publish to put the new canvas online');
+      }
+      return;
+    }
+    const { publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
+    await publishSpool(wd, { host: opts.host, token: opts.token });
   });
 
 program
@@ -861,9 +896,9 @@ if (process.argv.length <= 2) {
         'video, AI voiceover, word-synced captions, one shareable link.',
         '',
         'Get started:',
-        '  1. spool login                 connect this machine (opens your browser)',
-        '  2. spool init my-demo          scaffold a walkthrough, or `spool live` to drive one',
-        '  3. spool doctor                check your environment',
+        '  1. spool init                  set this machine and repo up (checks, login, GitHub App)',
+        '  2. spool live spool/my-demo --url http://localhost:3000   record a walkthrough',
+        '  3. spool doctor                re-check your environment any time',
       ].join('\n')
     );
     process.exit(0);

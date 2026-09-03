@@ -1,6 +1,6 @@
 // spool steps file — the demo script for one spool.
 // Contract: see CONTRACTS.md in the spool repo.
-// Workflow: edit steps → `spool dry <workdir> --headed` until the driver is clean
+// Workflow: edit steps → `spool dry <workdir>` (always visible) until the driver is clean
 //           → `spool build <workdir>` for the finished mp4.
 
 export const config = {

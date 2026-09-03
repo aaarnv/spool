@@ -29,3 +29,19 @@ export async function pickEncoder({ master = false, preview = false } = {}) {
 export function encodeArgs(enc) {
   return ["-c:v", enc.name, ...enc.args, "-pix_fmt", "yuv420p", "-movflags", "+faststart"];
 }
+
+// The alpha foreground layer. VP9 in WebM is the one broadly available codec that
+// carries a real alpha channel; the swap path decodes it with libvpx-vp9.
+export function alphaArgs() {
+  return [
+    "-c:v", "libvpx-vp9",
+    "-pix_fmt", "yuva420p",
+    "-b:v", "0",
+    "-crf", "26",
+    "-row-mt", "1",
+    "-deadline", "realtime",
+    "-cpu-used", "8",
+    "-tile-columns", "2",
+    "-g", "240",
+  ];
+}

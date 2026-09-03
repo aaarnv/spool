@@ -202,8 +202,8 @@
     host.innerHTML = '';
     if (entry && entry.diagram) {
       const svg = document.createElementNS(NS, 'svg');
-      svg.setAttribute('width', 480); svg.setAttribute('height', 260);
-      svg.setAttribute('viewBox', '0 0 480 260');
+      svg.setAttribute('width', 480); svg.setAttribute('height', 480);
+      svg.setAttribute('viewBox', '0 0 480 480');
       const rc = window.rough.svg(svg);
       const seed = boilSeed(t);
       const o = (extra) => ({ seed, roughness: 1.5, bowing: 1.1, strokeWidth: 3, ...extra });
