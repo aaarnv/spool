@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Add timestamped questions to a published spool.",
+  "outcome": "A reviewer can ask a question against a video moment and an agent can reply with anchored context.",
+  "approach": [
+    { "id": "data", "summary": "Add comment and anchor records." }
+  ],
+  "noAlternativesReason": "No credible alternative considered: anchors are already the watch page's addressing scheme.",
+  "risks": ["Public links need a clear permission model for comments."],
+  "decision": {
+    "type": "approval",
+    "prompt": "Approve the anchored-comment approach before implementation begins.",
+    "options": ["approve", "redirect", "ask-question"]
+  },
+  "links": { "task": null, "branch": "codex/plan-spools", "commit": null }
+}

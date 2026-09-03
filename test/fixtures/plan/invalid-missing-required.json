@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Add timestamped questions to a published spool.",
+  "approach": [
+    { "id": "data", "summary": "Add comment and anchor records." }
+  ],
+  "noAlternativesReason": "No credible alternative considered.",
+  "decision": {
+    "type": "approval",
+    "prompt": "Approve the anchored-comment approach.",
+    "options": ["approve"]
+  }
+}

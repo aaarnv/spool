@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Anchor questions to approach steps that cannot be addressed.",
+  "outcome": "Nothing can anchor to these steps.",
+  "approach": [
+    { "id": "Data Layer", "summary": "Not a stable id." },
+    { "id": "api", "summary": "Expose endpoints." },
+    { "id": "api", "summary": "Expose them again.", "chapterId": "summary" }
+  ],
+  "noAlternativesReason": "No credible alternative considered for this fixture.",
+  "risks": ["Anchors break."],
+  "decision": { "type": "approval", "prompt": "Approve?", "options": ["approve"] },
+  "links": { "task": null }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@spoolkit/action",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitHub Action that connects a runner to Spool.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}

@@ -1,6 +1,8 @@
-node_modules/
+node_modules
 *.webm
 *.mp4
+# the landing ribbon's clips are site assets, not recording output
+!web/public/recaps/*.mp4
 spool-test/
 .DS_Store
 .claude/
@@ -8,5 +10,17 @@ tasks/
 .spool-bg.jpg
 .vercel
 /spool/
+# recorder login state (Playwright storageState): never commit, never share
+auth.json
 /undefined/
+# The implementation gate's local audit log (append-only, per machine).
+/.spool/
 /.unitwork/
+
+# Collected pilot datasets (regenerate with `spool pilot collect`).
+/pilot/
+.env*
+ambient.mp4
+rough.esm.js
+rough-umd.js
+gsap.min.js

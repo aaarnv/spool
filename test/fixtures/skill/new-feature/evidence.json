@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "kind": "evidence",
+  "items": [
+    {
+      "id": "ev-card",
+      "kind": "file",
+      "label": "The coaching card, where dismissal is component state today",
+      "ref": "web/app/coach/CoachingCard.tsx",
+      "revision": "4f21ab9",
+      "lines": [34, 52],
+      "chapterIds": ["context", "approach", "decision"]
+    },
+    {
+      "id": "ev-feed",
+      "kind": "file",
+      "label": "The coaching feed query the dismissal filters",
+      "ref": "web/app/coach/feed.ts",
+      "revision": "4f21ab9",
+      "chapterIds": ["outcome", "risks"]
+    }
+  ]
+}

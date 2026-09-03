@@ -1,0 +1,15 @@
+{
+  "policy": "advisory",
+  "highRisk": {
+    "paths": [
+      "web/db/migrations/**",
+      "web/db/schema.ts",
+      "web/lib/planPolicy.ts",
+      "web/lib/planStore.ts",
+      "worker/**",
+      ".github/workflows/**"
+    ],
+    "labels": ["high-risk", "security"],
+    "categories": ["migration", "auth"]
+  }
+}

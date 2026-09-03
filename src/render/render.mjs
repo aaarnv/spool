@@ -1,82 +1,23 @@
-import { readFile, writeFile, unlink, copyFile, mkdir, cp, rm, readdir } from "node:fs/promises";
+import { readFile, writeFile, unlink, copyFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createHash } from "node:crypto";
-import { cpus, tmpdir } from "node:os";
-import { createRequire } from "node:module";
-import { join, dirname, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { bundle } from "@remotion/bundler";
-import { selectComposition, renderMedia } from "@remotion/renderer";
+import { renderFfmpeg } from "./engine-ffmpeg/index.mjs";
 import { normalize, h264Encoder } from "./normalize.mjs";
-import { FPS as DEFAULT_FPS } from "./retime.mjs";
+import { defaultFpsFor } from "./retime.mjs";
 import { resolveBgSource } from "./bg-resolve.mjs";
 import { resolveMusicSource, DEFAULT_MUSIC } from "./music-presets.mjs";
+import { getPlanTheme } from "./plan/themes.mjs";
 import { resolveBgPref, resolveFormatPref } from "../config/prefs.mjs";
+import { observe } from "../reliability/journal.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ENTRY = join(__dirname, "index.mjs");
-const require = createRequire(import.meta.url);
 
 async function readJson(p) {
   return JSON.parse(await readFile(p, "utf8"));
-}
-
-// Cache the Remotion webpack bundle across builds. The compile depends only on
-// src/render/** + the remotion version, so key the cache dir on their hash and
-// reuse it when unchanged; per-spool static assets are synced into its public/
-// folder each render (staticFile resolves against <serveUrl>/public).
-//
-// Keyed on CONTENT, not mtime: BuildKit does not preserve mtimes through layer
-// export, so an mtime key made the worker image's baked bundle unreachable at
-// runtime (measured: baked 34eaf31f, runtime recomputed 4e07d025 and rebundled).
-// Content hashing also stops a plain `git checkout` from invalidating the cache.
-async function srcHash() {
-  const h = createHash("sha1");
-  const files = (await readdir(__dirname)).filter((f) => /\.(mjs|jsx|js)$/.test(f)).sort();
-  for (const f of files) {
-    h.update(f).update(await readFile(join(__dirname, f)));
-  }
-  h.update(require("remotion/package.json").version);
-  return h.digest("hex").slice(0, 16);
-}
-
-// Exported so the worker image can bake the bundle at build time (see worker/Dockerfile);
-// a scale-to-zero machine otherwise re-bundles on every cold start.
-export async function getServeUrl() {
-  const cacheDir = join(tmpdir(), `spool-remotion-${await srcHash()}`);
-  if (existsSync(join(cacheDir, "index.html"))) {
-    console.log("[render] reusing cached Remotion bundle");
-    return cacheDir;
-  }
-  console.log("[render] bundling Remotion project (cache miss)...");
-  await rm(cacheDir, { recursive: true, force: true }).catch(() => {});
-  const emptyPublic = join(tmpdir(), `spool-empty-public-${process.pid}`);
-  await mkdir(emptyPublic, { recursive: true });
-  const url = await bundle({
-    entryPoint: ENTRY,
-    outDir: cacheDir,
-    publicDir: emptyPublic,
-    onProgress: (p) => {
-      if (p % 25 === 0) console.log(`[render] bundle ${p}%`);
-    },
-  });
-  await rm(emptyPublic, { recursive: true, force: true }).catch(() => {});
-  return url;
-}
-
-// Mirror the spool's staticFile() targets into the cached bundle's public/ dir.
-async function syncPublic(serveUrl, dir, background, music) {
-  const pub = join(serveUrl, "public");
-  await mkdir(pub, { recursive: true });
-  await cp(join(dir, "video.mp4"), join(pub, "video.mp4"));
-  await rm(join(pub, "vo"), { recursive: true, force: true }).catch(() => {});
-  if (existsSync(join(dir, "vo"))) await cp(join(dir, "vo"), join(pub, "vo"), { recursive: true });
-  if (background) await cp(join(dir, background), join(pub, background));
-  if (music) await cp(join(dir, music), join(pub, music));
 }
 
 // A workdir's steps.mjs `config`, best-effort: {} when there's no snapshot (OS
@@ -118,10 +59,10 @@ function resolveVertical(cfg, prior, timeline) {
   };
 }
 
-// Everything a render decides before it touches ffmpeg or Remotion: the canvas, the
+// Everything a render decides before it touches ffmpeg: the canvas, the
 // format, and (vertical) the authored hook/cta/music bed. One resolution pass, so a
 // local render and a cloud render of the same workdir agree.
-async function resolveRenderPlan(dir, { rate = 1, bg = null, format = null } = {}) {
+async function resolveRenderPlan(dir, { rate = 1, bg = null, format = null, fps = null } = {}) {
   // No explicit --bg: fall back to env SPOOL_BG / prefs.bg before the default.
   const bgSpec = bg != null ? bg : await resolveBgPref();
   const timeline = await readJson(join(dir, "timeline.json"));
@@ -129,20 +70,33 @@ async function resolveRenderPlan(dir, { rate = 1, bg = null, format = null } = {
   const fmt = await resolveFormatPref(format ?? cfg.format);
   // Previous stamp: the worker's only source for the vertical authoring fields.
   const priorRender = existsSync(join(dir, "render.json")) ? await readJson(join(dir, "render.json")).catch(() => ({})) : {};
+  const isPlan = existsSync(join(dir, "plan.json"));
+  // Warm briefing is the founder-selected default. A workdir config or prior
+  // render stamp still wins and is validated here.
+  const planTheme = isPlan
+    ? getPlanTheme(cfg.planTheme ?? priorRender.planTheme ?? "warm-briefing").id
+    : null;
   const vertical = fmt === "vertical" ? resolveVertical(cfg, priorRender.vertical || {}, timeline) : null;
   const bgSource = await resolveBgSource(bgSpec);
   const music = vertical ? resolveMusicSource(vertical.music) : null;
-  return { rate, timeline, fmt, vertical, bgSource, music, musicTag: vertical ? (music ? music.tag : "none") : null };
+  const envFps = process.env.SPOOL_RENDER_FPS ? Math.max(1, parseInt(process.env.SPOOL_RENDER_FPS, 10)) : null;
+  const outFps = fps ?? envFps ?? defaultFpsFor(fmt);
+  return { rate, timeline, fmt, fps: outFps, vertical, bgSource, music, musicTag: vertical ? (music ? music.tag : "none") : null, isPlan, planTheme };
 }
 
 // The render.json a plan stamps: the rate final.mp4 runs on, which canvas was used,
 // the format, and (vertical) the resolved authoring fields a re-render needs.
-function planStamp({ rate, bgSource, fmt, vertical, musicTag }) {
+function planStamp({ rate, bgSource, fmt, fps, vertical, musicTag, planTheme }, extra = {}) {
   return {
     rate: rate && rate !== 1 ? rate : 1,
     bg: bgSource.tag,
     format: fmt,
+    // Stamped because the share layer rebuilds the same output windows and its
+    // rounding has to land on the rate final.mp4 was actually cut at.
+    fps,
+    ...(planTheme ? { planTheme } : {}),
     ...(vertical ? { vertical: { hook: vertical.hook, cta: vertical.cta, music: musicTag } } : {}),
+    ...extra,
   };
 }
 
@@ -158,7 +112,7 @@ export async function resolveRenderIntent(dir, opts = {}) {
 
 // Speed the fully-rendered mp4 by `rate` in one pass: video via setpts, audio via
 // atempo (pitch-preserving). Everything (captions, zooms, VO placement) was laid
-// out in Remotion at natural speed, so compressing the whole clip keeps it in sync.
+// out at natural speed, so compressing the whole clip keeps it in sync.
 async function speedUp(src, dst, rate) {
   const enc = await h264Encoder();
   await exec(FFMPEG, [
@@ -188,12 +142,11 @@ async function speedUp(src, dst, rate) {
  * Render a spool workdir to <workdir>/final.mp4.
  *
  * Reads timeline.json + vo/manifest.json, normalizes the capture to CFR H264,
- * then bundles the Remotion project with publicDir=workdir so the composition
- * can staticFile() the video and per-segment wavs by their workdir-relative
- * paths. Word timings are inlined into the props (the headless render can't
- * read the fs itself). Pacing is now narration-driven (each step's window fits
- * its VO), so `rate` defaults to 1.0; when set it speeds the whole clip and the
- * rate used is stamped into <workdir>/render.json for the share layer.
+ * then hands the resolved props to the ffmpeg engine, which rasterises the
+ * static layers once in a browser and composites the rest in one filtergraph.
+ * Pacing is narration-driven (each step's window fits its VO), so `rate`
+ * defaults to 1.0; when set it speeds the whole clip and the rate used is
+ * stamped into <workdir>/render.json for the share layer.
  *
  * `preview` renders a fast half-scale draft (ultrafast x264, crf 28, no --rate
  * pass, no render.json stamp) to <workdir>/share/preview.mp4; final.mp4 untouched.
@@ -201,13 +154,29 @@ async function speedUp(src, dst, rate) {
  * `format` picks the canvas: "wide" (1920x1080) or "vertical" (1080x1920 short-form,
  * with a hook card, a music bed and an end CTA). Null resolves per resolveWorkdirFormat.
  *
- * @param {string|{workdir:string, rate?:number, bg?:string|null, preview?:boolean, format?:string|null}} opts
+ * @param {string|{workdir:string, preview?:boolean, format?:string|null}} opts
+ */
+/**
+ * Render one take, and journal whether it worked (roadmap R6.3).
+ *
+ * A render either produces the mp4 or it does not; the reliability question is
+ * how often the second happens on already-captured input, because that is work a
+ * person has to notice and re-run.
  */
 export async function renderSpool(opts) {
-  const { workdir, rate = 1, bg = null, preview = false, hq = false, format = null, fps = null } = typeof opts === "string" ? { workdir: opts } : opts;
+  const workdir = typeof opts === "string" ? opts : opts?.workdir;
+  return observe("render", () => renderSpoolInner(opts), { target: workdir });
+}
+
+async function renderSpoolInner(opts) {
+  const { workdir, rate = 1, bg = null, preview = false, format = null, fps = null } = typeof opts === "string" ? { workdir: opts } : opts;
+  // Two tiers, decided by what the render is for rather than by a flag: a preview is a
+  // draft nobody publishes, and every final.mp4 is a master because publishing is the
+  // default end of the pipeline.
+  const master = !preview;
   const dir = resolve(workdir);
-  const plan = await resolveRenderPlan(dir, { rate, bg, format });
-  const { timeline, fmt, vertical, bgSource, music: musicSource, musicTag } = plan;
+  const plan = await resolveRenderPlan(dir, { rate, bg, format, fps });
+  const { timeline, fmt, vertical, bgSource, music: musicSource, musicTag, isPlan, planTheme } = plan;
   const manifest = await readJson(join(dir, "vo", "manifest.json"));
 
   // normalize video.webm -> video.mp4 (staticFile target)
@@ -226,18 +195,24 @@ export async function renderSpool(opts) {
     segments.push({ ...seg, wordsData });
   }
   const enrichedManifest = { ...manifest, segments };
+  const planPacket = isPlan ? await readJson(join(dir, "plan.json")) : null;
+  const planScript = isPlan && existsSync(join(dir, "plan.script.json"))
+    ? await readJson(join(dir, "plan.script.json"))
+    : null;
+  const evidence = isPlan && existsSync(join(dir, "evidence.json"))
+    ? await readJson(join(dir, "evidence.json"))
+    : null;
 
-  // Wallpaper canvas: copy the resolved bg (preset | macOS wallpaper | path | default)
-  // into the workdir (publicDir) so the composition can staticFile() it. Gradient
-  // fallback when the asset is somehow absent.
+  // Wallpaper canvas: copy the resolved bg (preset | macOS wallpaper | path |
+  // default) into the workdir. Gradient fallback when the asset is somehow absent.
   let background = null;
   if (existsSync(bgSource.source)) {
     await copyFile(bgSource.source, join(dir, ".spool-bg.jpg"));
     background = ".spool-bg.jpg";
   }
 
-  // Vertical music bed: same staging deal as the wallpaper. The tag is stamped (so a
-  // re-render resolves the same bed); the composition gets the workdir-relative copy.
+  // Vertical music bed: same staging deal as the wallpaper. The tag is stamped so a
+  // re-render resolves the same bed.
   let music = null;
   if (vertical) {
     if (musicSource && existsSync(musicSource.source)) {
@@ -248,10 +223,9 @@ export async function renderSpool(opts) {
     }
   }
 
-  // Output frame rate. 60 is the local default (the pans were judged on it); a slower
-  // box can halve the frame count with SPOOL_RENDER_FPS. calculateSpoolMetadata both
-  // consumes this and returns it, so the duration math and the encoded rate agree.
-  const outFps = fps ?? (process.env.SPOOL_RENDER_FPS ? Math.max(1, parseInt(process.env.SPOOL_RENDER_FPS, 10)) : DEFAULT_FPS);
+  // Resolved once with the rest of the plan (flag > SPOOL_RENDER_FPS > per-format
+  // default), so the stamp, the window math and the encoded rate cannot disagree.
+  const outFps = plan.fps;
 
   const inputProps = {
     timeline,
@@ -262,20 +236,8 @@ export async function renderSpool(opts) {
     format: fmt,
     fps: outFps,
     vertical: vertical ? { ...vertical, music } : null,
+    ...(planPacket && planScript ? { plan: planPacket, evidence, planScript, planTheme } : {}),
   };
-
-  const serveUrl = await getServeUrl();
-  await syncPublic(serveUrl, dir, background, music);
-
-  console.log("[render] selecting composition...");
-  const composition = await selectComposition({
-    serveUrl,
-    id: "Spool",
-    inputProps,
-  });
-  console.log(
-    `[render] ${composition.durationInFrames} frames @ ${composition.fps}fps (${composition.width}x${composition.height})`
-  );
 
   let finalOut = join(dir, "final.mp4");
   if (preview) {
@@ -283,57 +245,18 @@ export async function renderSpool(opts) {
     await mkdir(join(dir, "share"), { recursive: true });
   }
   const speedUpNeeded = !preview && rate && rate !== 1;
+  // The alpha foreground (every layer but the wallpaper) rides beside final.mp4 so a
+  // later background change is one overlay pass. A plan take has no wallpaper to swap,
+  // and a --rate take would need the layer sped up in lockstep, so both keep re-rendering.
+  const fgOut = master && !isPlan && !speedUpNeeded ? join(dir, "layers", "fg.webm") : null;
   // At natural speed render straight to final.mp4; otherwise to an intermediate
   // that the speed pass consumes.
   const renderOut = speedUpNeeded ? join(dir, "render.mp4") : finalOut;
   const t0 = Date.now();
-  let lastPct = -1;
-  // os.cpus() reports host cores inside a container, so on a memory-capped box the
-  // default over-subscribes and OOM-kills chromium/compositor. SPOOL_RENDER_CONCURRENCY
-  // pins it (the Fly worker sets 2 for shared-cpu-2x/4GB).
-  const concurrency = process.env.SPOOL_RENDER_CONCURRENCY
-    ? Math.max(1, parseInt(process.env.SPOOL_RENDER_CONCURRENCY, 10))
-    : Math.max(2, cpus().length - 1);
-  // delayRender defaults to 30s; long takes on a loaded box time out fetching
-  // video segments. SPOOL_RENDER_TIMEOUT_MS overrides (default 120s).
-  const timeoutInMilliseconds = process.env.SPOOL_RENDER_TIMEOUT_MS
-    ? Math.max(30000, parseInt(process.env.SPOOL_RENDER_TIMEOUT_MS, 10))
-    : 120000;
-  // Remotion sizes its frame cache at HALF system memory when unset, which the
-  // concurrent chromium workers then compete with; that is the suspected source of the
-  // worker's memory-pressure SIGKILLs. Only capped where a box asks for it, so machines
-  // with headroom keep the default.
-  const cacheMb = process.env.SPOOL_OFFTHREAD_CACHE_MB
-    ? Math.max(64, parseInt(process.env.SPOOL_OFFTHREAD_CACHE_MB, 10))
-    : null;
-  await renderMedia({
-    composition,
-    serveUrl,
-    codec: "h264",
-    audioCodec: "aac",
-    outputLocation: renderOut,
-    inputProps,
-    concurrency,
-    timeoutInMilliseconds,
-    ...(cacheMb ? { offthreadVideoCacheSizeInBytes: cacheMb * 1024 * 1024 } : {}),
-    // Preview trades quality for speed: half-scale software x264, high crf.
-    // hq supersamples: 2x wide (the card inset downscales the capture below native
-    // at 1x), 1.5x vertical (platforms transcode shorts back to 1080x1920 anyway).
-    // The default branch pins crf explicitly rather than inheriting Remotion's, so the
-    // quality floor is ours; 18 is the value it was already using.
-    ...(preview
-      ? { scale: 0.5, crf: 28, x264Preset: "ultrafast" }
-      : hq
-        ? { scale: fmt === "vertical" ? 1.5 : 2, crf: 16, x264Preset: "medium" }
-        : { crf: 18, x264Preset: "veryfast" }),
-    onProgress: ({ progress }) => {
-      const pct = Math.floor(progress * 100);
-      if (pct !== lastPct && pct % 5 === 0) {
-        console.log(`[render] ${pct}%`);
-        lastPct = pct;
-      }
-    },
-  });
+  let renderedFrames;
+
+  const res = await renderFfmpeg({ dir, props: inputProps, out: renderOut, preview, master, fgOut });
+  renderedFrames = res.frames;
 
   if (speedUpNeeded) {
     console.log(`[render] speeding up ${rate}x -> final.mp4`);
@@ -350,34 +273,30 @@ export async function renderSpool(opts) {
   // Stamp the rate + bg + format so `spool share`/re-renders know final.mp4's clock
   // differs from timeline.json/video.mp4, which canvas was used, and (vertical) the
   // authored hook/cta/music a worker re-render has no steps.mjs to read.
-  await writeFile(join(dir, "render.json"), JSON.stringify(planStamp(plan), null, 2) + "\n");
+  await writeFile(
+    join(dir, "render.json"),
+    JSON.stringify(planStamp(plan, fgOut ? { fg: "layers/fg.webm" } : {}), null, 2) + "\n"
+  );
 
   // Wall clock is the only handle on render cost; the Fly worker's 32-minute vertical
   // was invisible because this path never timed itself.
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
-  console.log(`[render] wrote ${finalOut} (${secs}s, ${composition.durationInFrames} frames @ ${composition.fps}fps)`);
+  console.log(`[render] wrote ${finalOut} (${secs}s, ${renderedFrames} frames @ ${outFps}fps)`);
   return finalOut;
 }
 
-// Direct CLI: node src/render/render.mjs --workdir <dir> [--rate <n>]
+// Direct CLI: node src/render/render.mjs --workdir <dir> [--preview]
 const isMain = resolve(process.argv[1] || "") === resolve(fileURLToPath(import.meta.url));
 if (isMain) {
   const argv = process.argv;
   const wIdx = argv.indexOf("--workdir");
   const workdir = wIdx >= 0 ? argv[wIdx + 1] : argv[2];
-  const rIdx = argv.indexOf("--rate");
-  const rate = rIdx >= 0 ? Number(argv[rIdx + 1]) : 1;
-  const bIdx = argv.indexOf("--bg");
-  const bg = bIdx >= 0 ? argv[bIdx + 1] : null;
-  const fIdx = argv.indexOf("--format");
-  const format = fIdx >= 0 ? argv[fIdx + 1] : null;
   const preview = argv.includes("--preview");
-  const hq = argv.includes("--hq");
   if (!workdir) {
-    console.error("usage: node src/render/render.mjs --workdir <dir> [--rate <n>] [--bg <preset|path>] [--format <wide|vertical>] [--preview] [--hq]");
+    console.error("usage: node src/render/render.mjs --workdir <dir> [--preview]");
     process.exit(1);
   }
-  renderSpool({ workdir, rate, bg, preview, hq, format })
+  renderSpool({ workdir, preview })
     .then(() => process.exit(0))
     .catch((err) => {
       console.error("[render] failed:", err);

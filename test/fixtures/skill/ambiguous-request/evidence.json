@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "kind": "evidence",
+  "items": [
+    {
+      "id": "ev-tickets",
+      "kind": "url",
+      "label": "The eleven support tickets that ask for better dismissals",
+      "ref": "https://linear.app/acme/issue/SPL-103",
+      "chapterIds": ["context", "outcome", "risks", "decision", "approach"]
+    }
+  ]
+}

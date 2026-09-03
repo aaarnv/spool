@@ -1,0 +1,164 @@
+<!doctype html><meta charset="utf-8">
+<title>bake-pov — POV plan</title>
+<style>
+  /* POV skin: the agent speaks first person. Product surface is the star:
+     a stylized dashboard that changes as the agent talks. */
+  * { margin:0; box-sizing:border-box; }
+  html,body { width:540px; height:960px; overflow:hidden; background:#07090d; }
+  #stage { position:relative; width:540px; height:960px; font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; color:#fff; }
+
+  .scene { position:absolute; inset:0; opacity:0; }
+  .scene.on { opacity:1; }
+
+  .say { position:absolute; left:32px; right:32px; top:150px; }
+  .say .l { display:block; font-weight:800; font-size:44px; letter-spacing:-.02em; line-height:1.12; opacity:0; transform:translateY(22px); }
+  .say .l.sm { font-size:28px; font-weight:600; color:#8b97a8; }
+  .say .l.me { color:#58a6ff; }
+  .say .l.bad { color:#ff7b72; }
+  .say .l.good { color:#3fb950; }
+
+  /* stylized dashboard */
+  .dash { position:absolute; left:26px; right:26px; top:330px; background:#0d1117; border:1px solid #22303f; border-radius:18px; padding:20px; }
+  .dash .hd { font-size:15px; font-weight:800; letter-spacing:.1em; color:#546174; margin-bottom:14px; }
+  .needy { background:#101a12; border:1.5px solid #238636; border-radius:12px; padding:0 14px; max-height:0; overflow:hidden; opacity:0; }
+  .needy .row { display:flex; justify-content:space-between; align-items:center; padding:13px 0; border-bottom:1px solid #1c2a20; font-size:18px; font-weight:600; }
+  .needy .row:last-child { border-bottom:0; }
+  .needy .wait { color:#d29922; font-size:14px; font-weight:700; }
+  .needy .tag { font-size:13px; font-weight:900; letter-spacing:.08em; color:#3fb950; padding:12px 0 6px; }
+  .gridrow { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+  .tile { background:#11161d; border:1px solid #1e2937; border-radius:10px; height:74px; }
+
+  /* ghost link floating away (the hook) */
+  .ghost { position:absolute; left:50%; top:430px; transform:translateX(-50%); background:#161b22; border:1px solid #30363d; border-radius:10px; padding:12px 18px; font-family:ui-monospace,Menlo,monospace; font-size:16px; color:#8b949e; }
+
+  #cap { position:absolute; left:24px; right:24px; bottom:110px; text-align:center; font-size:29px; font-weight:800; line-height:1.25; text-shadow:0 2px 14px rgba(0,0,0,.9); }
+  #cap .w { opacity:.4; } #cap .w.said { opacity:1; } #cap .w.now { opacity:1; color:#58a6ff; }
+  #prog { position:absolute; left:0; bottom:0; height:5px; background:#58a6ff; width:0; }
+  .brand { position:absolute; top:24px; left:24px; font-size:15px; font-weight:800; letter-spacing:.14em; color:#546174; }
+  .who { position:absolute; top:22px; right:24px; font-size:14px; font-weight:700; color:#58a6ff; background:#0d1b2e; border:1px solid #1f3a5c; border-radius:99px; padding:6px 12px; }
+  svg text { font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; }
+</style>
+<div id="stage">
+  <div class="brand">SPOOL · PLAN</div>
+  <div class="who">agent · dashboard</div>
+
+  <div class="scene" id="s-hook">
+    <div class="say">
+      <span class="l sm" data-hook="0.05">right now:</span>
+      <span class="l" data-hook="0.8">an agent is waiting<br>on a decision.</span>
+      <span class="l bad" data-hook="3.6">the only way you'd know?</span>
+      <span class="l" data-hook="5.4">somebody sends<br>you the link.</span>
+      <span class="l sm bad" data-hook="8.2">lose the link → it waits forever</span>
+    </div>
+    <div class="ghost" data-hook="5.6" style="top:640px; opacity:0">spool.dev/l/xK3…9fA</div>
+  </div>
+
+  <div class="scene" id="s-case">
+    <div class="say" style="top:110px">
+      <span class="l me" data-case="0.05" style="font-size:36px">I'm the dashboard agent.</span>
+      <span class="l sm" data-case="1.6">here's what I want to build:</span>
+    </div>
+    <div class="dash" style="top:280px">
+      <div class="hd">YOUR DASHBOARD</div>
+      <div class="needy" id="needy">
+        <div class="tag">NEEDS YOU</div>
+        <div class="row"><span>notification webhooks</span><span class="wait">2h waiting</span></div>
+        <div class="row"><span>feed status chip</span><span class="wait">40m waiting</span></div>
+        <div class="row"><span>chapter dedup</span><span class="wait">just now</span></div>
+      </div>
+      <div class="gridrow"><div class="tile"></div><div class="tile"></div></div>
+      <div class="gridrow"><div class="tile"></div><div class="tile"></div></div>
+    </div>
+  </div>
+
+  <div class="scene" id="s-cheap">
+    <div class="say" style="top:180px">
+      <span class="l sm" data-cheap="0.05">why this is cheap:</span>
+      <span class="l" data-cheap="1.2">the query<br><span class="good">already exists.</span></span>
+      <span class="l sm" data-cheap="4.4">someone built it — nobody wired it up</span>
+      <span class="l" data-cheap="8.0" style="font-size:36px">no new database work.<br>no new plumbing.</span>
+      <span class="l me" data-cheap="11.5" style="font-size:32px">I'm reusing a part<br>that was already there.</span>
+    </div>
+  </div>
+
+  <div class="scene" id="s-risk">
+    <div class="say" style="top:200px">
+      <span class="l sm" data-risk="0.05">what could go wrong:</span>
+      <span class="l" data-risk="1.0" style="font-size:38px">the dashboard is<br>everyone's first page.</span>
+      <span class="l bad" data-risk="4.0" style="font-size:38px">slow list =<br>every load slower.</span>
+      <span class="l good" data-risk="8.0" style="font-size:32px">so: one extra query,<br>riding the existing load.</span>
+    </div>
+  </div>
+
+  <div class="scene" id="s-alts">
+    <div class="say" style="top:170px">
+      <span class="l sm" data-alts="0.05">two bigger versions exist:</span>
+      <span class="l" data-alts="1.2" style="font-size:32px">show each plan's actual question<br><span class="sm" style="font-size:24px; color:#8b97a8">→ heavier query</span></span>
+      <span class="l" data-alts="6.4" style="font-size:32px">show plans you're invited to<br><span class="sm" style="font-size:24px; color:#8b97a8">→ database change</span></span>
+      <span class="l me" data-alts="11.8" style="font-size:34px">I'd start small<br>and earn those.</span>
+    </div>
+  </div>
+
+  <div class="scene" id="s-ask">
+    <div class="say" style="top:230px">
+      <span class="l sm" data-ask="0.05">the ask:</span>
+      <span class="l" data-ask="0.9" style="font-size:40px">an inbox for your plans,<br>from parts that<br>already exist.</span>
+      <span class="l good" data-ask="5.6" style="font-size:44px">say yes —</span>
+      <span class="l sm" data-ask="7.0">or pick a bigger version</span>
+    </div>
+  </div>
+
+  <div id="cap"></div>
+  <div id="prog"></div>
+</div>
+<script>
+  let D = null, capChunks = [];
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => [...document.querySelectorAll(s)];
+  const sceneFor = { hook:'s-hook', case:'s-case', cheap:'s-cheap', risk:'s-risk', alts:'s-alts', ask:'s-ask' };
+
+  window.INIT = (data) => {
+    D = data;
+    capChunks = [];
+    for (const b of D.beats) {
+      let cur = [];
+      for (const w of b.words) {
+        cur.push(w);
+        if (cur.length >= 5 || /[.!?…]$/.test(w.word)) { capChunks.push(cur); cur = []; }
+      }
+      if (cur.length) capChunks.push(cur);
+    }
+  };
+
+  window.SEEK = (t) => {
+    $('#prog').style.width = (100 * t / D.total) + '%';
+    const beat = D.beats.findLast((b) => t >= b.start) || D.beats[0];
+    const local = t - beat.start;
+
+    $$('.scene').forEach((s) => s.classList.remove('on'));
+    const sc = $('#' + sceneFor[beat.name]); if (sc) sc.classList.add('on');
+
+    $$(`[data-${beat.name}]`).forEach((el) => {
+      const on = local >= +el.dataset[beat.name];
+      el.style.opacity = on ? 1 : 0;
+      el.style.transform = on ? 'none' : '';
+      el.style.transition = 'opacity .35s ease, transform .35s ease';
+    });
+
+    // the "Needs you" list grows in during the case beat
+    if (beat.name === 'case') {
+      const grow = local >= 3.2;
+      const n = $('#needy');
+      n.style.maxHeight = grow ? '230px' : '0';
+      n.style.opacity = grow ? 1 : 0;
+      n.style.transition = 'max-height .8s ease, opacity .5s ease';
+      n.style.padding = grow ? '0 14px 6px' : '0 14px';
+    }
+
+    const chunk = capChunks.find((c) => t < c[c.length - 1].end) || capChunks[capChunks.length - 1];
+    $('#cap').innerHTML = chunk.map((w) => {
+      const cls = t >= w.end ? 'w said' : (t >= w.start ? 'w now' : 'w');
+      return `<span class="${cls}">${w.word}</span>`;
+    }).join(' ');
+  };
+</script>

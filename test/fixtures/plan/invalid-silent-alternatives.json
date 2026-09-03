@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Add timestamped questions to a published spool.",
+  "outcome": "A reviewer can ask a question against a video moment.",
+  "approach": [{ "id": "data", "summary": "Add comment and anchor records." }],
+  "alternatives": [],
+  "risks": ["Public links need a clear permission model for comments."],
+  "decision": {
+    "type": "approval",
+    "prompt": "Approve the anchored-comment approach.",
+    "options": ["approve", "redirect"]
+  },
+  "links": { "task": null }
+}

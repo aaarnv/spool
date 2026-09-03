@@ -10,6 +10,9 @@ import { normalize } from '../render/normalize.mjs';
 import { resolveRenderIntent, resolveWorkdirFormat } from '../render/render.mjs';
 import { resolveBgSource } from '../render/bg-resolve.mjs';
 import { resolveBgPref } from '../config/prefs.mjs';
+import { PLAN_VERSION, formatDiagnostics } from '../plan/schema.mjs';
+import { buildSharePlan, readPlanPacket, resolveRefs } from '../plan/plan.mjs';
+import { readPlanScript } from '../plan/generate.mjs';
 
 const BLOB_API = process.env.VERCEL_BLOB_API_URL || 'https://blob.vercel-storage.com';
 const POLL_MS = 5000;
@@ -75,6 +78,29 @@ async function stageBg(dir, bgSpec) {
   if (kind === 'preset' || !existsSync(source)) return false;
   await copyFile(source, join(dir, '.spool-bg.jpg'));
   return true;
+}
+
+/**
+ * The Plan Spool artifacts a platform render needs, in the published shape.
+ *
+ * Identical to what `spool share` writes into share/, built here instead because a
+ * cloud run never renders locally and so never builds a share bundle. Returns null
+ * for a workdir with no packet; throws on an invalid one, because a published plan
+ * that does not validate is worse than no plan.
+ */
+export async function planUpload(dir) {
+  const packet = await readPlanPacket(dir);
+  if (!packet.present) return null;
+  if (!packet.ok) {
+    throw new Error(`${join(dir, 'plan.json')} is invalid, so the published copy would lie:\n${formatDiagnostics(packet)}`);
+  }
+  const resolved = resolveRefs(dir, packet.evidence);
+  const plan = buildSharePlan({ ...packet, resolved });
+  return {
+    plan,
+    evidence: packet.evidence ? { version: PLAN_VERSION, kind: 'evidence', items: plan.evidence } : null,
+    script: await readPlanScript(dir),
+  };
 }
 
 // normalize() reports on stdout; a cloud run keeps stdout to just the watch link.
@@ -181,32 +207,36 @@ export async function cloudFinish(workdir, opts = {}) {
   }
 
   console.error('── spool cloud');
-  const format = await resolveWorkdirFormat(dir, opts.format);
-  const rate = Number(opts.rate ?? 1);
-  const bgSpec = opts.bg != null ? opts.bg : await resolveBgPref();
+  const format = await resolveWorkdirFormat(dir);
+  const bgSpec = await resolveBgPref();
 
   const timeline = await timelineForUpload(dir);
   checkNarration(dir, timeline);
 
+  // A Plan Spool renders its chapter cards from the packet AND the script; without
+  // the script the worker would publish the same take with the cards missing. Checked
+  // before the normalize below, so a fixable mistake costs no re-encode.
+  const planned = await planUpload(dir);
+  if (planned && !planned.script) {
+    console.error(`No ${join(dir, 'plan.script.json')} — run \`spool plan generate ${dir}\` so the cloud render can draw the plan cards.`);
+    process.exit(1);
+  }
+
   // The worker renders from video.mp4; the workdir may hold only the raw capture.
   await quietNormalize(dir);
 
-  const intent = await resolveRenderIntent(dir, { rate, bg: bgSpec, format });
+  const intent = await resolveRenderIntent(dir, { bg: bgSpec, format });
   const hasBg = await stageBg(dir, bgSpec);
   const hasConsole = existsSync(join(dir, 'console.jsonl'));
 
   const job = await createJob(host, token, {
     title: timeline.title || basename(dir),
     duration: null,
-    payload: {
-      rate,
-      bg: bgSpec ?? null,
-      hq: !!opts.hq,
-      voice: opts.voice ?? null,
-      speed: Number(opts.speed ?? 1),
-      format,
-    },
+    // Only what this machine RESOLVED and the worker cannot: the canvas it staged and
+    // the format the capture was taken for. Everything else is a house default there.
+    payload: { bg: bgSpec ?? null, format },
     sources: { hasBg, hasConsole },
+    ...(planned ? { plan: planned.plan, evidence: planned.evidence, script: planned.script } : {}),
   });
 
   const bodies = {
@@ -225,6 +255,12 @@ export async function cloudFinish(workdir, opts = {}) {
   console.error(`uploading sources (${uploads.length} files, ${mb.toFixed(1)} MB)...`);
   for (const grant of uploads) await uploadGrant(bodies[srcRel(grant.pathname)], grant);
 
+  return finishJob(dir, host, token, job);
+}
+
+// Start the job, wait for it, and record the watch link so `spool open` in this
+// workdir reopens it. Shared by both cloud entry points.
+async function finishJob(dir, host, token, job) {
   const started = await api(host, token, `/${job.jobId}/start`, { method: 'POST' });
   if (!started.ok) throw new Error(`cloud job start failed: ${started.status} ${await detail(started)}`);
   console.error('queued');
@@ -240,4 +276,41 @@ export async function cloudFinish(workdir, opts = {}) {
   console.error(`Done: ${url}`);
   console.log(url);
   return url;
+}
+
+/**
+ * Render a plan packet with no capture at all: the packet is the only thing that
+ * leaves this machine, and spoolkit.dev writes the script, draws the diagrams,
+ * voices them and renders the vertical video (SPL-DECISIONS #58).
+ *
+ * The workdir needs a valid plan.json and nothing else. Returns the watch URL.
+ */
+export async function cloudPacket(workdir, opts = {}) {
+  const dir = resolve(workdir);
+  const { host, token } = await resolveConfig({ host: opts.host, token: opts.token });
+  if (!host || !token) {
+    console.error('platform rendering needs an account: run `spool login`');
+    process.exit(1);
+  }
+
+  console.error('── spool cloud (packet)');
+  const planned = await planUpload(dir);
+  if (!planned) {
+    console.error(`No plan.json in ${dir} — a packet render has nothing else to render. Start one with \`spool plan init\`.`);
+    process.exit(1);
+  }
+
+  const job = await createJob(host, token, {
+    title: planned.plan.goal ?? basename(dir),
+    duration: null,
+    packet: true,
+    // A packet video is vertical by construction and the platform picks its ambient
+    // background from the packet, so there is nothing to send but the packet.
+    payload: { format: 'vertical' },
+    plan: planned.plan,
+    evidence: planned.evidence,
+  });
+
+  console.error('packet uploaded, nothing else to send');
+  return finishJob(dir, host, token, job);
 }

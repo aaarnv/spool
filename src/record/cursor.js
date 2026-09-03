@@ -149,9 +149,15 @@ export function makeHelpers(page, state, logClick, onCursorSamples) {
     const { x, y } = await resolvePoint(target, 'click');
     await move(x, y);
     await page.waitForTimeout(60); // settle before pressing
+    // What was clicked, read before the click can navigate the element away. It names
+    // the inferred step, so a failure here costs a name, never the take.
+    const text =
+      typeof target === 'string'
+        ? await page.locator(target).first().innerText().then((t) => t.trim().slice(0, 80)).catch(() => '')
+        : '';
     await page.mouse.down();
     await page.mouse.up();
-    logClick(x, y);
+    logClick(x, y, { target: typeof target === 'string' ? target : null, text });
   }
 
   async function type(selector, text) {

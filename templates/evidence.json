@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "kind": "evidence",
+  "items": [
+    {
+      "id": "ev-1",
+      "kind": "file",
+      "label": "TODO: what a reviewer sees when they open this",
+      "ref": "TODO: path/relative/to/the/repo.ts",
+      "revision": null,
+      "lines": [1, 12],
+      "summary": "TODO: one plain-language sentence about what this source showed. A reviewer reads it before the excerpt.",
+      "excerpt": "TODO: a short quotation from the source, only where repository access permits it.",
+      "chapterIds": ["context", "approach"]
+    }
+  ]
+}

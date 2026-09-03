@@ -1,0 +1,62 @@
+{
+  "engine": "openai",
+  "voice": "alloy",
+  "segments": [
+    {
+      "i": 0,
+      "name": "open-app",
+      "narration": "This is the plan list before any of the work lands.",
+      "wav": "vo/seg_00.wav",
+      "words": "vo/seg_00.words.json",
+      "duration": 3.4
+    },
+    {
+      "i": 1,
+      "name": "context",
+      "narration": "First, where things stand today. Plan chapters have no video anchor.",
+      "wav": "vo/seg_01.wav",
+      "words": "vo/seg_01.words.json",
+      "duration": 5.2
+    },
+    {
+      "i": 2,
+      "name": "outcome",
+      "narration": "Here is what changes. Every chapter names the range it runs in.",
+      "wav": "vo/seg_02.wav",
+      "words": "vo/seg_02.words.json",
+      "duration": 5.6
+    },
+    {
+      "i": 3,
+      "name": "approach",
+      "narration": "The approach is two steps. Step one. Record the chapter on the step.",
+      "wav": "vo/seg_03.wav",
+      "words": "vo/seg_03.words.json",
+      "duration": 6.9
+    },
+    {
+      "i": 4,
+      "name": "approach-detail",
+      "narration": "Step two. Derive the range from the steps that carry the chapter.",
+      "wav": "vo/seg_04.wav",
+      "words": "vo/seg_04.words.json",
+      "duration": 6.4
+    },
+    {
+      "i": 5,
+      "name": "risks",
+      "narration": "Now the risks. An old timeline carries no chapter, so it seeks by step.",
+      "wav": "vo/seg_05.wav",
+      "words": "vo/seg_05.words.json",
+      "duration": 7.1
+    },
+    {
+      "i": 6,
+      "name": "decision",
+      "narration": "That is the plan. You can approve it, or redirect with changes.",
+      "wav": "vo/seg_06.wav",
+      "words": "vo/seg_06.words.json",
+      "duration": 6.2
+    }
+  ]
+}

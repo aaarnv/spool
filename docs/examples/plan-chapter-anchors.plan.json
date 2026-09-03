@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Let a reviewer jump from a plan item to the exact moment of video that argues for it.",
+  "currentState": [
+    {
+      "claim": "The plan panel lists approach steps as text only, so a reviewer who doubts a step has to scrub the video to find it.",
+      "evidence": ["ev-panel"]
+    },
+    {
+      "claim": "Timeline steps carry a name and a recording-clock window, but no semantic identity, so nothing links a plan item to a moment.",
+      "evidence": ["ev-timeline"]
+    },
+    {
+      "claim": "PR guides already solve the same problem by mapping tour stops to recorded step names, and the watch page seeks from that mapping.",
+      "evidence": ["ev-tour"]
+    }
+  ],
+  "outcome": "Each approach step on a plan watch page is clickable and seeks the video to the chapter that explains it, and the mapping survives capture, share, publish and playback.",
+  "approach": [
+    {
+      "id": "capture",
+      "summary": "Accept an optional chapterId on a live step and write it into timeline.json beside name, start and end.",
+      "chapterId": "approach"
+    },
+    {
+      "id": "share",
+      "summary": "Carry chapterId through the share bundle onto each spool.json step, so the published artifact holds the mapping.",
+      "chapterId": "approach"
+    },
+    {
+      "id": "watch",
+      "summary": "Resolve each approach item to its chapter's start time in playerModel, and make the plan panel row seek the player.",
+      "chapterId": "approach"
+    },
+    {
+      "id": "lint",
+      "summary": "Report a plan item whose chapterId matches no recorded step, the way an unmatched tour stop is reported today.",
+      "chapterId": "risks"
+    }
+  ],
+  "alternatives": [
+    {
+      "id": "name-match",
+      "summary": "Match plan items to steps by step name, with no new field.",
+      "tradeoffs": [
+        "No contract change",
+        "Renaming a step silently breaks every anchor",
+        "Forces step names to carry two meanings"
+      ]
+    },
+    {
+      "id": "transcript-search",
+      "summary": "Find the moment by searching the transcript for the approach text.",
+      "tradeoffs": ["Works on old spools", "Fuzzy and unstable", "Cannot be linted"]
+    }
+  ],
+  "assumptions": [
+    "chapterId is additive: a spool recorded before it stays valid and simply has no anchors.",
+    "One chapter may explain several approach items; the mapping is many-to-one."
+  ],
+  "risks": [
+    "A stale chapterId points a reviewer at the wrong moment, which is worse than no anchor at all. Lint must catch it before publish.",
+    "Anchoring invites a denser page, which fights the principle that the video comes first."
+  ],
+  "decision": {
+    "type": "approval",
+    "prompt": "Add chapterId to the timeline contract for plan anchors, instead of matching by step name?",
+    "options": ["approve", "redirect"]
+  },
+  "evidence": [
+    {
+      "id": "ev-panel",
+      "kind": "file",
+      "label": "Plan panel: approach steps render as plain text",
+      "ref": "web/app/l/[id]/PlanPanel.tsx",
+      "chapterIds": ["context"]
+    },
+    {
+      "id": "ev-timeline",
+      "kind": "file",
+      "label": "timeline.json contract: steps carry name and window, no semantic id",
+      "ref": "CONTRACTS.md",
+      "chapterIds": ["context"]
+    },
+    {
+      "id": "ev-tour",
+      "kind": "file",
+      "label": "PR guides already map stops to recorded steps and seek from it",
+      "ref": "web/app/l/[id]/data.ts",
+      "chapterIds": ["context", "approach"]
+    },
+    {
+      "id": "ev-roadmap",
+      "kind": "file",
+      "label": "R2.1: plan chapters mapped to the recording timeline",
+      "ref": "docs/PLAN-SPOOLS-ROADMAP.md",
+      "chapterIds": ["outcome"]
+    }
+  ],
+  "links": {
+    "task": "SPL-8",
+    "branch": "spl/spl-8",
+    "commit": null,
+    "pr": null
+  }
+}

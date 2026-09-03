@@ -8,10 +8,13 @@ export const BG_PRESETS = {
   graphite: "bg-graphite.jpg",
   paper: "bg-paper.jpg",
   indigo: "bg-indigo.jpg",
+  sky: "bg-sky.jpg",
 };
 
 export const BG_PRESET_NAMES = Object.keys(BG_PRESETS);
 
 // The repo-shipped default (used when no bg is given, or a requested bg can't be
-// resolved — e.g. a macOS wallpaper name on the Linux worker). "indigo" = brand.
-export const DEFAULT_BG = "indigo";
+// resolved — e.g. a macOS wallpaper name on the Linux worker). "sky" reads like a
+// macOS desktop; on a Mac the runtime default is the real Sonoma wallpaper.
+export const DEFAULT_BG = "sky";
+export const DEFAULT_MAC_WALLPAPER = "sonoma";

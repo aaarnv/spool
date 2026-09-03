@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "kind": "plan",
+  "goal": "A plan written by a newer CLI than the one reading it.",
+  "outcome": "The reader rejects it instead of guessing at the shape.",
+  "approach": [{ "id": "data", "summary": "Whatever version 2 means by this." }],
+  "noAlternativesReason": "Not applicable to this fixture.",
+  "risks": [],
+  "decision": { "type": "approval", "prompt": "Approve?", "options": ["approve"] },
+  "links": {}
+}

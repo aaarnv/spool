@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "title": "Anchor plan chapters to the recording",
+  "url": "http://localhost:3000",
+  "viewport": { "width": 1600, "height": 900 },
+  "fps": null,
+  "video": "video.webm",
+  "steps": [
+    {
+      "i": 0,
+      "name": "open-app",
+      "start": 0.5,
+      "end": 3.0,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "This is the plan list before any of the work lands."
+    },
+    {
+      "i": 1,
+      "name": "context",
+      "chapterId": "context",
+      "start": 3.0,
+      "end": 9.4,
+      "zoom": "none",
+      "clicks": [{ "x": 512, "y": 340, "t": 4.1 }],
+      "narration": "First, where things stand today. Plan chapters have no video anchor."
+    },
+    {
+      "i": 2,
+      "name": "outcome",
+      "chapterId": "outcome",
+      "start": 9.4,
+      "end": 14.2,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "Here is what changes. Every chapter names the range it runs in."
+    },
+    {
+      "i": 3,
+      "name": "approach",
+      "chapterId": "approach",
+      "start": 14.2,
+      "end": 22.0,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "The approach is two steps. Step one. Record the chapter on the step."
+    },
+    {
+      "i": 4,
+      "name": "approach-detail",
+      "chapterId": "approach",
+      "start": 22.0,
+      "end": 28.6,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "Step two. Derive the range from the steps that carry the chapter."
+    },
+    {
+      "i": 5,
+      "name": "risks",
+      "chapterId": "risks",
+      "start": 28.6,
+      "end": 35.1,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "Now the risks. An old timeline carries no chapter, so it seeks by step."
+    },
+    {
+      "i": 6,
+      "name": "decision",
+      "chapterId": "decision",
+      "start": 35.1,
+      "end": 41.0,
+      "zoom": "none",
+      "clicks": [],
+      "narration": "That is the plan. You can approve it, or redirect with changes."
+    }
+  ],
+  "total": 41.6
+}

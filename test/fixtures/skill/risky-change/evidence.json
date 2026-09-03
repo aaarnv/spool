@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "kind": "evidence",
+  "items": [
+    {
+      "id": "ev-profile",
+      "kind": "file",
+      "label": "The login flow that rewrites the profile JSON",
+      "ref": "web/lib/session.ts",
+      "revision": "9c3d7e1",
+      "lines": [88, 112],
+      "chapterIds": ["context"]
+    },
+    {
+      "id": "ev-migration",
+      "kind": "file",
+      "label": "The migration that adds the dismissals table",
+      "ref": "web/db/migrations/0021_dismissals.sql",
+      "revision": "9c3d7e1",
+      "chapterIds": ["approach", "risks", "decision", "outcome"]
+    },
+    {
+      "id": "ev-test",
+      "kind": "test",
+      "label": "The cutover test, red until the table exists",
+      "ref": "npm test -- dismissals",
+      "chapterIds": ["approach"]
+    }
+  ]
+}

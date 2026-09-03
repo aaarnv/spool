@@ -11,14 +11,30 @@ import path from 'path';
 import { CURSOR_INIT_SCRIPT, makeHelpers } from './cursor.js';
 import { PAD_S } from '../render/retime.mjs';
 import { validateStepsModule } from './validate.mjs';
+import { chapterField } from '../plan/chapters.mjs';
 import { resolveLaunchChannel } from '../config/prefs.mjs';
+import { observe } from '../reliability/journal.mjs';
+import { createSignalRecorder, serializeSignals } from './signals.mjs';
+import { SIGNALS_FILE } from './recut.mjs';
 
 const SETTLE_MS = 1000; // after goto, let first paint/layout settle
 // After a step's interactions, let the resulting UI paint and the screencast
 // emit it before we cut — the last frame is what the renderer freeze-holds.
 const STEP_SETTLE_MS = 250;
 
-export async function record({ stepsFile, workdir, headed = false, dry = false }) {
+/**
+ * Record one take, and journal whether it worked (roadmap R6.3).
+ *
+ * The measurement wraps the whole session rather than a call site inside it, so
+ * every path that records — `spool record`, `spool build`, `spool plan build` —
+ * is counted once, and a browser that never launched counts the same as a step
+ * that failed halfway: the developer did not get a take.
+ */
+export async function record(opts) {
+  return observe('record', () => recordSession(opts), { target: opts.workdir });
+}
+
+async function recordSession({ stepsFile, workdir, headed = false, dry = false }) {
   const absSteps = path.resolve(stepsFile);
   if (!existsSync(absSteps)) throw new Error(`steps file not found: ${absSteps}`);
   const mod = await import(pathToFileURL(absSteps).href);
@@ -44,6 +60,15 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   const channel = await resolveLaunchChannel();
   const browser = await chromium.launch({ headless: !headed, ...(channel ? { channel } : {}) });
   const contextOpts = { viewport };
+  // config.storageState names a file (relative to the workdir), never cookie values.
+  const authInput = process.env.SPOOL_AUTH_STATE || config.storageState;
+  if (authInput) {
+    const authState = path.resolve(workdir, authInput);
+    if (!existsSync(authState)) {
+      throw new Error(`record: storageState file not found: ${authState} (re-run \`spool live --auth <file>\`)`);
+    }
+    contextOpts.storageState = authState;
+  }
   if (!dry) contextOpts.recordVideo = { dir: workdir, size: viewport };
   const context = await browser.newContext(contextOpts);
   await context.addInitScript(CURSOR_INIT_SCRIPT);
@@ -54,9 +79,15 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
   const video = dry ? null : page.video();
 
   const state = { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) };
+  const signals = createSignalRecorder({ now });
+  signals.attach(page);
+
   let currentClicks = [];
-  const logClick = (x, y) =>
-    currentClicks.push({ x: Math.round(x), y: Math.round(y), t: +now().toFixed(3) });
+  const logClick = (x, y, meta = {}) => {
+    const click = { x: Math.round(x), y: Math.round(y), t: +now().toFixed(3) };
+    currentClicks.push(click);
+    signals.log({ kind: 'click', x: click.x, y: click.y, target: meta.target ?? null, text: meta.text ?? '' });
+  };
   const h = makeHelpers(page, state, logClick);
 
   // Browser telemetry captured alongside the recording (→ console.jsonl), so a
@@ -102,6 +133,9 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
       curName = step.name;
       currentClicks = [];
       const start = now();
+      // A scripted boundary is a marker like any other, so a scripted take can be
+      // re-cut from its signals the same way a live one can.
+      signals.log({ kind: 'marker', name: step.name, ...chapterField(step) });
       console.log(`[record] step ${i} "${step.name}" start t=${start.toFixed(2)}s`);
       await step.run(page, h);
       await page.waitForTimeout(STEP_SETTLE_MS); // capture the settled end state
@@ -110,6 +144,7 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
       timeline.steps.push({
         i,
         name: step.name,
+        ...chapterField(step), // Plan Spools: the semantic anchor beside the name
         start: +start.toFixed(3),
         end: +end.toFixed(3),
         zoom: step.zoom ?? 'auto',
@@ -130,7 +165,13 @@ export async function record({ stepsFile, workdir, headed = false, dry = false }
     throw e;
   }
 
+  signals.close();
   await context.close(); // finalizes the video file
+
+  // The signal log is what makes the cut re-derivable, so it ships with every take.
+  const signalsPath = path.join(workdir, SIGNALS_FILE);
+  await writeFile(signalsPath, serializeSignals(signals.signals));
+  console.log(`[record] wrote ${signalsPath} (${signals.signals.length} signal(s))`);
 
   // Always write console.jsonl (empty when nothing fired) so consumers can rely on it.
   const consolePath = path.join(workdir, 'console.jsonl');

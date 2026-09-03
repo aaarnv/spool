@@ -1,0 +1,290 @@
+{
+  "version": 1,
+  "sample": "Plan visual templates founder checkpoint",
+  "themes": [
+    "editorial-minimal",
+    "technical-system",
+    "warm-briefing"
+  ],
+  "cardTypes": [
+    "context",
+    "outcome",
+    "sequence",
+    "risks",
+    "decision",
+    "evidence"
+  ],
+  "directionFrames": [
+    "overview",
+    "browser-overlay",
+    "os-overlay",
+    "card-only",
+    "portrait"
+  ],
+  "baselines": [
+    {
+      "theme": "editorial-minimal",
+      "name": "context",
+      "file": "editorial-minimal/cards/context.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "outcome",
+      "file": "editorial-minimal/cards/outcome.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "sequence",
+      "file": "editorial-minimal/cards/sequence.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "risks",
+      "file": "editorial-minimal/cards/risks.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "decision",
+      "file": "editorial-minimal/cards/decision.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "evidence",
+      "file": "editorial-minimal/cards/evidence.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "overview",
+      "file": "editorial-minimal/overview.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "browser-overlay",
+      "file": "editorial-minimal/browser-overlay.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "os-overlay",
+      "file": "editorial-minimal/os-overlay.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "card-only",
+      "file": "editorial-minimal/card-only.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "editorial-minimal",
+      "name": "portrait",
+      "file": "editorial-minimal/portrait.png",
+      "width": 1080,
+      "height": 1920,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "context",
+      "file": "technical-system/cards/context.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "outcome",
+      "file": "technical-system/cards/outcome.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "sequence",
+      "file": "technical-system/cards/sequence.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "risks",
+      "file": "technical-system/cards/risks.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "decision",
+      "file": "technical-system/cards/decision.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "evidence",
+      "file": "technical-system/cards/evidence.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "overview",
+      "file": "technical-system/overview.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "browser-overlay",
+      "file": "technical-system/browser-overlay.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "os-overlay",
+      "file": "technical-system/os-overlay.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "card-only",
+      "file": "technical-system/card-only.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "technical-system",
+      "name": "portrait",
+      "file": "technical-system/portrait.png",
+      "width": 1080,
+      "height": 1920,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "context",
+      "file": "warm-briefing/cards/context.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "outcome",
+      "file": "warm-briefing/cards/outcome.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "sequence",
+      "file": "warm-briefing/cards/sequence.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "risks",
+      "file": "warm-briefing/cards/risks.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "decision",
+      "file": "warm-briefing/cards/decision.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "evidence",
+      "file": "warm-briefing/cards/evidence.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "overview",
+      "file": "warm-briefing/overview.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "browser-overlay",
+      "file": "warm-briefing/browser-overlay.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "os-overlay",
+      "file": "warm-briefing/os-overlay.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "card-only",
+      "file": "warm-briefing/card-only.png",
+      "width": 1920,
+      "height": 1080,
+      "frame": 46
+    },
+    {
+      "theme": "warm-briefing",
+      "name": "portrait",
+      "file": "warm-briefing/portrait.png",
+      "width": 1080,
+      "height": 1920,
+      "frame": 46
+    }
+  ]
+}

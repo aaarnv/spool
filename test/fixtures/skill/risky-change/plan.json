@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Move card dismissals into their own table, so they survive a re-login.",
+  "currentState": [
+    {
+      "claim": "Dismissals live in the coach's profile JSON, which the login flow rewrites wholesale.",
+      "evidence": [
+        "ev-profile"
+      ],
+      "chapterId": "context"
+    }
+  ],
+  "outcome": "A dismissal is a row of its own, and a re-login cannot overwrite it.",
+  "approach": [
+    {
+      "id": "table",
+      "summary": "Add a dismissals table keyed by coach and card.",
+      "chapterId": "approach",
+      "evidence": [
+        "ev-migration"
+      ]
+    },
+    {
+      "id": "backfill",
+      "summary": "Copy the dismissals already in profile JSON into the new table.",
+      "chapterId": "approach"
+    },
+    {
+      "id": "cutover",
+      "summary": "Read from the table, and stop writing the profile field.",
+      "chapterId": "approach",
+      "evidence": [
+        "ev-test"
+      ]
+    }
+  ],
+  "alternatives": [
+    {
+      "id": "profile-column",
+      "summary": "Keep dismissals on the profile, in a column login never rewrites.",
+      "tradeoffs": [
+        "No migration and no backfill",
+        "The profile row grows with every card"
+      ]
+    }
+  ],
+  "assumptions": [
+    "The backfill runs once, on forty thousand profiles."
+  ],
+  "risks": [
+    {
+      "claim": "The backfill locks the profiles table while it copies.",
+      "evidence": [
+        "ev-migration"
+      ],
+      "chapterId": "risks"
+    },
+    "A dismissal written during the cutover is lost."
+  ],
+  "decision": {
+    "type": "approval",
+    "prompt": "Approve the dismissals table, or send it back for the profile column.",
+    "options": [
+      "approve",
+      "alternative:profile-column",
+      "redirect",
+      "ask-question"
+    ],
+    "evidence": [
+      "ev-migration"
+    ]
+  },
+  "links": {
+    "task": "SPL-102",
+    "repo": "acme/coach",
+    "branch": "feat/dismissals-table",
+    "commit": "9c3d7e1",
+    "pr": null
+  }
+}

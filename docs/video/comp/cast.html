@@ -1,0 +1,173 @@
+<!doctype html><meta charset="utf-8">
+<title>bake-cast — broadcast proof</title>
+<style>
+  /* Broadcast skin: bold, kinetic, the PR is the star. 540x960 CSS = 1080x1920 @2x. */
+  * { margin:0; box-sizing:border-box; }
+  html,body { width:540px; height:960px; overflow:hidden; background:#0b0d10; }
+  #stage { position:relative; width:540px; height:960px; font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; color:#fff; }
+
+  .scene { position:absolute; inset:0; opacity:0; }
+  .scene.on { opacity:1; }
+
+  /* big kinetic type */
+  .kine { position:absolute; left:36px; right:36px; top:230px; font-weight:800; letter-spacing:-.02em; line-height:1.04; }
+  .kine .l { display:block; font-size:64px; opacity:0; transform:translateY(28px); }
+  .kine .l.sm { font-size:34px; font-weight:600; color:#9aa4b2; }
+  .kine .l.hi { color:#3fb950; }
+  .kine .l.warn { color:#d29922; }
+
+  /* stylized PR card */
+  .pr { position:absolute; left:24px; right:24px; top:300px; background:#161b22; border:1px solid #30363d; border-radius:14px; padding:22px; transform:scale(.96); }
+  .pr .t { font-size:22px; font-weight:700; line-height:1.25; }
+  .pr .n { color:#8b949e; font-weight:500; }
+  .pr .badge { display:inline-block; margin-top:12px; background:#238636; color:#fff; font-size:14px; font-weight:700; border-radius:99px; padding:5px 12px; }
+  .check { display:flex; align-items:center; gap:12px; margin-top:18px; padding:14px; background:#0d1117; border:1px solid #30363d; border-radius:10px; font-size:17px; }
+  .check .dot { width:16px; height:16px; border-radius:50%; flex:none; }
+  .spin { border:3px solid #30363d; border-top-color:#d29922; animation:none; }
+  .ok { background:#3fb950; }
+  .warnD { background:#d29922; }
+  .check .who { font-weight:700; }
+  .check .what { color:#8b949e; margin-left:auto; font-size:14px; }
+  .verdict { margin-top:14px; padding:16px; border-left:4px solid #d29922; background:#1c1408; border-radius:8px; font-size:17px; line-height:1.4; opacity:0; }
+  .verdict b { color:#d29922; }
+  .merge { display:flex; align-items:center; gap:10px; margin-top:18px; }
+  .merge .btn { background:#238636; color:#fff; font-weight:700; font-size:16px; border-radius:8px; padding:11px 18px; }
+  .merge .note { color:#8b949e; font-size:14px; }
+
+  /* receipt stamps */
+  .stamps { position:absolute; left:36px; right:36px; top:640px; display:grid; gap:12px; }
+  .stamp { display:flex; align-items:center; gap:12px; background:#11151a; border:1px solid #263041; border-radius:12px; padding:14px 16px; font-size:19px; font-weight:600; opacity:0; transform:translateX(-16px); }
+  .stamp .ic { width:26px; height:26px; border-radius:50%; background:#3fb950; color:#04260f; display:grid; place-items:center; font-weight:900; font-size:15px; flex:none; }
+
+  /* captions: karaoke chunk, bottom third */
+  #cap { position:absolute; left:24px; right:24px; bottom:120px; text-align:center; font-size:30px; font-weight:800; line-height:1.25; text-shadow:0 2px 14px rgba(0,0,0,.9); }
+  #cap .w { opacity:.4; }
+  #cap .w.said { opacity:1; }
+  #cap .w.now { opacity:1; color:#ffd166; }
+
+  /* progress */
+  #prog { position:absolute; left:0; bottom:0; height:5px; background:#ffd166; width:0; }
+  .brand { position:absolute; top:24px; left:24px; font-size:15px; font-weight:800; letter-spacing:.14em; color:#566173; }
+  svg text { font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; }
+</style>
+<div id="stage">
+  <div class="brand">SPOOL · PROOF</div>
+
+  <div class="scene" id="s-hook">
+    <div class="kine">
+      <span class="l" data-at="0.0">A robot,</span>
+      <span class="l" data-at="0.7">getting its</span>
+      <span class="l hi" data-at="1.3">permission slip</span>
+      <span class="l" data-at="1.9">checked.</span>
+      <span class="l sm" data-at="3.4">Live. On a real pull request.</span>
+    </div>
+  </div>
+
+  <div class="scene" id="s-rule">
+    <div class="kine" style="top:200px">
+      <span class="l sm" data-r="0.05">the rule</span>
+      <span class="l" style="font-size:44px" data-r="0.9">Agent opens a PR →</span>
+      <span class="l" style="font-size:44px" data-r="2.2">one check asks:</span>
+      <span class="l hi" style="font-size:50px" data-r="4.6">"did a human</span>
+      <span class="l hi" style="font-size:50px" data-r="5.4">approve a plan?"</span>
+    </div>
+  </div>
+
+  <div class="scene" id="s-verdict">
+    <div class="pr" id="prcard">
+      <div class="t"><span class="n">#11</span> Run the plan gate on every pull request</div>
+      <div class="badge">Open</div>
+      <div class="check">
+        <div class="dot spin" id="gatedot"></div>
+        <div class="who">gate</div><div class="what" id="gatewhat">running…</div>
+      </div>
+      <div class="verdict" id="verd">⚠ <b>warning</b> — no plan on file for this change.<br>Advisory mode: recorded, not blocking.</div>
+    </div>
+  </div>
+
+  <div class="scene" id="s-why">
+    <div class="kine" style="top:250px">
+      <span class="l" style="font-size:52px" data-w="0.05">It warns.</span>
+      <span class="l warn" style="font-size:52px" data-w="1.2">It doesn't block.</span>
+      <span class="l sm" data-w="3.2">on purpose — warn-only week, everywhere</span>
+      <span class="l sm" data-w="6.0">see how it feels first</span>
+      <span class="l" style="font-size:44px" data-w="9.2">flip one setting →</span>
+      <span class="l warn" style="font-size:44px" data-w="10.6">warnings become walls</span>
+    </div>
+  </div>
+
+  <div class="scene" id="s-receipt">
+    <div class="kine" style="top:120px"><span class="l sm" data-c="0">the receipt</span></div>
+    <div class="stamps" style="top:210px">
+      <div class="stamp" data-c="0.6"><div class="ic">✓</div>under a minute</div>
+      <div class="stamp" data-c="2.2"><div class="ic">✓</div>verdict visible to everyone</div>
+      <div class="stamp" data-c="4.0"><div class="ic">✓</div>merge button still works</div>
+      <div class="stamp" data-c="6.2" style="border-color:#3fb950"><div class="ic">✓</div><b>that's the proof. done.</b></div>
+    </div>
+  </div>
+
+  <div id="cap"></div>
+  <div id="prog"></div>
+</div>
+<script>
+  // Pure function of t: INIT(data) once, SEEK(t) any time, any order.
+  let D = null, capChunks = [];
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => [...document.querySelectorAll(s)];
+  const sceneFor = { hook: 's-hook', rule: 's-rule', verdict: 's-verdict', why: 's-why', receipt: 's-receipt' };
+
+  window.INIT = (data) => {
+    D = data;
+    // Build caption chunks that never cross a beat and break at sentence ends,
+    // max 5 words — so a chunk is always a speakable unit.
+    capChunks = [];
+    for (const b of D.beats) {
+      let cur = [];
+      for (const w of b.words) {
+        cur.push(w);
+        const end = /[.!?…]$/.test(w.word);
+        if (cur.length >= 5 || end) { capChunks.push(cur); cur = []; }
+      }
+      if (cur.length) capChunks.push(cur);
+    }
+  };
+
+  window.SEEK = (t) => {
+    $('#prog').style.width = (100 * t / D.total) + '%';
+    const beat = D.beats.findLast((b) => t >= b.start) || D.beats[0];
+    const local = t - beat.start;
+
+    // scenes
+    $$('.scene').forEach((s) => s.classList.remove('on'));
+    const sc = $('#' + sceneFor[beat.name]); if (sc) sc.classList.add('on');
+
+    // kinetic lines per scene (data-at/r/w/c = local reveal time)
+    for (const [attr, scene] of [['at','hook'],['r','rule'],['w','why'],['c','receipt']]) {
+      if (beat.name !== scene) continue;
+      $$(`[data-${attr}]`).forEach((el) => {
+        const on = local >= +el.dataset[attr];
+        el.style.opacity = on ? 1 : 0;
+        el.style.transform = on ? 'none' : (el.classList.contains('stamp') ? 'translateX(-16px)' : 'translateY(28px)');
+        el.style.transition = 'opacity .35s ease, transform .35s ease';
+      });
+    }
+
+    // verdict scene: spinner -> verdict
+    if (beat.name === 'verdict') {
+      const landed = local >= 2.6;
+      $('#gatedot').className = 'dot ' + (landed ? 'warnD' : 'spin');
+      $('#gatewhat').textContent = landed ? 'completed' : 'running…';
+      $('#verd').style.opacity = landed ? 1 : 0;
+      $('#verd').style.transition = 'opacity .4s ease';
+      $('#prcard').style.transform = landed ? 'scale(1)' : 'scale(.96)';
+      $('#prcard').style.transition = 'transform .5s ease';
+    }
+
+    // captions: current chunk of ~5 words around t
+    const chunk = capChunks.find((c) => t < c[c.length - 1].end) || capChunks[capChunks.length - 1];
+    $('#cap').innerHTML = chunk.map((w) => {
+      const cls = t >= w.end ? 'w said' : (t >= w.start ? 'w now' : 'w');
+      return `<span class="${cls}">${w.word}</span>`;
+    }).join(' ');
+  };
+</script>

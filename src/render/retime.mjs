@@ -1,11 +1,46 @@
 // Shared retiming math for the record-first pipeline. The capture runs at natural
 // interaction speed; here we map each recorded step onto an OUTPUT window sized to
-// fit its narration. Imported by SpoolComposition (browser bundle) and share.mjs
+// fit its narration. Imported by the render engine and share.mjs
 // (node), so it stays a dependency-free pure module.
 
 export const FPS = 60;
+
+// Output rate per format. Both are 60: footage is 30fps native, so the extra frames
+// only smooth the overlays, and wide at 30 was tried, watched and rejected — the
+// cost is accepted for the smoother result. SPOOL_RENDER_FPS=30 is the fast knob.
+export const defaultFpsFor = (_format) => 60;
 export const PAD_S = 0.4; // minimum slack past the narration inside a window
 export const TAIL_S = 1; // end hold so the last caption/VO can land
+
+// Windows for a timeline that needs no retiming: each step keeps its own times.
+function identityWindows(steps, fps) {
+  let totalFrames = 0;
+  const windows = steps.map((s) => {
+    const startF = Math.round(s.start * fps);
+    const endF = Math.round(s.end * fps);
+    totalFrames = Math.max(totalFrames, endF);
+    const clicks = s.clicks || [];
+    return {
+      i: s.i,
+      name: s.name,
+      ...(s.chapterId ? { chapterId: s.chapterId } : {}),
+      zoom: s.zoom ?? "auto",
+      inF: startF,
+      outF: endF,
+      recFrames: Math.max(1, endF - startF),
+      windowFrames: Math.max(1, endF - startF),
+      startF,
+      endF,
+      startSec: startF / fps,
+      endSec: endF / fps,
+      recStart: s.start,
+      recEnd: s.end,
+      clicks,
+      outClicks: clicks,
+    };
+  });
+  return { windows, totalFrames };
+}
 
 export function voDurationFor(manifest, i) {
   const segs = manifest?.segments;
@@ -20,6 +55,10 @@ export function voDurationFor(manifest, i) {
 // (zoom, captions, audio placement). Click times are mapped into output time.
 export function buildWindows(timeline, manifest, fps = FPS) {
   const steps = timeline?.steps || [];
+  // `retimed` marks a timeline that is ALREADY the output clock — a packet video is
+  // authored beat by beat, so there is no capture to fit narration into and padding
+  // it here would report times the rendered file does not have.
+  if (timeline?.retimed) return identityWindows(steps, fps);
   let cursorF = 0;
   const windows = steps.map((s) => {
     const recStart = s.start;
@@ -40,6 +79,9 @@ export function buildWindows(timeline, manifest, fps = FPS) {
     return {
       i: s.i,
       name: s.name,
+      // Plan Spools: carried through so a renderer layer can key a chapter card
+      // off the window it belongs to. Absent on every non-plan timeline.
+      ...(s.chapterId ? { chapterId: s.chapterId } : {}),
       zoom: s.zoom ?? "auto",
       inF,
       outF,

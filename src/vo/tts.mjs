@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.mjs';
 import { resolveEnginePref } from '../config/prefs.mjs';
+import { planVoiceInstructions } from '../plan/generate.mjs';
 
 const DEFAULT_INSTRUCTIONS =
   'Affect: a cheerful, knowledgeable guide, the engineer who built this product walking a teammate through it. ' +
@@ -33,15 +34,26 @@ const round2 = (x) => Math.round(x * 100) / 100;
 const registerFor = (instructions, format) =>
   instructions ?? (format === 'vertical' ? SHORT_FORM_INSTRUCTIONS : DEFAULT_INSTRUCTIONS);
 
+// A Plan Spool's approved voice lives in plan.script.json (written by
+// `spool plan generate`). It sits between an explicit register and the default,
+// so a plan take is read the way its narration was generated.
+async function resolveRegister(workdir, instructions, format) {
+  if (instructions) return instructions;
+  const planInstructions = workdir ? await planVoiceInstructions(workdir) : null;
+  return registerFor(planInstructions ?? undefined, format);
+}
+
 export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', instructions, speed = 1, format = null } = {}) {
   if (!workdir) throw new Error('generateVO: workdir required');
 
   // Narration source: a steps.mjs snapshot (scripted/browser) when present, else
   // the session's timeline.json per-step narration (OS sessions have no steps.mjs).
+  // An inferred take has a steps.mjs (for its config) but no steps in it, so an empty
+  // array means "not the narration source" rather than "nothing to say".
   let steps;
-  if (stepsFile && existsSync(resolve(stepsFile))) {
-    const mod = await import(pathToFileURL(resolve(stepsFile)).href);
-    steps = mod.steps || [];
+  const mod = stepsFile && existsSync(resolve(stepsFile)) ? await import(pathToFileURL(resolve(stepsFile)).href) : null;
+  if (mod?.steps?.length) {
+    steps = mod.steps;
   } else {
     const tl = JSON.parse(await readFile(join(workdir, 'timeline.json'), 'utf8'));
     steps = (tl.steps || []).map((s) => ({ name: s.name, narration: s.narration || '' }));
@@ -49,11 +61,15 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
   const voDir = join(workdir, 'vo');
   await mkdir(voDir, { recursive: true });
 
-  const instr = registerFor(instructions, format);
+  const instr = await resolveRegister(workdir, instructions, format);
   engine = await resolveEngine(engine);
   const key = engine === 'openai' ? await resolveKey() : null;
   if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
   const hosted = engine === 'hosted' ? await resolveHosted() : null;
+  const fishKey = engine === 'fish' ? await resolveFishKey() : null;
+  if (engine === 'fish' && !fishKey) throw new Error('FISH_API_KEY not set (env or "fishKey" in ~/.spool.json)');
+  // Fish voices are reference ids; the OpenAI default 'alloy' means "unset" here.
+  if (engine === 'fish' && (!voice || voice === 'alloy')) voice = await resolveFishVoice() || voice;
 
   // One job per narrated step. TTS → loudnorm → whisper stay sequential inside a
   // job; jobs run through a bounded pool so the wall-time is ~total/CONCURRENCY.
@@ -61,7 +77,7 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
     .map((step, i) => ({ name: step.name, i, narration: (step.narration || '').trim() }))
     .filter((j) => j.narration); // un-narrated steps get no segment; index i still mirrors the steps array
 
-  const ctx = { engine, key, hosted, voice, instr, speed, workdir, voDir };
+  const ctx = { engine, key, hosted, fishKey, voice, instr, speed, workdir, voDir };
   const CONCURRENCY = 4;
   const results = new Array(jobs.length);
   let next = 0;
@@ -84,7 +100,7 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
 // Synthesize one segment's wav + word-times into <workdir>/vo/seg_NN.{wav,words.json}.
 // ctx carries the resolved engine + credentials; job is { i, name, narration }.
 async function buildSegment(ctx, { i, name, narration }) {
-  const { engine, key, hosted, voice, instr, speed, workdir, voDir } = ctx;
+  const { engine, key, hosted, fishKey, voice, instr, speed, workdir, voDir } = ctx;
   const nn = String(i).padStart(2, '0');
   const wavRel = `vo/seg_${nn}.wav`;
   const wordsRel = `vo/seg_${nn}.words.json`;
@@ -108,6 +124,14 @@ async function buildSegment(ctx, { i, name, narration }) {
     // Server timings are on the raw wav; atempo scales time linearly, so /speed keeps them true.
     const scaled = speed !== 1 ? words.map((w) => ({ word: w.word, start: round2(w.start / speed), end: round2(w.end / speed) })) : words;
     await writeFile(wordsAbs, JSON.stringify(scaled));
+  } else if (engine === 'fish') {
+    // Fish Audio TTS (community reference voices). `voice` carries the reference id.
+    // Fish returns no word timings, so a local whisper transcribes the finished wav.
+    const rawPath = join(voDir, `seg_${nn}.raw.wav`);
+    await writeFile(rawPath, await fishSpeech(fishKey, narration, voice));
+    await loudnorm(rawPath, wavAbs, speed);
+    await rm(rawPath, { force: true });
+    await writeFile(wordsAbs, JSON.stringify(await localWhisperWords(wavAbs, narration)));
   } else if (engine === 'local') {
     await localSegment(narration, voDir, nn, wordsAbs);
   } else {
@@ -122,12 +146,16 @@ export async function synthesizeSegment({ workdir, i, name, narration, engine, v
   if (!workdir) throw new Error('synthesizeSegment: workdir required');
   const voDir = join(workdir, 'vo');
   await mkdir(voDir, { recursive: true });
-  const instr = registerFor(instructions, format);
+  const instr = await resolveRegister(workdir, instructions, format);
   engine = await resolveEngine(engine);
   const key = engine === 'openai' ? await resolveKey() : null;
   if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
   const hosted = engine === 'hosted' ? await resolveHosted() : null;
-  return buildSegment({ engine, key, hosted, voice, instr, speed, workdir, voDir }, { i, name, narration: (narration || '').trim() });
+  const fishKey = engine === 'fish' ? await resolveFishKey() : null;
+  if (engine === 'fish' && !fishKey) throw new Error('FISH_API_KEY not set (env or "fishKey" in ~/.spool.json)');
+  // Fish voices are reference ids; the OpenAI default 'alloy' means "unset" here.
+  if (engine === 'fish' && (!voice || voice === 'alloy')) voice = await resolveFishVoice() || voice;
+  return buildSegment({ engine, key, hosted, fishKey, voice, instr, speed, workdir, voDir }, { i, name, narration: (narration || '').trim() });
 }
 
 // --- OpenAI TTS ------------------------------------------------------------
@@ -186,6 +214,60 @@ async function resolveEngine(explicit) {
   );
 }
 
+// --- Fish Audio TTS (character reference voices) ----------------------------
+
+const FISH_MODEL = process.env.SPOOL_FISH_MODEL || 's2.1-pro-free';
+
+async function fishSpeech(key, text, referenceId) {
+  const res = await fetch('https://api.fish.audio/v1/tts', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', model: FISH_MODEL },
+    body: JSON.stringify({ text, reference_id: referenceId, format: 'wav' }),
+  });
+  if (!res.ok) throw new Error(`fish tts ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// Default Fish reference id: env SPOOL_FISH_VOICE, else "fishVoice" in ~/.spool.json.
+async function resolveFishVoice() {
+  if (process.env.SPOOL_FISH_VOICE) return process.env.SPOOL_FISH_VOICE;
+  try {
+    const cfg = JSON.parse(await readFile(join(homedir(), '.spool.json'), 'utf8'));
+    if (cfg.fishVoice) return cfg.fishVoice;
+  } catch { /* no voice anywhere */ }
+  return null;
+}
+
+async function resolveFishKey() {
+  if (process.env.FISH_API_KEY) return process.env.FISH_API_KEY;
+  try {
+    const cfg = JSON.parse(await readFile(join(homedir(), '.spool.json'), 'utf8'));
+    if (cfg.fishKey) return cfg.fishKey;
+  } catch { /* no key anywhere */ }
+  return null;
+}
+
+// Word timings via local whisper (mlx). Engine-independent: it consumes the wav
+// we just made, so any TTS source gains synced captions without a cloud key.
+const WHISPER_PY = process.env.SPOOL_WHISPER_PY || join(homedir(), '.spool-venv/bin/python');
+const WHISPER_SCRIPT = `
+import mlx_whisper, json, sys
+r = mlx_whisper.transcribe(sys.argv[1], word_timestamps=True, initial_prompt=sys.argv[2], path_or_hf_repo="mlx-community/whisper-small-mlx")
+words = []
+for seg in r["segments"]:
+    for w in seg.get("words", []):
+        words.append({"word": w["word"].strip(), "start": round(w["start"], 2), "end": round(w["end"], 2)})
+print(json.dumps(words))
+`;
+
+async function localWhisperWords(wavPath, prompt) {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { stdout } = await promisify(execFile)(WHISPER_PY, ['-c', WHISPER_SCRIPT, wavPath, prompt || ''], { maxBuffer: 10 * 1024 * 1024 });
+  const lines = stdout.trim().split('\n');
+  return JSON.parse(lines[lines.length - 1]);
+}
+
 // --- hosted VO (spool web app: OpenAI without the user's own key) -----------
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -201,13 +283,23 @@ async function hostedSpeech({ host, token }, text, voice, instructions) {
   return { audio: json.audio, words: json.words || [] };
 }
 
-// Retry 5xx once with backoff; surface the server's error (incl. 429 daily cap).
+const HOSTED_BACKOFF_MS = [1000, 3000, 8000];
+
+// Retry 5xx and network faults on that backoff; a 4xx (incl. the 429 daily cap)
+// is the server's verdict on this request, so surface it at once.
 async function hostedFetch(url, opts, attempt = 0) {
-  const res = await fetch(url, opts);
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (e) {
+    if (attempt >= HOSTED_BACKOFF_MS.length) throw new Error(`hosted VO unreachable: ${e.message}`);
+    await sleep(HOSTED_BACKOFF_MS[attempt]);
+    return hostedFetch(url, opts, attempt + 1);
+  }
   if (res.ok) return res;
   const body = await res.text().catch(() => '');
-  if (res.status >= 500 && attempt < 1) {
-    await sleep(1500 * (attempt + 1));
+  if (res.status >= 500 && attempt < HOSTED_BACKOFF_MS.length) {
+    await sleep(HOSTED_BACKOFF_MS[attempt]);
     return hostedFetch(url, opts, attempt + 1);
   }
   let msg = body;

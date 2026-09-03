@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
 
       # Installs the spool CLI, ffmpeg and headless chromium; writes ~/.spool.json
-      # from the token; caps SPOOL_RENDER_CONCURRENCY for CI.
+      # from the token.
       - uses: aaarnv/spool@master
         with:
           token: ${{ secrets.SPOOL_TOKEN }}
@@ -40,10 +40,13 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Guide authoring runs long; the default cap silently truncated runs mid-flow.
           claude_args: '--max-turns 200 --allowedTools "Bash,Read,Write,Edit,Glob,Grep"'
+          # Without this the agent's tool output is hidden, so a failed run leaves
+          # nothing in the log to diagnose. The repo is private and Actions masks secrets.
+          show_full_output: true
           prompt: |
             Create a narrated Spool PR guide for pull request #${{ github.event.pull_request.number }}
             and comment the watch link on it. The runner already has the spool CLI, ffmpeg and
-            headless chromium; SPOOL_RENDER_CONCURRENCY is capped. Never pass --headed or --target os.
+            headless chromium. Never pass --target os.
 
             Follow the Spool PR-guide flow (contract: docs/PR-GUIDE-CONTRACT.md in aaarnv/spool):
             1. Run: spool pr ${{ github.event.pull_request.number }}
@@ -57,10 +60,24 @@ jobs:
                  spool live spool/pr-N --url "file://$PWD/spool/pr-N/explainer.html"
                Pass --title with the pull request title when starting spool live.
                spool live prints {"port":N,...} on stdout. Drive it with curl: one POST /step per
-               tour stop (name = the stop id, narration = what a reviewer should understand),
-               POST /js to advance the explainer between steps, then POST /end.
-            4. Run: spool finish spool/pr-N --bg paper
-            5. Run: spool publish spool/pr-N --pr
+               tour stop, POST /js to advance the explainer between steps, then POST /end.
+               Each POST /step name must equal the tour stop id it records, character for
+               character. A stop whose id matches no recorded step is a hard lint error and
+               blocks the publish. Always POST /end, even when a step failed. An unended
+               session leaves no capture and nothing can be rendered from it.
+            4. Run: spool lint spool/pr-N and fix every error it reports before you continue.
+            5. Run: spool finish spool/pr-N
+               This runs voiceover, render, and publish, and comments the watch link.
+            6. Run spool publish spool/pr-N --pr only if spool/pr-N/share/published.json is
+               still missing. Publishing twice creates a second spool.
+
+            Reliability rules, they matter more than finishing fast:
+            - Hosted voiceover and publish both call a network service and both fail
+              intermittently. When any spool command fails, run the same command again
+              once before you change anything.
+            - Do not end your turn until spool/pr-N/share/published.json exists.
+            - If it still does not exist, make your final message the full output of the
+              command that failed, so the log names the cause.
 
       # claude-code-action exits 0 even when the agent stopped early (turn cap, no account
       # connected, a swallowed comment failure), so assert the artifact this job exists to
@@ -73,9 +90,27 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -uo pipefail
-          published="spool/pr-${PR}/share/published.json"
+          wd="spool/pr-${PR}"
+          published="$wd/share/published.json"
+
+          # The tail of the flow (voiceover, render, publish) is deterministic and its
+          # network calls fail intermittently, so CI retries it once itself rather than
+          # losing a recorded session to one bad response. lint runs first: it names the
+          # authoring faults, such as a stop id matching no recorded step, that a retry
+          # cannot fix.
+          if [ ! -f "$published" ] && [ -d "$wd" ]; then
+            echo "::group::spool lint $wd"
+            spool lint "$wd" || true
+            echo "::endgroup::"
+            echo "::group::spool finish $wd (CI retry)"
+            spool finish "$wd" || true
+            echo "::endgroup::"
+          fi
+
           if [ ! -f "$published" ]; then
-            gh pr comment "$PR" --body "Spool PR guide did not publish: no share/published.json was written, so the run ended before publishing. Job log: $RUN_URL"
+            reason="the run ended before publishing"
+            [ -d "$wd" ] || reason="the agent never scaffolded $wd"
+            gh pr comment "$PR" --body "Spool PR guide did not publish: $reason, and the CI retry of \`spool finish\` did not recover it. Job log: $RUN_URL"
             echo "::error::no guide was published for PR $PR"
             exit 1
           fi
@@ -85,10 +120,19 @@ jobs:
             exit 1
           fi
           echo "published: $url"
-          if gh pr view "$PR" --json comments --jq '.comments[].body' | grep -qF "$url"; then
-            echo "watch link is on the PR"
-            exit 0
-          fi
+
+          # The Spool App comments the watch link itself, seconds after the publish
+          # returns, so poll before deciding the comment is missing. Checking once made
+          # CI post a duplicate link and fail a run that had in fact delivered.
+          for _ in 1 2 3 4 5 6; do
+            if gh pr view "$PR" --json comments --jq '.comments[].body' | grep -qF "$url"; then
+              echo "watch link is on the PR"
+              exit 0
+            fi
+            sleep 10
+          done
+
+          # The guide exists and the link is now on the PR, which is what this job owes
+          # the reviewer, so this is a warning and not a failure.
           gh pr comment "$PR" --body "PR guide: $url"
-          echo "::error::guide published but the agent posted no comment; CI posted the link"
-          exit 1
+          echo "::warning::guide published but no watch-link comment appeared; CI posted the link"

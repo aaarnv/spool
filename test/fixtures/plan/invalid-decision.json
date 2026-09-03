@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Ship the decision card without offering a decision.",
+  "outcome": "The reviewer is asked for something the packet cannot record.",
+  "approach": [{ "id": "ui", "summary": "Render the card." }],
+  "noAlternativesReason": "No credible alternative considered for this fixture.",
+  "risks": ["The reviewer cannot approve."],
+  "decision": {
+    "type": "approval",
+    "prompt": "What do you think?",
+    "options": ["ship-it", "alternative:ghost"]
+  },
+  "links": { "task": null }
+}

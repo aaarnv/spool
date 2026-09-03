@@ -1,12 +1,12 @@
 // `spool setup`: write installation preferences to ~/.spool.json. Interactive on a
 // TTY; fully non-interactive with flags or --yes. Unspecified keys keep their values.
 import { createInterface } from "node:readline";
-import { readPrefs, writePrefs, effectivePrefs, CHOICES, DEFAULTS, PREFS_PATH } from "../config/prefs.mjs";
+import { readPrefs, writePrefs, effectivePrefs, CHOICES, DEFAULTS, PREFS_PATH, SETUP_KEYS } from "../config/prefs.mjs";
 
 const mask = (t) => (t ? `${String(t).slice(0, 6)}…` : "(none)");
 
 function validate(key, value) {
-  if (key === "bg" || key === "host") return value; // free-form
+  if (key === "host") return value; // free-form
   if (!CHOICES[key].includes(value)) {
     throw new Error(`invalid ${key} "${value}"; choose one of: ${CHOICES[key].join(", ")}`);
   }
@@ -14,7 +14,7 @@ function validate(key, value) {
 }
 
 // Print the effective config: resolved preferences (with source) + host/token, token masked.
-async function printConfig(cfg) {
+export async function printConfig(cfg) {
   const eff = await effectivePrefs();
   console.log("spool preferences (effective):");
   for (const key of Object.keys(DEFAULTS)) {
@@ -32,14 +32,11 @@ async function promptAll(cfg) {
     new Promise((res) => rl.question(`${q} [${def ?? ""}]: `, (a) => res(a.trim() || def || "")));
   const next = { ...cfg };
   try {
-    for (const key of Object.keys(CHOICES)) {
+    for (const key of SETUP_KEYS) {
       const def = cfg[key] ?? DEFAULTS[key];
       const ans = validate(key, await ask(`${key} (${CHOICES[key].join("/")})`, def));
       if (ans) next[key] = ans;
     }
-    const bg = await ask("bg (render background, blank for none)", cfg.bg ?? "");
-    if (bg) next.bg = bg;
-    else delete next.bg;
     // No host question: the hosted platform is the default. Self-hosters use
     // --host, SPOOL_HOST, or edit ~/.spool.json directly.
   } finally {
@@ -52,7 +49,7 @@ export async function runSetup(opts = {}) {
   const cfg = await readPrefs();
   if (opts.show) return printConfig(cfg);
 
-  const flags = { browser: opts.browser, target: opts.target, engine: opts.engine, bg: opts.bg, format: opts.format, host: opts.host };
+  const flags = { browser: opts.browser, target: opts.target, engine: opts.engine, host: opts.host };
   const anyFlag = Object.values(flags).some((v) => v != null);
   const interactive = !!process.stdin.isTTY && !opts.yes && !anyFlag;
 

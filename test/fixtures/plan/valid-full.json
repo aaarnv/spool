@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Add timestamped questions to a published spool.",
+  "currentState": [
+    {
+      "claim": "Watch pages have an Ask panel but no durable threaded comments.",
+      "evidence": ["ev-askpanel"],
+      "chapterId": "context"
+    }
+  ],
+  "outcome": "A reviewer can ask a question against a video moment and an agent can reply with anchored context.",
+  "approach": [
+    { "id": "data", "summary": "Add comment and anchor records.", "chapterId": "approach", "evidence": ["ev-schema"] },
+    { "id": "api", "summary": "Expose authenticated create, list and resolve endpoints.", "chapterId": "approach" },
+    { "id": "ui", "summary": "Render anchored comments in the player and chapter list.", "chapterId": "approach" }
+  ],
+  "alternatives": [
+    {
+      "id": "thread-per-spool",
+      "summary": "Use an unanchored thread only.",
+      "tradeoffs": ["Simpler to build", "Loses moment-level context"]
+    }
+  ],
+  "assumptions": ["Only the owner and invited reviewers can decide in v1."],
+  "risks": ["Public links need a clear permission model for comments."],
+  "decision": {
+    "type": "selection",
+    "prompt": "Choose the anchoring model before implementation begins.",
+    "options": ["approve", "alternative:thread-per-spool", "redirect"]
+  },
+  "links": {
+    "task": "SPL-12",
+    "repo": "https://github.com/aaarnv/spool",
+    "branch": "spl/spl-12",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "pr": null
+  },
+  "chapters": [
+    { "id": "context", "title": "What exists today" },
+    { "id": "approach", "title": "How we build it" },
+    { "id": "risks", "title": "What could go wrong" },
+    { "id": "decision", "title": "What we need from you" }
+  ]
+}

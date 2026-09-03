@@ -52,6 +52,3 @@ runs:
         SPOOL_TOKEN: ${{ inputs.token }}
       run: node -e 'const os=require("os"),fs=require("fs");fs.writeFileSync(os.homedir()+"/.spool.json",JSON.stringify({host:"https://spoolkit.dev",token:process.env.SPOOL_TOKEN})+"\n")'
 
-    - name: Cap render concurrency for CI runners
-      shell: bash
-      run: '[ -n "${SPOOL_RENDER_CONCURRENCY:-}" ] || echo "SPOOL_RENDER_CONCURRENCY=2" >> "$GITHUB_ENV"'

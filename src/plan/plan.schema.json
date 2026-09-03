@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spoolkit.dev/schema/plan-v1.json",
+  "title": "Spool plan.json (version 1)",
+  "description": "The Plan Spool packet: what an agent proposes and the one decision it asks for. Generated from src/plan/schema.mjs — do not edit by hand; run `npm run schema`. Warnings and cross-field rules are not expressed here: run `spool plan validate` for the full gate.",
+  "type": "object",
+  "required": [
+    "version",
+    "kind",
+    "goal",
+    "outcome",
+    "approach",
+    "risks",
+    "decision",
+    "links"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "description": "Contract version. This CLI reads and writes 1."
+    },
+    "kind": {
+      "const": "plan"
+    },
+    "goal": {
+      "$ref": "#/$defs/text",
+      "description": "What this plan sets out to do."
+    },
+    "outcome": {
+      "$ref": "#/$defs/text",
+      "description": "What is true after the work lands."
+    },
+    "currentState": {
+      "type": "array",
+      "description": "Claims about what exists today, each backed by evidence.",
+      "items": {
+        "type": "object",
+        "required": [
+          "claim"
+        ],
+        "properties": {
+          "claim": {
+            "$ref": "#/$defs/text"
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidenceRefs"
+          },
+          "chapterId": {
+            "$ref": "#/$defs/chapterId"
+          }
+        }
+      }
+    },
+    "approach": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The ordered steps of the proposal. IDs are anchors for questions and proofs.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "summary": {
+            "$ref": "#/$defs/text"
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidenceRefs"
+          },
+          "chapterId": {
+            "$ref": "#/$defs/chapterId"
+          }
+        }
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "description": "Options considered and not taken.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "summary": {
+            "$ref": "#/$defs/text"
+          },
+          "tradeoffs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/text"
+            }
+          },
+          "evidence": {
+            "$ref": "#/$defs/evidenceRefs"
+          }
+        }
+      }
+    },
+    "noAlternativesReason": {
+      "$ref": "#/$defs/text",
+      "description": "Required when alternatives is absent or empty; forbidden when alternatives are declared."
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "risks": {
+      "type": "array",
+      "description": "A risk is a string, or a claim that cites evidence.",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/text"
+          },
+          {
+            "type": "object",
+            "required": [
+              "claim"
+            ],
+            "properties": {
+              "claim": {
+                "$ref": "#/$defs/text"
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidenceRefs"
+              },
+              "chapterId": {
+                "$ref": "#/$defs/chapterId"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "decision": {
+      "type": "object",
+      "description": "The one action the plan asks a reviewer for.",
+      "required": [
+        "type",
+        "prompt",
+        "options"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "approval",
+            "selection"
+          ]
+        },
+        "prompt": {
+          "$ref": "#/$defs/text"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidenceRefs"
+        },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "anyOf": [
+              {
+                "enum": [
+                  "approve",
+                  "redirect",
+                  "ask-question",
+                  "needs-input"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^alternative:.+$"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "description": "Where this plan lives. Use null for what does not apply.",
+      "properties": {
+        "pr": {
+          "description": "The pull request this plan belongs to: a github.com URL, \"owner/name#12\", or a number resolved against links.repo.",
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/text"
+                },
+                {
+                  "not": {
+                    "pattern": "^https?://(?:www\\.)?github\\.com/([^/\\s]+)/([^/\\s#?]+?)(?:\\.git)?/(issues)/(\\d+)(?:[/?#]\\S*)?$"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issue": {
+          "description": "The issue this plan belongs to: a github.com URL, \"owner/name#12\", or a number resolved against links.repo.",
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/text"
+                },
+                {
+                  "not": {
+                    "pattern": "^https?://(?:www\\.)?github\\.com/([^/\\s]+)/([^/\\s#?]+?)(?:\\.git)?/(pull)/(\\d+)(?:[/?#]\\S*)?$"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/text"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "chapters": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Stable semantic anchors. They never index into timeline.json.",
+      "contains": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "const": "decision"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/chapterId"
+          },
+          "title": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "not": {
+          "required": [
+            "alternatives"
+          ],
+          "properties": {
+            "alternatives": {
+              "type": "array",
+              "minItems": 1
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "noAlternativesReason"
+        ],
+        "properties": {
+          "noAlternativesReason": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "alternatives"
+        ],
+        "properties": {
+          "alternatives": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "noAlternativesReason": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "A non-empty string; whitespace only is not a value."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "A kebab-case id (a-z, 0-9, dashes) that other artifacts can anchor to."
+    },
+    "chapterId": {
+      "enum": [
+        "context",
+        "outcome",
+        "approach",
+        "risks",
+        "decision"
+      ]
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text"
+      },
+      "description": "IDs of descriptors declared in evidence.json."
+    }
+  }
+}

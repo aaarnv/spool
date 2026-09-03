@@ -1,0 +1,36 @@
+# CI for the public spoolkit/action repository. It runs there, not in the private repo,
+# where the same tests run through test/public-action.test.mjs.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm test
+
+  # The action has no build step, so the only way it can break for users is by not
+  # running. This resolves it the way a consumer does.
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          token: spk_ci_smoke_token
+          mode: cli
+          install-chromium: "false"
+          install-ffmpeg: "false"
+      - name: The CLI is on PATH and the credential landed
+        run: |
+          spool --version
+          test -f "$HOME/.spool.json"
+          test "$SPOOL_RENDER_CONCURRENCY" = "2"

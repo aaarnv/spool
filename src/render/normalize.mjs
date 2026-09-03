@@ -62,11 +62,10 @@ async function duration(file) {
  * Transcode the raw Playwright capture (video.webm) to a clean video.mp4.
  *
  * Why the re-encode: Playwright's WebM is variable-frame-rate VP8 with no seek
- * cues. Remotion's OffthreadVideo seeks that pathologically slowly (every frame
- * request scans from the start), so a render can take minutes per second of
- * footage. Forcing constant 30fps H264 with faststart fixes both the seek cost
- * and the VFR timing drift, and yuv420p keeps it broadly decodable. Audio is
- * dropped (-an) — the VO is muxed in later by the renderer.
+ * cues, so the render's per-step input seeks are both slow and imprecise on it.
+ * Forcing constant 30fps H264 with faststart fixes the seek cost and the VFR
+ * timing drift, and yuv420p keeps it broadly decodable. Audio is dropped (-an)
+ * — the VO is muxed in later by the renderer.
  */
 export async function normalize(workdir) {
   // video.webm (browser recordVideo) or capture.mp4 (OS avfoundation capture).

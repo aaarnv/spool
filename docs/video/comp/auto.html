@@ -1,0 +1,232 @@
+<!doctype html><meta charset="utf-8">
+<title>auto comp — packet to video</title>
+<style>
+  * { margin:0; box-sizing:border-box; }
+  html,body { width:540px; height:960px; overflow:hidden; background:#0a0a10; }
+  #stage { position:relative; width:540px; height:960px; font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; color:#fff; }
+  #cap { position:absolute; left:24px; right:24px; bottom:110px; text-align:center; font-size:30px; font-weight:800; line-height:1.25; text-shadow:0 2px 16px rgba(0,0,0,.95); }
+  #cap .w { opacity:.45; } #cap .w.said { opacity:1; } #cap .w.now { opacity:1; color:#ffd166; }
+  #prog { position:absolute; left:0; bottom:0; height:5px; background:#ffd166; width:0; }
+  .brand { position:absolute; top:24px; left:24px; font-size:15px; font-weight:800; letter-spacing:.14em; color:rgba(255,255,255,.45); z-index:3; }
+  #diag { position:absolute; left:30px; right:30px; top:170px; display:flex; justify-content:center; z-index:2; }
+  svg text { font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; }
+</style>
+<div id="stage">
+  <video id="loop" src="ambient.mp4" muted preload="auto" style="position:absolute;inset:0;width:540px;height:960px;object-fit:cover;filter:saturate(1.1) brightness(.8)"></video>
+  <div class="brand" id="brand">SPOOL</div>
+  <div id="diag"></div>
+  <div id="cap"></div>
+  <div id="prog"></div>
+</div>
+<script src="rough-umd.js"></script>
+<script src="gsap.min.js"></script>
+<script type="module">
+  // Module scripts run before SEEK is ever called, so the classic script below
+  // can rely on window.LAYOUT. Loading this from file:// needs --allow-file-access-from-files.
+  import * as layout from './layout.mjs';
+  window.LAYOUT = layout;
+</script>
+<script>
+  // Generic comp: renders any beats + diagram-spec JSON (src/packet/DIAGRAMMER.md DSL).
+  // Pure function of t throughout.
+  const NS = 'http://www.w3.org/2000/svg';
+  const easeBack = gsap.parseEase('back.out(1.9)');
+  const easeElastic = gsap.parseEase('elastic.out(1, 0.4)');
+  const easePow = gsap.parseEase('power3.out');
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const boilSeed = (t) => 1 + Math.floor(t * 8) % 6;
+  const $ = (s) => document.querySelector(s);
+
+  let D = null, SPEC = [], capChunks = [];
+  const CLIP_DUR = window.BG_DUR || 28.4;
+
+  window.INIT = (data) => {
+    D = data;
+    SPEC = data.diagrams || [];
+    if (data.brand) $('#brand').textContent = data.brand;
+    capChunks = [];
+    for (const b of D.beats) {
+      let cur = [];
+      for (const w of b.words) {
+        cur.push(w);
+        if (cur.length >= 5 || /[.!?…]$/.test(w.word)) { capChunks.push(cur); cur = []; }
+      }
+      if (cur.length) capChunks.push(cur);
+    }
+  };
+
+  const FF = '-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif';
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  const measure = (text, size, weight) => {
+    measureCtx.font = `${weight} ${size}px ${FF}`;
+    const m = measureCtx.measureText(text);
+    return { w: m.width, asc: Math.ceil(m.fontBoundingBoxAscent), desc: Math.ceil(m.fontBoundingBoxDescent) };
+  };
+  const labelCache = new Map();
+  function labelsFor(entry) {
+    let v = labelCache.get(entry);
+    if (!v) { v = window.LAYOUT.resolveLabels(entry.diagram.shapes, measure); labelCache.set(entry, v); }
+    return v;
+  }
+
+  function txt(parent, L) {
+    if (L.leader) {
+      const ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('x1', L.leader.x1); ln.setAttribute('y1', L.leader.y1);
+      ln.setAttribute('x2', L.leader.x2); ln.setAttribute('y2', L.leader.y2);
+      ln.setAttribute('stroke', L.fill); ln.setAttribute('stroke-width', 1.5);
+      ln.setAttribute('opacity', 0.45);
+      parent.appendChild(ln);
+    }
+    const el = document.createElementNS(NS, 'text');
+    el.setAttribute('x', L.x); el.setAttribute('y', L.y); el.setAttribute('fill', L.fill);
+    el.setAttribute('font-size', L.size); el.setAttribute('font-weight', L.weight);
+    el.setAttribute('text-anchor', 'middle');
+    el.setAttribute('style', 'text-shadow:0 1px 7px rgba(0,0,0,.95)');
+    el.textContent = L.text;
+    parent.appendChild(el); return el;
+  }
+
+  // Geometry only: layout.mjs places every label and they draw in a pass above.
+  function drawShape(svg, rc, o, sh) {
+    const g = document.createElementNS(NS, 'g');
+    const put = (n) => g.appendChild(n);
+    const panel = (x, y, w, h, stroke) => {
+      const bg = document.createElementNS(NS, 'rect');
+      bg.setAttribute('x', x + 2); bg.setAttribute('y', y + 2);
+      bg.setAttribute('width', w - 4); bg.setAttribute('height', h - 4);
+      bg.setAttribute('rx', 6); bg.setAttribute('fill', 'rgba(8,10,14,.86)');
+      put(bg);
+      put(rc.rectangle(x, y, w, h, o({ stroke, strokeWidth: 3.5 })));
+    };
+    if (sh.type === 'box') {
+      panel(sh.x, sh.y, sh.w || 160, sh.h || 120, sh.stroke || '#8b97a8');
+    } else if (sh.type === 'squiggle') {
+      const { x, y } = sh; const c = sh.color || '#7ee787';
+      put(rc.curve([[x, y], [x + 35, y - 14], [x + 75, y], [x + 110, y]], o({ stroke: c, strokeWidth: 5 })));
+      put(rc.curve([[x, y + 30], [x + 40, y + 42], [x + 80, y + 30], [x + 110, y + 30]], o({ stroke: c, strokeWidth: 5 })));
+    } else if (sh.type === 'doc') {
+      panel(sh.x, sh.y, 120, 150, sh.stroke || '#8b97a8');
+      put(rc.line(sh.x + 20, sh.y + 35, sh.x + 100, sh.y + 35, o({ stroke: '#8b97a8', strokeWidth: 5 })));
+      put(rc.line(sh.x + 20, sh.y + 65, sh.x + 90, sh.y + 65, o({ stroke: '#4d5666', strokeWidth: 5 })));
+      put(rc.line(sh.x + 20, sh.y + 95, sh.x + 95, sh.y + 95, o({ stroke: '#4d5666', strokeWidth: 5 })));
+    } else if (sh.type === 'phone') {
+      panel(sh.x, sh.y, 110, 125, sh.stroke || '#c9a0ff');
+      put(rc.circle(sh.x + 55, sh.y + 45, 36, o({ stroke: sh.stroke || '#c9a0ff' })));
+      put(rc.path(`M ${sh.x + 38} ${sh.y + 65} q 17 16 34 0`, o({ stroke: sh.stroke || '#c9a0ff' })));
+    } else if (sh.type === 'person') {
+      put(rc.circle(sh.x, sh.y, 50, o({ stroke: sh.stroke || '#cfc7de' })));
+      put(rc.line(sh.x, sh.y + 27, sh.x, sh.y + 80, o({ stroke: sh.stroke || '#cfc7de' })));
+    } else if (sh.type === 'arrow') {
+      const { x1, y1, x2, y2 } = sh; const c = sh.color || '#ffd166';
+      put(rc.line(x1, y1, x2, y2, o({ stroke: c, strokeWidth: 4 })));
+      const a = Math.atan2(y2 - y1, x2 - x1);
+      put(rc.line(x2, y2, x2 - 16 * Math.cos(a - 0.45), y2 - 16 * Math.sin(a - 0.45), o({ stroke: c, strokeWidth: 4 })));
+      put(rc.line(x2, y2, x2 - 16 * Math.cos(a + 0.45), y2 - 16 * Math.sin(a + 0.45), o({ stroke: c, strokeWidth: 4 })));
+    } else if (sh.type === 'wire') {
+      put(rc.line(sh.x1, sh.y1, sh.x2, sh.y2, o({ stroke: sh.color || '#c9a0ff', strokeWidth: 3, strokeLineDash: sh.dashed === false ? undefined : [8, 7] })));
+    } else if (sh.type === 'cross') {
+      put(rc.line(sh.x - 18, sh.y - 18, sh.x + 18, sh.y + 18, o({ stroke: sh.color || '#ff7b72', strokeWidth: 5 })));
+      put(rc.line(sh.x - 18, sh.y + 18, sh.x + 18, sh.y - 18, o({ stroke: sh.color || '#ff7b72', strokeWidth: 5 })));
+    } else if (sh.type === 'shield') {
+      // Barrier across a path — see scene-auto.mjs, which is the reference drawing.
+      const c = sh.color || '#7ee787';
+      const rad = ((sh.angle ?? 0) * Math.PI) / 180;
+      const px = Math.cos(rad), py = Math.sin(rad), ux = -py, uy = px;
+      for (const off of [-5, 5]) {
+        put(rc.line(sh.x + px * off - ux * 30, sh.y + py * off - uy * 30,
+                    sh.x + px * off + ux * 30, sh.y + py * off + uy * 30, o({ stroke: c, strokeWidth: 6 })));
+      }
+      for (const s of [-1, 1]) {
+        put(rc.line(sh.x - px * 14 + ux * s * 16, sh.y - py * 14 + uy * s * 16,
+                    sh.x - px * 26 + ux * s * 30, sh.y - py * 26 + uy * s * 30, o({ stroke: c, strokeWidth: 3 })));
+      }
+    } else if (sh.type === 'dot') {
+      put(rc.circle(sh.x, sh.y, 18, o({ stroke: sh.color || '#c9a0ff', fill: sh.color || '#c9a0ff', fillStyle: 'solid' })));
+    }
+    svg.appendChild(g);
+    return g;
+  }
+
+  function applyAnims(node, sh, anims, lt, ctr) {
+    let visible = anims.some((a) => a.target === sh.id) ? false : true;
+    for (const a of anims) {
+      if (a.target !== sh.id) continue;
+      const p = clamp01((lt - a.at) / (a.dur || 0.6));
+      if (p > 0) visible = true;
+      if (a.effect === 'pop') {
+        const k = p >= 1 ? 1 : easeBack(p);
+        const c = ctr || center(sh);
+        node.setAttribute('transform', `translate(${c.x} ${c.y}) scale(${Math.max(0.001, k)}) translate(${-c.x} ${-c.y})`);
+        node.setAttribute('opacity', String(Math.min(1, p * 3)));
+      } else if (a.effect === 'slam') {
+        const k = p >= 1 ? 1 : easeElastic(p);
+        const c = ctr || center(sh);
+        node.setAttribute('transform', `translate(${c.x} ${c.y}) scale(${Math.max(0.001, k)}) translate(${-c.x} ${-c.y})`);
+        node.setAttribute('opacity', p > 0 ? '1' : '0');
+      } else if (a.effect === 'drawOn') {
+        node.setAttribute('opacity', p > 0 ? '1' : '0');
+        if (p < 1) for (const path of node.querySelectorAll('path')) {
+          const len = path.getTotalLength ? path.getTotalLength() : 300;
+          path.setAttribute('stroke-dasharray', len);
+          path.setAttribute('stroke-dashoffset', String(len * (1 - easePow(p))));
+          path.setAttribute('fill', 'none');
+        }
+      } else if (a.effect === 'travel') {
+        const dx = (a.toX - sh.x) * easePow(p), dy = ((a.toY ?? sh.y) - sh.y) * easePow(p);
+        node.setAttribute('transform', `translate(${dx} ${dy})`);
+      } else if (a.effect === 'shake') {
+        const w = p > 0 && p < 1 ? Math.sin(lt * 24) * 7 * (1 - p) : 0;
+        node.setAttribute('transform', `translate(${w} 0)`);
+      }
+    }
+    if (!visible) node.setAttribute('opacity', '0');
+  }
+  function center(sh) {
+    if (sh.x1 !== undefined) return { x: (sh.x1 + sh.x2) / 2, y: (sh.y1 + sh.y2) / 2 };
+    return { x: (sh.x ?? 0) + (sh.w ? sh.w / 2 : 0), y: (sh.y ?? 0) + (sh.h ? sh.h / 2 : 0) };
+  }
+
+  window.SEEK = async (t) => {
+    const v = $('#loop');
+    const target = t % CLIP_DUR;
+    if (Math.abs(v.currentTime - target) > 0.01) {
+      await new Promise((res) => { v.onseeked = res; v.currentTime = target; });
+    }
+    $('#prog').style.width = (100 * t / D.total) + '%';
+    const beat = D.beats.findLast((b) => t >= b.start) || D.beats[0];
+    const lt = t - beat.start;
+
+    const entry = SPEC.find((e) => e.beat === beat.name);
+    const host = $('#diag');
+    host.innerHTML = '';
+    if (entry && entry.diagram) {
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('width', 480); svg.setAttribute('height', 480);
+      svg.setAttribute('viewBox', '0 0 480 480');
+      const rc = window.rough.svg(svg);
+      const seed = boilSeed(t);
+      const o = (extra) => ({ seed, roughness: 1.5, bowing: 1.1, strokeWidth: 3, ...extra });
+      const shapes = entry.diagram.shapes || [];
+      const anims = entry.diagram.anims || [];
+      for (const sh of shapes) applyAnims(drawShape(svg, rc, o, sh), sh, anims, lt);
+      // labels last, so a panel can never cover a neighbour's text
+      const byId = new Map(shapes.map((s) => [s.id, s]));
+      for (const L of labelsFor(entry)) {
+        const sh = byId.get(L.owner);
+        const g = document.createElementNS(NS, 'g');
+        txt(g, L);
+        svg.appendChild(g);
+        // a badge is only its text, so it scales about the resolved anchor
+        if (sh) applyAnims(g, sh, anims, lt, L.standalone ? { x: L.x, y: L.y } : null);
+      }
+      host.appendChild(svg);
+    }
+
+    const chunk = capChunks.find((c) => t < c[c.length - 1].end) || capChunks[capChunks.length - 1];
+    $('#cap').innerHTML = chunk.map((w) => {
+      const cls = t >= w.end ? 'w said' : (t >= w.start ? 'w now' : 'w');
+      return `<span class="${cls}">${w.word}</span>`;
+    }).join(' ');
+  };
+</script>

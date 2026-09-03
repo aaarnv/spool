@@ -5,6 +5,9 @@ import { existsSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildWindows } from "../render/retime.mjs";
+import { planDigest, writeSharePlan } from "../plan/plan.mjs";
+import { replyDigest, writeShareReply } from "../plan/reply.mjs";
+import { chapterField, chapterRanges } from "../plan/chapters.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -95,6 +98,26 @@ function frameTime(step, videoDur) {
   return Math.min(Math.max(t, 0), Math.max(0, videoDur - 0.05));
 }
 
+/**
+ * One share/spool.json step record: the recorded step remapped onto the OUTPUT
+ * clock by its retimed window (see CONTRACTS.md "Render layer inputs"). A step
+ * with no window keeps its recording times, which is the pre-retime behavior.
+ * `chapterId` rides along unchanged — the plan chapter this step belongs to.
+ * Pure, so the mapping is checked by a test with no ffmpeg in sight.
+ */
+export function shareStep(step, window, narration, frame) {
+  return {
+    i: step.i,
+    name: step.name,
+    ...chapterField(step),
+    narration: narration ?? step.narration ?? "",
+    start: window ? +window.startSec.toFixed(3) : step.start,
+    end: window ? +window.endSec.toFixed(3) : step.end,
+    clicks: window ? window.outClicks : step.clicks || [],
+    frame,
+  };
+}
+
 // Resolve a `spool pr` scaffold in the workdir into the spool.json `pr` summary,
 // mapping each tour stop to the recorded step (by `stop.step ?? stop.id` vs step
 // name) so the watch page can anchor a seek. Returns null when not a PR guide.
@@ -134,6 +157,35 @@ async function buildPrSummary(dir, steps) {
     headRefOid: info.headRefOid ?? null,
     mode: tour.mode ?? null,
     stops,
+  };
+}
+
+/**
+ * Merged-PR recap (optional): the pull request this video recaps, copied into the
+ * bundle so a watch page never needs the worker's workdir. Written by
+ * src/recap/video.mjs; absent everywhere else, and `null` is the normal answer.
+ *
+ * Only the identity travels. The diff the script was written from is not republished:
+ * a private repository's code must not become readable through a spool link, and the
+ * pull request url is the one place a viewer with access can go read it.
+ */
+async function buildRecapSummary(dir) {
+  const path = join(dir, "recap.json");
+  if (!existsSync(path)) return null;
+  const r = await readJson(path);
+  if (!r?.repo || !Number.isInteger(r.number)) return null;
+  return {
+    repo: r.repo,
+    number: r.number,
+    url: r.url ?? `https://github.com/${r.repo}/pull/${r.number}`,
+    title: r.title ?? null,
+    author: r.author ?? null,
+    baseRef: r.baseRef ?? null,
+    mergedAt: r.mergedAt ?? null,
+    mergeCommitSha: r.mergeCommitSha ?? null,
+    additions: r.additions ?? 0,
+    deletions: r.deletions ?? 0,
+    changedFiles: r.changedFiles ?? 0,
   };
 }
 
@@ -206,7 +258,9 @@ export async function shareSpool(workdir) {
   // spool.json reports the OUTPUT timeline (window-based) — that's the clock a
   // consuming agent sees in final.mp4. Keyframes, though, are pulled from the
   // recording-clock frame video, so extraction still uses timeline.steps times.
-  const { windows } = buildWindows(timeline, manifest);
+  // Same rate the render used (stamped in render.json); older stamps predate the
+  // field and were all cut at retime's default.
+  const { windows } = buildWindows(timeline, manifest, render.fps || undefined);
   const windowByIndex = new Map(windows.map((w) => [w.i, w]));
 
   // One keyframe per step.
@@ -230,16 +284,7 @@ export async function shareSpool(workdir) {
       frameScale,
       out,
     ]);
-    const w = windowByIndex.get(step.i);
-    steps.push({
-      i: step.i,
-      name: step.name,
-      narration: narrationByIndex.get(step.i) ?? step.narration ?? "",
-      start: w ? +w.startSec.toFixed(3) : step.start,
-      end: w ? +w.endSec.toFixed(3) : step.end,
-      clicks: w ? w.outClicks : step.clicks || [],
-      frame: rel,
-    });
+    steps.push(shareStep(step, windowByIndex.get(step.i), narrationByIndex.get(step.i), rel));
   }
 
   // preview.gif: the step keyframes cycled (~1.1s each, 640w) — embeddable where
@@ -262,9 +307,26 @@ export async function shareSpool(workdir) {
   // names; unmatched stops degrade to prose+diff only (step: null), never fail.
   const pr = await buildPrSummary(dir, steps);
 
+  // Plan Spool (optional): publish the semantic packet beside the media as
+  // share/plan.json (+ share/evidence.json), and point spool.json at it so a
+  // consumer never needs the local workdir. Throws on an invalid packet — a
+  // published plan that does not validate is worse than no plan.
+  const plan = await writeSharePlan(dir, shareDir);
+
+  // Reply (optional, roadmap R4.2): the lineage that ties this recording back to one
+  // moment of a parent plan. It rides in the bundle so a reply works on a published
+  // link — a consumer follows the parent from the blob, not from the local workdir.
+  const reply = await writeShareReply(dir, shareDir);
+
+  // Recap (optional, roadmap B2): a merged pull request the platform narrated by
+  // itself. Never coexists with a plan or a reply — nothing recorded it.
+  const recap = await buildRecapSummary(dir);
+
   const spool = {
     version: 1,
-    kind: "spool",
+    // A reply is a recording, so it is an ordinary spool unless it is the proof that
+    // closes an approved plan. A plan packet always wins: that workdir IS a proposal.
+    kind: plan ? "plan" : recap ? "recap" : reply?.replyKind === "proof" ? "proof" : "spool",
     title: timeline.title || manifest.title || null,
     url: await resolveUrl(dir, timeline),
     video: `../${deliverable}`,
@@ -275,6 +337,9 @@ export async function shareSpool(workdir) {
     voice: { engine: manifest.engine ?? null, voice: manifest.voice ?? null },
     steps,
     ...(pr ? { pr } : {}),
+    ...(plan ? { plan } : {}),
+    ...(recap ? { recap } : {}),
+    ...(reply ? { reply } : {}),
     console: {
       errors: errors.length,
       warnings: warnings.length,
@@ -290,7 +355,11 @@ export async function shareSpool(workdir) {
     .join("\n");
   await writeFile(join(shareDir, "transcript.txt"), transcript + (transcript ? "\n" : ""));
 
-  console.log(`[share] wrote ${shareDir} (${steps.length} steps, ${errors.length} console errors)`);
+  console.log(
+    `[share] wrote ${shareDir} (${steps.length} steps, ${errors.length} console errors${plan ? ", plan packet" : ""}${
+      reply ? `, ${reply.replyKind} reply to ${reply.parent.spoolId}` : ""
+    })`
+  );
   return shareDir;
 }
 
@@ -315,10 +384,33 @@ export async function readSpool(input) {
 
   const lines = [];
   lines.push(spool.title || "(untitled spool)");
+  // A plan spool's decision status is mutable and lives on the host, so point the
+  // reader at the command that fetches it instead of implying this file has it.
+  if (spool.kind === "plan") lines.push(`kind:     plan (decision status: \`spool read --plan ${input}\`)`);
   lines.push(`url:      ${spool.url ?? "(unknown)"}`);
+  // A reply's parent leads the digest with the identity lines: a receiving agent must
+  // learn what this answers before it reads what it says.
+  if (spool.reply) lines.push(replyDigest(spool.reply));
   lines.push(`duration: ${spool.duration}s${spool.rate && spool.rate !== 1 ? ` (${spool.rate}x)` : ""}`);
   lines.push(`voice:    ${spool.voice?.voice ?? "?"} (${spool.voice?.engine ?? "?"})`);
   lines.push("");
+  // Plan Spool: the packet is what a receiving agent acts on, so it leads the
+  // digest — before the per-step narration it would otherwise have to infer from.
+  if (spool.plan?.file && existsSync(join(shareDir, spool.plan.file))) {
+    lines.push(planDigest(await readJson(join(shareDir, spool.plan.file))));
+    lines.push("");
+  }
+  // Plan Spool: where each chapter runs in the video, derived from the steps
+  // that carry its ID. A reading agent cites the moment a claim is made without
+  // replaying the take; a bundle with no mapped step prints no chapters block.
+  const ranges = chapterRanges(spool.steps);
+  if (ranges.length) {
+    lines.push("chapters:");
+    for (const c of ranges) {
+      lines.push(`  [${mmss(c.start)}–${mmss(c.end)}] ${c.id} (step${c.steps.length === 1 ? "" : "s"} ${c.steps.join(", ")})`);
+    }
+    lines.push("");
+  }
   lines.push("steps:");
   for (const s of spool.steps || []) {
     const n = (s.clicks || []).length;

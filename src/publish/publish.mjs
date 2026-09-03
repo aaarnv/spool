@@ -5,6 +5,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { observe } from "../reliability/journal.mjs";
+import { withRetry } from "../reliability/retry.mjs";
 
 const run = promisify(execFile);
 
@@ -192,6 +194,63 @@ function enforcePackCap(context) {
   }
 }
 
+// Read the published Plan Spool metadata out of the share bundle: the packet
+// (`share/plan.json`) and, when the workdir authored evidence, the resolved
+// descriptors (`share/evidence.json`). Both ride inline in the publish request —
+// they are small, and the server re-validates the packet before it stores it.
+// Returns null for an ordinary walkthrough, so nothing changes for one.
+export async function buildPlanBundle(shareDir, spool) {
+  const planPath = join(shareDir, "plan.json");
+  if (spool?.kind !== "plan" || !existsSync(planPath)) return null;
+  const bundle = { plan: JSON.parse(await readFile(planPath, "utf8")) };
+  const evidencePath = join(shareDir, "evidence.json");
+  if (existsSync(evidencePath)) bundle.evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  return bundle;
+}
+
+// Read the published reply descriptor out of the share bundle (roadmap R4.2). It
+// rides inline like the plan packet, and for the same reason: the server checks the
+// parent, the revision and the anchors again before it links anything.
+// Returns null for a spool that replies to nothing.
+export async function buildReplyBundle(shareDir, spool) {
+  const replyPath = join(shareDir, "reply.json");
+  if (!spool?.reply || !existsSync(replyPath)) return null;
+  return { reply: JSON.parse(await readFile(replyPath, "utf8")) };
+}
+
+// Link what the media argues about, once the media is stored. A plan publish and a
+// reply publish are both two calls on purpose (CONTRACTS.md "Publish"): the first
+// reserves the spool and hands out upload grants, this one opens revision 1 or
+// records the reply on its parent. The call is idempotent, so a retry after a
+// dropped response returns the same receipt.
+async function completePublish({ host, token, id }) {
+  let last = "";
+  const failed = (why) =>
+    new Error(
+      `publish did not complete: ${last || why}\n` +
+        `the media uploaded but the plan linkage is not written, so nothing is watchable — re-run \`spool publish\``
+    );
+  // Retryable because the call is idempotent: it opens revision 1 once and returns
+  // the same receipt afterwards. 409 is retried too — it means the media is still
+  // landing — while any other 4xx is an answer rather than a hiccup (R6.3).
+  const { value, attempts } = await withRetry(
+    async () => {
+      const res = await fetch(`${host}/api/publish/${id}/complete`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) last = `${res.status} ${res.statusText} ${await res.text().catch(() => "")}`.trim();
+      return res;
+    },
+    { attempts: 3, baseMs: 500, shouldRetry: (res) => !res.ok && (res.status >= 500 || res.status === 409 || res.status === 429) }
+  ).catch((e) => {
+    throw failed(e.message);
+  });
+  if (!value.ok) throw failed(`${value.status}`);
+  return { receipt: await value.json(), attempts };
+}
+
 // Map a returned upload grant to its local file. Source grants (spools/{id}/src/*)
 // resolve against the workdir; published grants (l/{id}/*) against final.mp4/share.
 function grantLocalPath(pathname, { dir, shareDir, finalMp4 }) {
@@ -205,14 +264,27 @@ function grantLocalPath(pathname, { dir, shareDir, finalMp4 }) {
     return join(dir, rel === "bg.jpg" ? ".spool-bg.jpg" : rel);
   }
   const rel = pathname.replace(/^l\/[^/]+\//, "");
-  return rel === "final.mp4" ? finalMp4 : join(shareDir, rel);
+  if (rel === "final.mp4") return finalMp4;
+  // layers/fg.webm sits beside final.mp4 in the workdir, not in the share bundle.
+  if (rel.startsWith("layers/")) return join(dir, rel);
+  return join(shareDir, rel);
 }
 
 /**
  * Publish a built spool's share bundle to the spool web app.
  * Returns the watch URL. Requires `spool share` to have run first.
+ *
+ * Journals the attempt (roadmap R6.3): publish is the failure point that costs the
+ * most, because everything upstream of it has already been paid for. A publish
+ * that only succeeded because the completing call was retried is recorded as
+ * `retried`, so a host that is quietly flapping shows up before it starts losing
+ * takes. See docs/PLAN-SPOOLS-RELIABILITY.md.
  */
 export async function publishSpool(workdir, opts = {}) {
+  return observe("publish", (ctx) => publishSpoolInner(workdir, opts, ctx), { target: workdir });
+}
+
+async function publishSpoolInner(workdir, opts = {}, ctx = { attempts: 1 }) {
   const dir = resolve(workdir);
   const shareDir = join(dir, "share");
   const spoolJson = join(shareDir, "spool.json");
@@ -237,13 +309,23 @@ export async function publishSpool(workdir, opts = {}) {
   const consolePath = join(shareDir, "console.jsonl");
   const sources = await buildSources(dir); // null ⇒ dry/partial session, not editable
   const prBundle = await buildPrBundle(dir); // null ⇒ ordinary (non-PR) spool
+  // Plan Spool metadata (optional): the packet and the resolved evidence, written by
+  // `spool share`. Both ride inline; the server re-validates and stores them, then
+  // opens revision 1 once the media is uploaded.
+  const planBundle = await buildPlanBundle(shareDir, spool); // null ⇒ ordinary walkthrough
+  // Reply lineage (optional): what parent moment this recording answers.
+  const replyBundle = await buildReplyBundle(shareDir, spool); // null ⇒ replies to nothing
   const meta = {
     spool,
     transcript: existsSync(transcriptPath) ? await readFile(transcriptPath, "utf8") : "",
     console: existsSync(consolePath) ? await readFile(consolePath, "utf8") : "",
     ...(sources ? { sources } : {}),
     ...(prBundle ? { pr: prBundle } : {}),
+    ...(planBundle ?? {}),
+    ...(replyBundle ?? {}),
     hasPreview: existsSync(join(shareDir, "preview.gif")),
+    // The alpha foreground beside final.mp4, so a later background change is a swap.
+    hasFgLayer: existsSync(join(dir, "layers", "fg.webm")),
   };
 
   const res = await fetch(`${host}/api/publish`, {
@@ -261,7 +343,7 @@ export async function publishSpool(workdir, opts = {}) {
     }
     throw new Error(`publish failed: ${res.status} ${res.statusText} ${await res.text().catch(() => "")}`);
   }
-  const { id, url, uploads, previewUrl, knowledge } = await res.json();
+  const { id, url, uploads, previewUrl, knowledge, plan: planReceipt, reply: replyReceipt } = await res.json();
 
   // One grant per big binary: published final.mp4/frames (l/<id>/*) plus source
   // video.mp4 + seg wavs (spools/<id>/src/*) when the spool was published editable.
@@ -280,6 +362,23 @@ export async function publishSpool(workdir, opts = {}) {
     console.error(`[publish] knowledge: ${knowledge.applied} op(s) applied${skipped > 0 ? `, ${skipped} skipped (caps)` : ""}`);
   }
 
+  // A plan is opened, and a reply is linked, only now — after every grant uploaded:
+  // a reviewer must never meet a pending decision, or an answer on a question thread,
+  // on a spool whose video failed to arrive.
+  if (planReceipt?.pending || replyReceipt?.pending) {
+    const { receipt: done, attempts } = await completePublish({ host, token, id });
+    ctx.attempts = attempts;
+    // A plan spool waits on a person: say who acts next and how the agent reads back.
+    if (done?.plan) {
+      console.error(`[publish] plan: revision ${done.plan.revision}, ${done.plan.status} — the owner decides on the watch page`);
+      console.error(`[publish] read the decision back with \`spool read --plan ${workdir} --json\``);
+    }
+    if (done?.reply) {
+      console.error(`[publish] reply: ${done.reply.kind} on plan ${done.reply.planSpoolId} (revision ${done.reply.revision})`);
+      console.error(`[publish] it opens at the moment it addresses: ${done.reply.opensAt}`);
+    }
+  }
+
   // Record the watch link so `spool open` in this workdir reopens it.
   await mkdir(shareDir, { recursive: true }).catch(() => {});
   await writeFile(join(shareDir, "published.json"), JSON.stringify({ url, id, publishedAt: new Date().toISOString() }, null, 2) + "\n").catch(() => {});
@@ -289,11 +388,35 @@ export async function publishSpool(workdir, opts = {}) {
   // The spool is published and published.json is written, so a failed comment is not a
   // failed publish; print the link so it can be posted by hand (CI asserts it separately).
   if (opts.pr) {
-    await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) =>
-      console.error(`[publish] PR comment failed: ${e.message}\n[publish] post it manually: ${url}`),
-    );
+    const viaApp = await announceViaApp({ host, token, id });
+    if (viaApp?.posted || viaApp?.action === "skipped") {
+      console.error(`[publish] PR comment (App): ${viaApp.action}${viaApp.url ? ` ${viaApp.url}` : ""}`);
+    } else {
+      if (viaApp?.reason) console.error(`[publish] PR comment: the App did not post (${viaApp.reason}) — using gh`);
+      await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) =>
+        console.error(`[publish] PR comment failed: ${e.message}\n[publish] post it manually: ${url}`),
+      );
+    }
   }
   return url;
+}
+
+// Ask the platform to comment as the GitHub App. Returns what it did, or null when
+// this host cannot answer (an older deployment, an unreachable one) — either way the
+// caller falls back to `gh`, which is the only writer that knows the branch's PR.
+export async function announceViaApp({ host, token, id }) {
+  try {
+    const res = await fetch(`${host}/api/publish/${id}/announce`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    const { comment } = await res.json();
+    return comment ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Post the watch link as a PR comment via gh. pr === true ⇒ gh resolves the
@@ -304,11 +427,11 @@ export async function commentOnPR(url, spool, pr, previewUrl) {
   });
 
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-  // A vertical PR spool is a ship reel, not a guided reading; it gets its own comment.
+  // A vertical PR spool is a recap, not a guided reading; it gets its own comment.
   const body = !spool.pr
     ? walkthroughBody(url, spool, previewUrl, mmss)
     : spool.format === "vertical"
-      ? reelBody(url, spool, previewUrl, mmss)
+      ? recapBody(url, spool, previewUrl, mmss)
       : guideBody(url, spool, previewUrl, mmss);
 
   const args = ["pr", "comment"];
@@ -351,7 +474,7 @@ function walkthroughBody(url, spool, previewUrl, mmss) {
 }
 
 // Tour stops as table rows, timestamped by the step each stop maps to (blank when the
-// stop has no anchored step). Shared by the guide and reel comment variants.
+// stop has no anchored step). Shared by the guide and recap comment variants.
 function stopRows(spool, mmss) {
   const steps = spool.steps || [];
   return (spool.pr.stops || [])
@@ -362,15 +485,15 @@ function stopRows(spool, mmss) {
     .join("\n");
 }
 
-// Ship-reel comment variant: a merged PR's vertical reel shows what shipped, so it reads
+// Recap comment variant: a merged PR's vertical recap shows what shipped, so it reads
 // as an announcement rather than a reading guide. No em dashes.
-function reelBody(url, spool, previewUrl, mmss) {
+function recapBody(url, spool, previewUrl, mmss) {
   return commentBody({
     url,
     previewUrl,
     duration: spool.duration,
-    heading: `🎬 Ship reel: ${spool.pr.title || spool.title || "what shipped"}`,
-    previewAlt: "watch the ship reel",
+    heading: `🎬 Recap: ${spool.pr.title || spool.title || "what shipped"}`,
+    previewAlt: "watch the recap",
     rowLabel: "stop",
     rows: stopRows(spool, mmss),
     footer: `What this change shipped, recorded and narrated by the agent that shipped it. Built via [spool](https://spoolkit.dev).`,

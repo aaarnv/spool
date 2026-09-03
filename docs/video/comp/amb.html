@@ -1,0 +1,219 @@
+<!doctype html><meta charset="utf-8">
+<title>bake-amb — ambient mode</title>
+<style>
+  /* Ambient skin: a code-generated satisfying loop carries the eyes,
+     kinetic captions carry key phrases, narrator carries everything else.
+     The loop is deterministic in t (rendered via SEEK), license-clean. */
+  * { margin:0; box-sizing:border-box; }
+  html,body { width:540px; height:960px; overflow:hidden; background:#0a0a10; }
+  #stage { position:relative; width:540px; height:960px; font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; color:#fff; }
+  #loop { position:absolute; inset:0; }
+
+  /* key-phrase cards pop over the loop */
+  #key { position:absolute; left:30px; right:30px; top:190px; text-align:center; }
+  #key .k { display:inline-block; background:rgba(10,10,16,.78); backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,.14); border-radius:16px; padding:16px 22px; font-size:36px; font-weight:800; letter-spacing:-.01em; line-height:1.15; opacity:0; transform:scale(.92); transition:all .35s ease; }
+  #key .k.on { opacity:1; transform:scale(1); }
+  #key .k .hl { color:#ffd166; }
+  #key .k .bad { color:#ff7b72; }
+  #key .k .good { color:#7ee787; }
+  #key .k code { font-family:ui-monospace,Menlo,monospace; font-size:30px; color:#ff7b72; }
+
+  #cap { position:absolute; left:24px; right:24px; bottom:110px; text-align:center; font-size:30px; font-weight:800; line-height:1.25; text-shadow:0 2px 16px rgba(0,0,0,.95); }
+  #cap .w { opacity:.45; } #cap .w.said { opacity:1; } #cap .w.now { opacity:1; color:#ffd166; }
+  #prog { position:absolute; left:0; bottom:0; height:5px; background:#ffd166; width:0; }
+  .brand { position:absolute; top:24px; left:24px; font-size:15px; font-weight:800; letter-spacing:.14em; color:rgba(255,255,255,.4); z-index:3; }
+  svg text { font-family:-apple-system,"SF Pro Display",Helvetica,Arial,sans-serif; }
+</style>
+<div id="stage">
+  <video id="loop" src="ambient.mp4" muted preload="auto" style="position:absolute;inset:0;width:540px;height:960px;object-fit:cover;filter:saturate(1.1) brightness(.82)"></video>
+  <div class="brand">SPOOL · STORY</div>
+  <div id="key"></div>
+  <div id="cap"></div>
+  <div id="prog"></div>
+</div>
+<script src="rough-umd.js"></script>
+<script src="gsap.min.js"></script>
+<script>
+  // ---- mechanism diagrams: hand-drawn (rough.js), deterministic boil ----
+  const DIAG = document.createElement('div');
+  DIAG.id = 'diag';
+  DIAG.style.cssText = 'position:absolute;left:20px;right:20px;top:150px;display:flex;justify-content:center;';
+  document.getElementById('stage').insertBefore(DIAG, document.getElementById('cap'));
+
+  const NS = 'http://www.w3.org/2000/svg';
+  function freshSvg(w, h) {
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', w); svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    return svg;
+  }
+  const boilSeed = (t) => 1 + Math.floor(t * 8) % 6;  // 8fps re-sketch, classic boil
+
+  function label(svg, x, y, txt, color = '#e8edf4', size = 21, weight = 800) {
+    const el = document.createElementNS(NS, 'text');
+    el.setAttribute('x', x); el.setAttribute('y', y);
+    el.setAttribute('fill', color); el.setAttribute('font-size', size);
+    el.setAttribute('font-weight', weight); el.setAttribute('text-anchor', 'middle');
+    el.textContent = txt;
+    svg.appendChild(el);
+  }
+
+  const easeBack = gsap.parseEase('back.out(1.9)');
+  const easeElastic = gsap.parseEase('elastic.out(1, 0.4)');
+  const easePow = gsap.parseEase('power3.out');
+  const prog = (lt, at, dur) => Math.max(0, Math.min(1, (lt - at) / dur));
+  // draw-on: reveal every path in a group by dashoffset
+  function drawOn(node, p) {
+    if (p >= 1) return;
+    for (const path of node.querySelectorAll('path')) {
+      const len = path.getTotalLength ? path.getTotalLength() : 300;
+      path.setAttribute('stroke-dasharray', len);
+      path.setAttribute('stroke-dashoffset', String(len * (1 - easePow(p))));
+      path.setAttribute('fill', 'none');
+    }
+  }
+  // pop-in: group scales up around its center with overshoot
+  function popIn(svg, node, p, cx, cy) {
+    const k = p >= 1 ? 1 : easeBack(p);
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('transform', `translate(${cx} ${cy}) scale(${Math.max(0.001, k)}) translate(${-cx} ${-cy})`);
+    g.setAttribute('opacity', String(Math.min(1, p * 3)));
+    g.appendChild(node);
+    svg.appendChild(g);
+    return g;
+  }
+  function grab(svg, fn) {  // run fn collecting the nodes it appends
+    const before = svg.childNodes.length;
+    fn();
+    const got = [...svg.childNodes].slice(before);
+    const g = document.createElementNS(NS, 'g');
+    for (const n of got) g.appendChild(n);
+    svg.appendChild(g);
+    return g;
+  }
+
+  function drawDiagram(beatName, lt, t) {
+    const W = 500, H = 250;
+    const svg = freshSvg(W, H);
+    const rc = window.rough.svg(svg);
+    const seed = boilSeed(t);
+    const o = (extra) => ({ seed, roughness: 1.6, bowing: 1.2, strokeWidth: 3, ...extra });
+    const rbox = (x, y, w, h, stroke, fill) => {
+      // solid dark panel first (readability over footage), sketchy stroke on top
+      const bg = document.createElementNS(NS, 'rect');
+      bg.setAttribute('x', x + 2); bg.setAttribute('y', y + 2);
+      bg.setAttribute('width', w - 4); bg.setAttribute('height', h - 4);
+      bg.setAttribute('rx', 6); bg.setAttribute('fill', 'rgba(8,10,14,.86)');
+      svg.appendChild(bg);
+      svg.appendChild(rc.rectangle(x, y, w, h, o({ stroke, strokeWidth: 3.5 })));
+    };
+    const squiggle = (x, y, mut, color) => {
+      const m = mut * 16;
+      svg.appendChild(rc.curve([[x, y], [x + 35, y - 14 + m], [x + 75, y], [x + 110, y + m * 0.7]], o({ stroke: color, strokeWidth: 5 })));
+      svg.appendChild(rc.curve([[x, y + 30], [x + 40, y + 42 - m], [x + 80, y + 30], [x + 110, y + 30 - m * 0.5]], o({ stroke: color, strokeWidth: 5 })));
+    };
+    const arrow = (x1, y1, x2, y2, color) => {
+      svg.appendChild(rc.line(x1, y1, x2, y2, o({ stroke: color, strokeWidth: 4 })));
+      const a = Math.atan2(y2 - y1, x2 - x1);
+      svg.appendChild(rc.line(x2, y2, x2 - 16 * Math.cos(a - 0.45), y2 - 16 * Math.sin(a - 0.45), o({ stroke: color, strokeWidth: 4 })));
+      svg.appendChild(rc.line(x2, y2, x2 - 16 * Math.cos(a + 0.45), y2 - 16 * Math.sin(a + 0.45), o({ stroke: color, strokeWidth: 4 })));
+    };
+
+    let show = true;
+    if (beatName === 'problem') {
+      const drift = Math.max(0, Math.min(1, (lt - 6) / 5));
+      const sep = drift * 30;
+      const g1 = grab(svg, () => { rbox(45 - sep, 55, 160, 120, '#8b97a8'); label(svg, 125 - sep, 40, 'CLI'); });
+      popIn(svg, g1, prog(lt, 0.0, 0.6), 125 - sep, 115);
+      const q1 = grab(svg, () => squiggle(70 - sep, 100, 0, '#7ee787'));
+      drawOn(q1, prog(lt, 0.5, 0.9));
+      const g2 = grab(svg, () => { rbox(295 + sep, 55, 160, 120, '#8b97a8'); label(svg, 375 + sep, 40, 'WEB'); });
+      popIn(svg, g2, prog(lt, 1.6, 0.6), 375 + sep, 115);
+      const q2 = grab(svg, () => squiggle(320 + sep, 100, drift, drift > 0.35 ? '#ff7b72' : '#7ee787'));
+      drawOn(q2, prog(lt, 2.1, 0.9));
+      if (drift > 0.5) {
+        const x = grab(svg, () => {
+          svg.appendChild(rc.line(235, 95, 265, 135, o({ stroke: '#ff7b72', strokeWidth: 5 })));
+          svg.appendChild(rc.line(235, 135, 265, 95, o({ stroke: '#ff7b72', strokeWidth: 5 })));
+        });
+        const xp = prog(lt, 6 + 5 * 0.5 / 1, 0.7);
+        const k = xp >= 1 ? 1 : easeElastic(xp);
+        x.setAttribute('transform', `translate(250 115) scale(${Math.max(0.001, k)}) translate(-250 -115)`);
+      }
+    } else if (beatName === 'fix') {
+      const g1 = grab(svg, () => { rbox(45, 55, 160, 120, '#ffd166'); label(svg, 125, 40, 'the truth'); });
+      popIn(svg, g1, prog(lt, 0.0, 0.55), 125, 115);
+      const q1 = grab(svg, () => squiggle(70, 100, 0, '#ffd166'));
+      drawOn(q1, prog(lt, 0.4, 0.8));
+      const ar = grab(svg, () => { arrow(215, 115, 285, 115, '#ffd166'); label(svg, 250, 95, 'makes', '#ffd166', 17, 700); });
+      drawOn(ar, prog(lt, 1.1, 0.6));
+      ar.setAttribute('opacity', String(Math.min(1, prog(lt, 1.1, 0.3) * 2)));
+      const g2 = grab(svg, () => { rbox(295, 55, 160, 120, '#8b97a8'); label(svg, 375, 40, 'the copy'); });
+      popIn(svg, g2, prog(lt, 1.7, 0.55), 375, 115);
+      const q2 = grab(svg, () => squiggle(320, 100, 0, '#ffd166'));
+      drawOn(q2, prog(lt, 2.1, 0.8));
+    } else if (beatName === 'funny') {
+      show = lt >= 2.0;
+      if (show) {
+        const card = grab(svg, () => { rbox(85, 50, 330, 110, '#ff7b72'); });
+        const k = prog(lt, 2.0, 0.8);
+        card.setAttribute('transform', `translate(250 105) scale(${Math.max(0.001, k >= 1 ? 1 : easeElastic(k))}) translate(-250 -105)`);
+        label(svg, 250, 92, 'the narration said:', '#9aa4b2', 17, 600);
+        const code = document.createElementNS(NS, 'text');
+        code.setAttribute('x', 250); code.setAttribute('y', 132);
+        code.setAttribute('fill', '#ff7b72'); code.setAttribute('font-size', 28);
+        code.setAttribute('font-weight', 800); code.setAttribute('text-anchor', 'middle');
+        code.setAttribute('style', 'font-family:Menlo,monospace');
+        code.textContent = '[object Object]';
+        svg.appendChild(code);
+      }
+    } else if (beatName === 'proof' || beatName === 'close') {
+      const wig = beatName === 'proof' && lt < 1.6 ? Math.sin(lt * 22) * 10 * (1.6 - lt) : 0;
+      const pb = beatName === 'proof' ? prog(lt, 0, 0.5) : 1;
+      const b1 = grab(svg, () => { rbox(45, 45, 150, 110, '#7ee787'); squiggle(68, 85, 0, '#7ee787'); });
+      popIn(svg, b1, pb, 120, 100);
+      const b2 = grab(svg, () => { rbox(305, 45, 150, 110, '#7ee787'); squiggle(328, 85, 0, '#7ee787'); });
+      popIn(svg, b2, pb, 380, 100);
+      svg.appendChild(rc.curve([[195, 100], [250, 100 + wig], [305, 100]], o({ stroke: Math.abs(wig) > 3 ? '#ff7b72' : '#7ee787', strokeWidth: 3, strokeLineDash: [8, 6] })));
+      label(svg, 250, 200, Math.abs(wig) > 3 ? 'tripwire: FAIL' : 'tripwire: armed', Math.abs(wig) > 3 ? '#ff7b72' : '#7ee787', 20);
+    } else { show = false; }
+
+    DIAG.innerHTML = '';
+    if (show) DIAG.appendChild(svg);
+  }
+
+  let D = null, capChunks = [];
+  const $ = (s) => document.querySelector(s);
+
+  window.INIT = (data) => {
+    D = data;
+    capChunks = [];
+    for (const b of D.beats) {
+      let cur = [];
+      for (const w of b.words) {
+        cur.push(w);
+        if (cur.length >= 5 || /[.!?…]$/.test(w.word)) { capChunks.push(cur); cur = []; }
+      }
+      if (cur.length) capChunks.push(cur);
+    }
+  };
+
+  const CLIP_DUR = 28.4;
+  window.SEEK = async (t) => {
+    const v = document.getElementById('loop');
+    const target = t % CLIP_DUR;
+    if (Math.abs(v.currentTime - target) > 0.01) {
+      await new Promise((res) => { v.onseeked = res; v.currentTime = target; });
+    }
+    $('#prog').style.width = (100 * t / D.total) + '%';
+
+    const beat = D.beats.findLast((b) => t >= b.start) || D.beats[0];
+    drawDiagram(beat.name, t - beat.start, t);
+
+    const chunk = capChunks.find((c) => t < c[c.length - 1].end) || capChunks[capChunks.length - 1];
+    $('#cap').innerHTML = chunk.map((w) => {
+      const cls = t >= w.end ? 'w said' : (t >= w.start ? 'w now' : 'w');
+      return `<span class="${cls}">${w.word}</span>`;
+    }).join(' ');
+  };
+</script>

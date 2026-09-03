@@ -1,0 +1,33 @@
+# Contract tests for the CLI (node --test). No browser, no ffmpeg, no secrets:
+# these cover the data contracts in CONTRACTS.md, including the v1 backward
+# compatibility checks that a Plan Spool change must never break.
+
+name: test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22+: `npm test` passes the runner a quoted glob, which node only
+          # expands itself from 21 on.
+          node-version: 22
+          cache: npm
+
+      # --ignore-scripts skips the playwright browser download: nothing here
+      # launches a browser, and the download is the slow half of an install.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: npm test
+        run: npm test

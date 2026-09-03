@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "title": "Anchor plan chapters to the recording",
+  "url": "http://localhost:3000",
+  "video": "../final.mp4",
+  "duration": 35.9,
+  "rate": 1.25,
+  "format": "wide",
+  "width": 1920,
+  "height": 1080,
+  "voice": { "engine": "openai", "voice": "alloy" },
+  "steps": [
+    {
+      "i": 0,
+      "name": "open-app",
+      "narration": "This is the plan list before any of the work lands.",
+      "start": 0,
+      "end": 3.8,
+      "clicks": [],
+      "frame": "frames/step_00.png"
+    },
+    {
+      "i": 1,
+      "name": "context",
+      "chapterId": "context",
+      "narration": "First, where things stand today. Plan chapters have no video anchor.",
+      "start": 3.8,
+      "end": 10.2,
+      "clicks": [{ "x": 512, "y": 340, "t": 4.9 }],
+      "frame": "frames/step_01.png"
+    },
+    {
+      "i": 2,
+      "name": "outcome",
+      "chapterId": "outcome",
+      "narration": "Here is what changes. Every chapter names the range it runs in.",
+      "start": 10.2,
+      "end": 16.2,
+      "clicks": [],
+      "frame": "frames/step_02.png"
+    },
+    {
+      "i": 3,
+      "name": "approach",
+      "chapterId": "approach",
+      "narration": "The approach is two steps. Step one. Record the chapter on the step.",
+      "start": 16.2,
+      "end": 24,
+      "clicks": [],
+      "frame": "frames/step_03.png"
+    },
+    {
+      "i": 4,
+      "name": "approach-detail",
+      "chapterId": "approach",
+      "narration": "Step two. Derive the range from the steps that carry the chapter.",
+      "start": 24,
+      "end": 30.817,
+      "clicks": [],
+      "frame": "frames/step_04.png"
+    },
+    {
+      "i": 5,
+      "name": "risks",
+      "chapterId": "risks",
+      "narration": "Now the risks. An old timeline carries no chapter, so it seeks by step.",
+      "start": 30.817,
+      "end": 38.317,
+      "clicks": [],
+      "frame": "frames/step_05.png"
+    },
+    {
+      "i": 6,
+      "name": "decision",
+      "chapterId": "decision",
+      "narration": "That is the plan. You can approve it, or redirect with changes.",
+      "start": 38.317,
+      "end": 44.933,
+      "clicks": [],
+      "frame": "frames/step_06.png"
+    }
+  ],
+  "plan": {
+    "file": "plan.json",
+    "revisionId": "rev_01HZZTESTFIXTURE",
+    "revisionNumber": 1,
+    "version": 1,
+    "goal": "Anchor every plan chapter to the moment it is explained on video.",
+    "outcome": "A reviewer clicks a plan summary item and the player jumps to that chapter's range.",
+    "chapters": [
+      { "id": "context", "title": "What exists today" },
+      { "id": "outcome", "title": "What changes" },
+      { "id": "approach", "title": "How we build it" },
+      { "id": "risks", "title": "What could go wrong" },
+      { "id": "decision", "title": "What we need from you" }
+    ],
+    "currentState": [
+      { "claim": "Plan chapters have no video anchor.", "evidence": [] }
+    ],
+    "approach": [
+      { "id": "record", "summary": "Record the chapter on the step.", "chapterId": "approach", "evidence": [] },
+      { "id": "derive", "summary": "Derive the range from the steps that carry the chapter.", "chapterId": "approach", "evidence": [] }
+    ],
+    "alternatives": [],
+    "noAlternativesReason": "No credible alternative considered: timeline.json is already the recording-clock source of truth.",
+    "assumptions": ["Every chapter is recorded as at least one step."],
+    "risks": [
+      { "claim": "An old timeline carries no chapter, so it seeks by step.", "evidence": [], "chapterId": null }
+    ],
+    "decision": {
+      "type": "approval",
+      "prompt": "Approve the chapter mapping before the watch page is built on it.",
+      "options": ["approve", "redirect"]
+    },
+    "evidence": [],
+    "links": { "task": "SPL-17", "branch": "spl/spl-17", "commit": null }
+  },
+  "console": { "errors": 0, "warnings": 0, "log": "console.jsonl" }
+}

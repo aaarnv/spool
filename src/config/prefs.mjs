@@ -23,6 +23,10 @@ export const CHOICES = {
 };
 const ENV = { browser: "SPOOL_BROWSER", target: "SPOOL_TARGET", engine: "SPOOL_ENGINE", bg: "SPOOL_BG", format: "SPOOL_FORMAT" };
 
+// What `spool setup` asks about. `bg` and `format` are resolved from the workdir and
+// the house defaults; they stay readable here only as SPOOL_BG / SPOOL_FORMAT escapes.
+export const SETUP_KEYS = ["browser", "target", "engine"];
+
 // Read ~/.spool.json (unknown keys preserved). Returns {} when absent or malformed.
 export async function readPrefs() {
   if (!existsSync(PREFS_PATH)) return {};

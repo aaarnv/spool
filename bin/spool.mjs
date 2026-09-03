@@ -7,19 +7,34 @@ import { fileURLToPath } from 'url';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const program = new Command();
 
-// `--bg list` on any render-capable command prints the background listing and skips
-// the work. Returns true when it handled the request.
-async function maybeListBackgrounds(opts) {
-  if (opts.bg !== 'list') return false;
-  const { printBackgrounds } = await import(join(root, 'src/render/bg-resolve.mjs'));
-  await printBackgrounds();
-  return true;
+// A repeatable option: commander keeps the last value unless the collector says
+// otherwise. Used by `spool reply --verifies/--deviation/--override`, where a proof
+// names several items and each needs its own flag.
+const collect = (value, previous) => [...previous, value];
+
+// A workdir holding plan.json is a Plan Spool: the packet must validate before any
+// stage spends time on it, so an authoring mistake never becomes a re-record or a
+// wasted VO run. Workdirs without plan.json are untouched by this (see CONTRACTS.md
+// "Plan Spools").
+async function assertPlan(workdir, stage) {
+  const { checkPlanGate } = await import(join(root, 'src/plan/plan.mjs'));
+  if (!(await checkPlanGate(workdir, stage))) process.exit(1);
+}
+
+// Validate the packet in `dir` and print the report `spool plan validate` and
+// `spool plan build` share. Returns the exit code (see src/plan/report.mjs).
+async function runPlanValidate(dir, { json = false, strict = false } = {}) {
+  const { readPlanPacket } = await import(join(root, 'src/plan/plan.mjs'));
+  const { formatPlanReport, planReportJson, planExitCode } = await import(join(root, 'src/plan/report.mjs'));
+  const packet = await readPlanPacket(dir);
+  console.log(json ? JSON.stringify(planReportJson(packet, { dir, strict }), null, 2) : formatPlanReport(packet, { dir, strict }));
+  return planExitCode(packet, { strict });
 }
 
 const stepsPath = (workdir) => {
   const p = resolve(workdir, 'steps.mjs');
   if (!existsSync(p)) {
-    console.error(`No steps.mjs in ${workdir} — run \`spool init\` or author one (see CONTRACTS.md).`);
+    console.error(`No steps.mjs in ${workdir} — record one with \`spool live ${workdir}\`, scaffold one with \`spool init <slug>\`, or author one (see CONTRACTS.md).`);
     process.exit(1);
   }
   return p;
@@ -46,23 +61,64 @@ async function finishSession(wd, opts) {
     console.error(`Not a recorded session: ${wd} needs video.webm/capture.mp4 + timeline.json (run \`spool live\` or \`spool record\` first).`);
     process.exit(1);
   }
+  await assertPlan(wd, 'narrating and rendering it');
   const sfPath = join(wd, 'steps.mjs');
   const sf = existsSync(sfPath) ? sfPath : null;
   const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
   const { renderSpool, resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
   const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
   // One resolution for the whole finish: VO register and canvas must agree.
-  const format = await resolveWorkdirFormat(wd, opts.format);
+  const format = await resolveWorkdirFormat(wd);
   console.log('── spool vo');
   const t0 = Date.now();
-  await generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed), format });
+  await generateVO({ stepsFile: sf, workdir: wd, format });
   console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   console.log('── spool render');
-  await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq, format });
+  await renderSpool({ workdir: wd, format });
   console.log('── spool share');
   await shareSpool(wd);
-  const out = opts.preview ? join(wd, 'share', 'preview.mp4') : join(wd, 'final.mp4');
-  console.log(`\nDone: ${out} (+ share/ bundle for agents)`);
+  console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
+  await maybeAutoPublish(wd, opts);
+}
+
+// (vo ‖ record) → render → share → publish on a workdir. `spool build` and
+// `spool plan build` are the same pipeline; only the gate in front of them differs.
+async function buildWorkdir(wd, opts) {
+  // --cloud sends the workdir to spoolkit.dev instead. What it sends is decided by
+  // what the workdir HAS: a capture goes up as a take, a bare packet goes up alone
+  // and the platform authors the video from it.
+  if (opts.cloud) {
+    await cloudFinishCmd(wd, opts);
+    return;
+  }
+  // A live/recorded session is already captured — finish it, don't re-record.
+  if (isRecordedSession(wd)) {
+    await finishSession(wd, opts);
+    return;
+  }
+  await assertPlan(wd, 'recording and narrating it');
+  const sf = stepsPath(wd);
+  const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
+  const { record } = await import(join(root, 'src/record/harness.mjs'));
+  const { renderSpool, resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
+  // One resolution for the whole build: VO register and canvas must agree.
+  const format = await resolveWorkdirFormat(wd);
+  // Record-first, narrate-parallel: VO and capture are independent now, so run
+  // them concurrently. Either rejecting fails the build with that error.
+  console.log('── spool vo ‖ record');
+  const t0 = Date.now();
+  await Promise.all([
+    generateVO({ stepsFile: sf, workdir: wd, format })
+      .then(() => console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
+    record({ stepsFile: sf, workdir: wd })
+      .then(() => console.log(`   record done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
+  ]);
+  console.log('── spool render');
+  await renderSpool({ workdir: wd, format });
+  console.log('── spool share');
+  const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
+  await shareSpool(wd);
+  console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
   await maybeAutoPublish(wd, opts);
 }
 
@@ -74,22 +130,26 @@ async function cloudFinishCmd(wd, opts) {
     console.error('--cloud publishes by definition (the job returns a watch link); drop --no-publish.');
     process.exit(1);
   }
-  if (opts.preview) {
-    console.error('--preview is a local draft render; drop it to render in the cloud.');
-    process.exit(1);
-  }
+  // No capture, but a packet: the platform writes the script, draws the diagrams and
+  // renders the vertical video. Nothing but plan.json leaves this machine (#58).
   if (!hasCapture(wd)) {
-    console.error(`Not a recorded session: ${wd} needs video.webm/capture.mp4 + timeline.json (run \`spool live\` or \`spool record\` first).`);
-    process.exit(1);
+    if (!existsSync(join(wd, 'plan.json'))) {
+      console.error(`Not a recorded session: ${wd} needs video.webm/capture.mp4 + timeline.json (run \`spool live\` or \`spool record\` first), or a plan.json to render as a packet.`);
+      process.exit(1);
+    }
+    const { cloudPacket } = await import(join(root, 'src/cloud/cloud.mjs'));
+    await cloudPacket(wd, opts);
+    return;
   }
+  await assertPlan(wd, 'sending it to the cloud renderer');
   const { cloudFinish } = await import(join(root, 'src/cloud/cloud.mjs'));
   await cloudFinish(wd, opts);
 }
 
-// Finished spools publish by default; --no-publish or a preview render skip it. A missing
-// account is soft locally but fatal in CI, where an unpublished spool is a silent failure.
+// Finished spools publish by default; --no-publish skips it. A missing account is soft
+// locally but fatal in CI, where an unpublished spool is a silent failure.
 async function maybeAutoPublish(wd, opts) {
-  if (opts.publish === false || opts.preview) return;
+  if (opts.publish === false) return;
   const { resolveConfig, publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
   const { host, token } = await resolveConfig();
   if (!host || !token) {
@@ -124,8 +184,10 @@ program
 
 program
   .command('init [slug]')
-  .description('with <slug>: scaffold spool/<slug>/steps.mjs; bare: seed this repo\'s project knowledge')
+  .description('bare: set this machine and repo up to record; with <slug>: scaffold spool/<slug>/steps.mjs')
   .option('--apply', 'apply the authored project seed ops (bare init only)')
+  .option('--no-login', 'skip the login step (bare init only, for CI)')
+  .option('--paste', 'paste an spk_ token instead of the browser login flow (bare init only)')
   .action(async (slug, opts) => {
     if (slug) {
       const workdir = resolve('spool', slug);
@@ -139,8 +201,13 @@ program
       console.log(`Created ${dest}\nNext: edit the steps, then \`spool dry ${workdir}\` to debug the driver.`);
       return;
     }
-    const { initProject } = await import(join(root, 'src/project/init.mjs'));
-    await initProject({ apply: !!opts.apply });
+    if (opts.apply) {
+      const { initProject } = await import(join(root, 'src/project/init.mjs'));
+      await initProject({ apply: true });
+      return;
+    }
+    const { onboard } = await import(join(root, 'src/project/onboard.mjs'));
+    process.exitCode = await onboard({ doLogin: opts.login !== false, paste: !!opts.paste });
   });
 
 program
@@ -148,42 +215,79 @@ program
   .description('connect this machine to spoolkit.dev (opens browser)')
   .option('--host <url>', 'override the host to connect to')
   .option('--paste', 'paste an spk_ token instead of the browser flow (headless)')
-  .option('--no-open', 'do not open the browser (print the URL to visit)')
   .action(async (opts) => {
     const { login } = await import(join(root, 'src/login/login.mjs'));
-    await login({ host: opts.host, paste: !!opts.paste, open: opts.open !== false });
+    await login({ host: opts.host, paste: !!opts.paste });
   });
 
 program
   .command('dry <workdir>')
-  .description('drive the steps without recording or VO (debug selectors/timing)')
-  .option('--headed', 'show the browser')
-  .action(async (workdir, opts) => {
+  .description('drive the steps in a visible browser, without recording or VO (debug selectors/timing)')
+  .action(async (workdir) => {
+    await assertPlan(resolve(workdir), 'driving the steps');
     const { record } = await import(join(root, 'src/record/harness.mjs'));
-    await record({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), dry: true, headed: !!opts.headed });
+    // A dry run exists to be watched; a headless one shows the operator nothing.
+    await record({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), dry: true, headed: true });
   });
 
 program
   .command('vo <workdir>')
   .description('generate voiceover segments + word timestamps')
-  .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'alloy')
-  .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
-  .option('--format <format>', 'wide | vertical (picks the narration register)')
-  .action(async (workdir, opts) => {
+  .action(async (workdir) => {
+    await assertPlan(resolve(workdir), 'generating voiceover');
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
     const { resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
-    const format = await resolveWorkdirFormat(resolve(workdir), opts.format);
-    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), engine: opts.engine, voice: opts.voice, speed: Number(opts.speed), format });
+    const format = await resolveWorkdirFormat(resolve(workdir));
+    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), format });
   });
 
 program
   .command('record <workdir>')
   .description('record the demo at natural speed (VO not required; renderer retimes)')
-  .option('--headed', 'show the browser')
-  .action(async (workdir, opts) => {
+  .action(async (workdir) => {
+    await assertPlan(resolve(workdir), 'recording');
     const { record } = await import(join(root, 'src/record/harness.mjs'));
-    await record({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), headed: !!opts.headed });
+    await record({ stepsFile: stepsPath(workdir), workdir: resolve(workdir) });
+  });
+
+// Re-derive the cut from signals.jsonl. No browser, no capture, no re-encode: the
+// video is untouched and only timeline.json changes, so a bad boundary costs one pass.
+program
+  .command('recut <workdir>')
+  .description('re-derive step boundaries from the take\'s signal log (no re-record)')
+  .option('--min-step <seconds>', 'fold a cut closer than this into the one before it', parseFloat)
+  .option('--merge <step>', 'merge a step into the one before it (repeatable)', collect, [])
+  .option('--split <step@seconds>', 'split a step at a time on the take clock (repeatable)', collect, [])
+  .option('--drop <step>', 'drop a step; its footage never reaches the output (repeatable)', collect, [])
+  .option('--trim-start <step@seconds>', 'move a step\'s start later, cutting dead air (repeatable)', collect, [])
+  .option('--trim-end <step@seconds>', 'move a step\'s end earlier (repeatable)', collect, [])
+  .option('--name <step=name>', 'rename a step (repeatable)', collect, [])
+  .option('--chapter <step=id>', 'set a step\'s plan chapter (repeatable)', collect, [])
+  .option('--narrate <step=text>', 'set a step\'s narration (repeatable)', collect, [])
+  .option('--dry-run', 'print the cut this would produce; write nothing')
+  .option('--json', 'machine-readable output')
+  .action(async (workdir, opts) => {
+    const { recutWorkdir, formatCut } = await import(join(root, 'src/record/recut.mjs'));
+    const { parseCutOps } = await import(join(root, 'src/record/signals.mjs'));
+    try {
+      const result = await recutWorkdir(resolve(workdir), {
+        ...(Number.isFinite(opts.minStep) ? { minStep: opts.minStep } : {}),
+        ops: parseCutOps(opts),
+        dryRun: !!opts.dryRun,
+      });
+      if (opts.json) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.log(formatCut(result.steps, { previous: result.previous }));
+        console.log(
+          opts.dryRun
+            ? '\n(dry run — timeline.json unchanged)'
+            : `\nwrote timeline.json (previous cut kept as timeline.prev.json)\nRender it with \`spool render ${workdir}\`.`
+        );
+      }
+    } catch (e) {
+      console.error(`recut: ${e.message}`);
+      process.exit(1);
+    }
   });
 
 program
@@ -192,20 +296,19 @@ program
   .option('--target <target>', 'browser | os (macOS full-display screen capture) (default: prefs.target or browser)')
   .option('--url <url>', 'app URL (browser target; else read from an existing steps.mjs config)')
   .option('--title <title>', 'title card text')
-  .option('--display <idx>', 'os target: which "Capture screen" index (default: first)')
-  .option('--window <name>', 'os target: single-window capture (falls back to full display)')
-  .option('--format <format>', 'wide | vertical short-form (recorded into the session steps.mjs)')
-  .option('--headed', 'show the browser (browser target)')
+  .option('--format <format>', 'wide walkthrough | vertical recap (recorded into the session steps.mjs)')
+  .option('--auth <file>', 'Playwright storageState JSON to start signed in (or SPOOL_AUTH_STATE)')
   .action(async (workdir, opts) => {
+    await assertPlan(resolve(workdir), 'recording');
     const { resolveTarget } = await import(join(root, 'src/config/prefs.mjs'));
     const target = await resolveTarget(opts.target);
     if (target === 'os') {
       const { liveOsSession } = await import(join(root, 'src/record/live-os.mjs'));
-      await liveOsSession({ workdir: resolve(workdir), title: opts.title, display: opts.display, window: opts.window });
+      await liveOsSession({ workdir: resolve(workdir), title: opts.title });
       return;
     }
     const { liveSession } = await import(join(root, 'src/record/live.mjs'));
-    await liveSession({ workdir: resolve(workdir), url: opts.url, title: opts.title, format: opts.format, headed: !!opts.headed });
+    await liveSession({ workdir: resolve(workdir), url: opts.url, title: opts.title, format: opts.format, auth: opts.auth });
   });
 
 program
@@ -223,18 +326,9 @@ program
 program
   .command('finish <workdir>')
   .description('vo → render → share → publish on an existing live/recorded session (no re-record)')
-  .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'alloy')
-  .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
-  .option('--rate <rate>', 'global playback speed for the final video', '1')
-  .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
-  .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
-  .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
-  .option('--hq', 'supersampled high-quality render (slower; best for launch/marketing takes)')
   .option('--cloud', 'render on spoolkit.dev instead of this machine (vo + render + publish server-side)')
   .option('--no-publish', 'skip the automatic publish at the end')
   .action(async (workdir, opts) => {
-    if (await maybeListBackgrounds(opts)) return;
     const wd = resolve(workdir);
     if (opts.cloud) {
       await cloudFinishCmd(wd, opts);
@@ -244,34 +338,51 @@ program
   });
 
 program
-  .command('backgrounds')
-  .alias('bg')
-  .description('list available backgrounds (repo presets + this machine\'s macOS wallpapers)')
-  .action(async () => {
-    const { printBackgrounds } = await import(join(root, 'src/render/bg-resolve.mjs'));
-    await printBackgrounds();
-  });
-
-program
   .command('render <workdir>')
-  .description('normalize + Remotion-render the final spool mp4')
-  .option('--rate <rate>', 'global playback speed for the final video', '1')
-  .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
-  .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
+  .description('normalize + render the final spool mp4')
   .option('--preview', 'fast half-scale draft to share/preview.mp4 (final.mp4 untouched)')
-  .option('--hq', 'supersampled high-quality render (slower; best for launch/marketing takes)')
   .option('--cloud', 'render on spoolkit.dev instead of this machine (same job as `finish --cloud`)')
   .action(async (workdir, opts) => {
-    if (await maybeListBackgrounds(opts)) return;
     const wd = resolve(workdir);
     // The cloud job is the whole finish (vo → render → share → publish); there is no
     // render-only variant of it, so --cloud runs the same client here.
     if (opts.cloud) {
+      if (opts.preview) {
+        console.error('--preview is a local draft render; drop it to render in the cloud.');
+        process.exit(1);
+      }
       await cloudFinishCmd(wd, opts);
       return;
     }
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
-    await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, preview: !!opts.preview, hq: !!opts.hq, format: opts.format });
+    await renderSpool({ workdir: wd, preview: !!opts.preview });
+  });
+
+program
+  .command('bg <workdir> <bg>')
+  .description('swap a rendered spool\'s canvas from layers/fg.webm (no re-render)')
+  .option('--publish', 'publish the swapped take (mints a new watch link)')
+  .option('--host <host>', 'watch app origin (default: env SPOOL_HOST or ~/.spool.json)')
+  .option('--token <token>', 'publish token (default: env SPOOL_PUBLISH_TOKEN or ~/.spool.json)')
+  .action(async (workdir, bg, opts) => {
+    const wd = resolve(workdir);
+    const { swapWorkdirBackground } = await import(join(root, 'src/render/bg-swap.mjs'));
+    // A missing layer or final.mp4 is an expected answer, not a crash.
+    try {
+      await swapWorkdirBackground(wd, bg);
+    } catch (err) {
+      console.error(`[bg] ${(err && err.message) || err}`);
+      process.exit(1);
+    }
+    if (!opts.publish) {
+      const published = join(wd, 'share', 'published.json');
+      if (existsSync(published)) {
+        console.error('[bg] this workdir is published; pass --publish to put the new canvas online');
+      }
+      return;
+    }
+    const { publishSpool } = await import(join(root, 'src/publish/publish.mjs'));
+    await publishSpool(wd, { host: opts.host, token: opts.token });
   });
 
 program
@@ -283,24 +394,118 @@ program
   });
 
 program
-  .command('read <dir>')
-  .description('print an agent-oriented digest of a spool (accepts a workdir or its share/ dir)')
-  .action(async (dir) => {
-    const { readSpool } = await import(join(root, 'src/share/share.mjs'));
-    console.log(await readSpool(resolve(dir)));
+  .command('read <target>')
+  .description('print an agent-oriented digest of a spool (workdir or share/ dir); --plan reads a plan spool')
+  .option('--plan', 'read the plan packet + decision status (target may also be a watch URL or spool id)')
+  .option('--json', 'machine-readable output (--plan only)')
+  .option('--host <url>', 'override the host to read the plan status from')
+  .option('--token <token>', 'override the token the plan status is read with')
+  .option('--offline', 'read the local packet/bundle only; never contact the host (--plan only)')
+  .option('--transcript', 'also return the full narration (--plan only; the default is a digest plus references)')
+  .action(async (target, opts) => {
+    if (!opts.plan) {
+      const { readSpool } = await import(join(root, 'src/share/share.mjs'));
+      console.log(await readSpool(resolve(target)));
+      return;
+    }
+    const { readPlan, readTranscript, planDigest } = await import(join(root, 'src/plan/read.mjs'));
+    const io = { host: opts.host, token: opts.token };
+    const payload = await readPlan(target, { ...io, offline: !!opts.offline });
+    // Narration is returned only when it is asked for: an agent already has the plan in
+    // structured form, so the words are a reference by default (roadmap R4.1).
+    const transcript = opts.transcript ? await readTranscript(payload) : null;
+    if (opts.json) {
+      console.log(JSON.stringify(transcript === null ? payload : { ...payload, transcript }, null, 2));
+      return;
+    }
+    console.log(planDigest(payload));
+    if (transcript) console.log(`\ntranscript:\n${transcript.trimEnd()}`);
+  });
+
+// `spool reply <parent>` — a child spool that answers one moment of a plan
+// (roadmap R4.2). It sits beside `read` on purpose: read is how an agent learns
+// what a plan asked, reply is how it answers in the same medium.
+program
+  .command('reply <parent>')
+  .description('start a child spool that replies to a published plan (watch URL, spool id, or published workdir)')
+  .option('--kind <kind>', 'answer | revision | status | proof', 'answer')
+  .option('--question <id>', 'the question this answers → the moment it opens at')
+  .option('--chapter <id>', 'a plan chapter: context | outcome | approach | risks | decision')
+  .option('--approach <id>', 'an approach step id from the parent plan')
+  .option('--evidence <id>', 'an evidence descriptor id from the parent plan')
+  .option('--range <start-end>', 'a moment on the parent video clock, seconds or mm:ss')
+  .option('--summary <text>', 'one line saying what this reply says')
+  // --kind proof only (roadmap R5.1): what the proof claims. A proof enumerates every
+  // approach step of the plan plus the outcome, and states each deviation as a field.
+  .option(
+    '--verifies <spec>',
+    'proof: all | outcome | <approachId>[:verified|partial|unmet][=note] (repeatable)',
+    collect,
+    []
+  )
+  .option('--deviation <from=summary>', 'proof: outcome=… | plan=… | approach:<id>=… (repeatable)', collect, [])
+  .option('--mode <mode>', 'proof: video (default) or evidence, when the evidence carries the claim')
+  .option('--override <what>', 'proof: unapproved | superseded — prove a plan the state rule refuses (repeatable)', collect, [])
+  .option('--override-reason <text>', 'proof: why the override is warranted; shown to the reviewer')
+  .option('--dir <path>', 'write the reply workdir here instead of spool/<kind>-<parent id>')
+  .option('--force', 'overwrite an existing reply.json')
+  .option('--json', 'machine-readable output')
+  .option('--questions', 'list the parent\'s live questions and exit (to pick a --question id)')
+  .option('--host <url>', 'override the host to read the parent from')
+  .option('--token <token>', 'override publish token')
+  .action(async (parent, opts) => {
+    const { replyCmd, listParentQuestions } = await import(join(root, 'src/plan/reply-cmd.mjs'));
+    if (opts.questions) {
+      try {
+        console.log(await listParentQuestions(parent, opts));
+      } catch (e) {
+        console.error(`[reply] ${e.message}`);
+        process.exitCode = 1;
+      }
+      return;
+    }
+    process.exitCode = await replyCmd(parent, opts);
+  });
+
+// `spool status <parent>` — a status spool: where the approved work is (roadmap R5.4).
+// It is `spool reply --kind status` with the one thing a status must carry, so there is
+// exactly one way to record one and no way to record a verdict-less progress video.
+program
+  .command('status <parent>')
+  .description('record an implementation status on an approved plan (watch URL, spool id, or published workdir)')
+  .option('--verdict <verdict>', 'on_plan | changed | blocked — the first thing a reviewer reads')
+  .option('--no-plan-holds', 'the approved plan no longer holds (say what changed with --changed)')
+  .option('--reason <reason>', 'milestone | blocker | decision — why this status is worth a video')
+  .option('--done <ids>', 'approach step ids finished since the plan was approved (repeatable, comma-separated)', (v, all) => [...(all ?? []), v])
+  .option('--changed <text>', 'what departs from the approved plan')
+  .option('--blocked <text>', 'what stops the work')
+  .option('--next <text>', 'what happens next, or what decision is needed')
+  .option('--summary <text>', 'one line for the timeline row (default: the verdict)')
+  .option('--chapter <id>', 'a plan chapter: context | outcome | approach | risks | decision')
+  .option('--approach <id>', 'an approach step id from the parent plan')
+  .option('--evidence <id>', 'an evidence descriptor id from the parent plan')
+  .option('--range <start-end>', 'a moment on the parent video clock, seconds or mm:ss')
+  .option('--url <url>', 'the app URL the scaffolded steps.mjs opens', 'http://localhost:3000')
+  .option('--dir <path>', 'write the status workdir here instead of spool/status-<parent id>')
+  .option('--force', 'overwrite an existing reply.json and steps.mjs')
+  .option('--json', 'machine-readable output')
+  .option('--host <url>', 'override the host to read the parent from')
+  .option('--token <token>', 'override publish token')
+  .action(async (parent, opts) => {
+    const { statusCmd } = await import(join(root, 'src/plan/status-cmd.mjs'));
+    process.exitCode = await statusCmd(parent, opts);
   });
 
 program
   .command('list')
   .alias('ls')
   .description('list your recently published spools (title, PR, views, watch link)')
-  .option('--limit <n>', 'max spools to return', '20')
   .option('--json', 'machine-readable output')
   .option('--host <url>', 'override publish host')
   .option('--token <token>', 'override publish token')
   .action(async (opts) => {
     const { listSpools } = await import(join(root, 'src/list/list.mjs'));
-    await listSpools({ host: opts.host, token: opts.token, limit: parseInt(opts.limit, 10) || 20, json: !!opts.json });
+    await listSpools({ host: opts.host, token: opts.token, json: !!opts.json });
   });
 
 program
@@ -335,58 +540,283 @@ program
     await preparePr(numberOrUrl);
   });
 
-program
-  .command('build <workdir>')
-  .description('(vo ‖ record) → render → share → publish, end to end')
-  .option('--no-publish', 'skip the automatic publish at the end')
-  .option('--engine <engine>', 'openai | hosted | local (default: auto-detect)')
-  .option('--voice <voice>', 'TTS voice', 'alloy')
-  .option('--speed <speed>', 'narration tempo (pitch-preserving)', '1')
-  .option('--rate <rate>', 'global playback speed for the final video', '1')
-  .option('--bg <bg>', 'background: preset (graphite|paper|indigo), a macOS wallpaper name, or an image path — "list" to see options')
-  .option('--format <format>', 'wide | vertical short-form (default: steps.mjs config.format, then SPOOL_FORMAT / prefs)')
-  .option('--headed', 'show the browser while recording')
+const buildOptions = (cmd) =>
+  cmd
+    .option('--no-publish', 'skip the automatic publish at the end')
+    .option('--cloud', 'render on spoolkit.dev instead of this machine (vo + render + publish server-side)');
+
+buildOptions(program.command('build <workdir>').description('(vo ‖ record) → render → share → publish, end to end'))
   .action(async (workdir, opts) => {
-    if (await maybeListBackgrounds(opts)) return;
-    const wd = resolve(workdir);
-    // A live/recorded session is already captured — finish it, don't re-record.
-    if (isRecordedSession(wd)) {
-      await finishSession(wd, opts);
-      return;
+    await buildWorkdir(resolve(workdir), opts);
+  });
+
+// `spool plan` — the Plan Spool namespace. A Plan Spool is an ordinary spool
+// workdir plus plan.json, so these commands sit beside the media commands
+// instead of replacing them: `init` scaffolds the packet, `validate` checks it,
+// `build` gates the normal build on it. See CONTRACTS.md "Plan Spools".
+const plan = program
+  .command('plan')
+  .description('Plan Spools: scaffold, validate and build a plan packet (plan.json)');
+
+plan
+  .command('init <slug>')
+  .description('scaffold spool/<slug>/plan.json + evidence.json from the templates')
+  .option('--goal <goal>', 'required: one sentence saying what the work is for')
+  .option('--task <urlOrId>', 'the task this plan answers → links.task')
+  .option('--outcome <outcome>', 'what is true after the work that is not true now')
+  .option('--pr <urlOrNumber>', 'the pull request this plan belongs to → links.pr')
+  .option('--issue <urlOrNumber>', 'the GitHub issue this plan answers → links.issue')
+  .option('--dir <dir>', 'write the packet here instead of spool/<slug>')
+  .option('--force', 'overwrite an existing plan.json')
+  .action(async (slug, opts) => {
+    const { initPlan, initNextSteps } = await import(join(root, 'src/plan/init.mjs'));
+    try {
+      const { workdir } = await initPlan({ slug, goal: opts.goal, outcome: opts.outcome, task: opts.task, pr: opts.pr, issue: opts.issue, dir: opts.dir, force: !!opts.force });
+      console.log(initNextSteps(workdir));
+    } catch (e) {
+      console.error(`[plan init] ${e.message}`);
+      process.exit(1);
     }
-    const sf = stepsPath(workdir);
-    const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
-    const { record } = await import(join(root, 'src/record/harness.mjs'));
-    const { renderSpool, resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
-    // One resolution for the whole build: VO register and canvas must agree.
-    const format = await resolveWorkdirFormat(wd, opts.format);
-    // Record-first, narrate-parallel: VO and capture are independent now, so run
-    // them concurrently. Either rejecting fails the build with that error.
-    console.log('── spool vo ‖ record');
-    const t0 = Date.now();
-    await Promise.all([
-      generateVO({ stepsFile: sf, workdir: wd, engine: opts.engine, voice: opts.voice, speed: Number(opts.speed), format })
-        .then(() => console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
-      record({ stepsFile: sf, workdir: wd, headed: !!opts.headed })
-        .then(() => console.log(`   record done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
-    ]);
-    console.log('── spool render');
-    await renderSpool({ workdir: wd, rate: Number(opts.rate), bg: opts.bg, format });
-    console.log('── spool share');
-    const { shareSpool } = await import(join(root, 'src/share/share.mjs'));
-    await shareSpool(wd);
-    console.log(`\nDone: ${join(wd, 'final.mp4')} (+ share/ bundle for agents)`);
-    await maybeAutoPublish(wd, opts);
+  });
+
+plan
+  .command('validate [dir]')
+  .description('check plan.json + evidence.json (exit 0 valid, 1 invalid, 2 no plan here)')
+  .option('--json', 'machine-readable diagnostics')
+  .option('--strict', 'treat warnings as errors')
+  .action(async (dir, opts) => {
+    process.exit(await runPlanValidate(resolve(dir || '.'), { json: !!opts.json, strict: !!opts.strict }));
+  });
+
+// `spool plan evidence` — the collectors. An agent that changed files, ran a test
+// and recorded a browser has already produced the proof behind its claims; this
+// attaches it as descriptors instead of asking the agent to retype it.
+plan
+  .command('evidence <workdir>')
+  .description('collect diff, commit, console and keyframe evidence into evidence.json')
+  .option('--test <command>', 'also run a command and attach its exit status, duration and bounded output (repeatable)', (v, all) => [...all, v], [])
+  .option('--base <ref>', 'diff against this ref (base...HEAD) instead of the working tree')
+  .option('--chapter <id>', 'anchor what is collected to a chapter: context | outcome | approach | risks | decision')
+  .option('--dry-run', 'report what would be attached; write nothing')
+  .option('--json', 'machine-readable report')
+  .action(async (workdir, opts) => {
+    const { evidenceCmd, formatEvidenceReport, DEFAULT_COLLECTORS } = await import(join(root, 'src/plan/collect-cmd.mjs'));
+    // Every collector runs: each one skips itself when its source is absent, so
+    // picking between them was work with no answer worth typing.
+    const result = await evidenceCmd(resolve(workdir), {
+      collectors: DEFAULT_COLLECTORS,
+      tests: opts.test,
+      base: opts.base ?? null,
+      chapter: opts.chapter ?? null,
+      dryRun: !!opts.dryRun,
+      // The run streams while it runs: a test that takes two minutes must not
+      // look like a hung command.
+      onTestOutput: opts.json ? null : (text) => process.stderr.write(text),
+    });
+    console.log(opts.json ? JSON.stringify(result, null, 2) : formatEvidenceReport(result));
+    process.exit(result.code);
+  });
+
+plan
+  .command('generate <workdir>')
+  .description('generate the narration outline (plan.script.json) and, with --steps, the steps.mjs for it')
+  .option('--steps', 'also write steps.mjs (scripted path; the live path reads plan.script.json)')
+  .option('--url <url>', 'app URL for the generated steps.mjs (default: an existing steps.mjs config.url)')
+  .option('--title <title>', 'title card text (default: the plan goal)')
+  .option('--force', 'overwrite a steps.mjs this generator did not write')
+  .option('--json', 'machine-readable output (the script plus its lint report)')
+  .action(async (workdir, opts) => {
+    const { planGenerateCmd } = await import(join(root, 'src/plan/generate-cmd.mjs'));
+    process.exitCode = await planGenerateCmd(resolve(workdir), opts);
+  });
+
+// The GitHub surface of a plan: the comment a reviewer finds it from, and the check an
+// agent runs before it trusts the plan. Both are opt-in and neither can fail a build.
+// See CONTRACTS.md "GitHub integration".
+plan
+  .command('pr [dir]')
+  .description('post (or refresh in place) the compact plan comment on the pull request')
+  .option('--pr <numberOrUrl>', 'the pull request (default: links.pr, else the current branch\'s PR)')
+  .option('--dry-run', 'render the comment and print it; post nothing')
+  .option('--host <url>', 'override the host to read the plan status from')
+  .option('--json', 'machine-readable output')
+  .action(async (dir, opts) => {
+    const { planPrCmd } = await import(join(root, 'src/github/cmd.mjs'));
+    process.exitCode = await planPrCmd(dir, opts);
+  });
+
+plan
+  .command('stale [dir]')
+  .description('has the branch moved past the plan\'s source revision? (exit 0 current, 1 stale, 2 unknown)')
+  .option('--offline', 'use this checkout only; never ask GitHub')
+  .option('--json', 'machine-readable output')
+  .action(async (dir, opts) => {
+    const { planStaleCmd } = await import(join(root, 'src/github/cmd.mjs'));
+    process.exitCode = await planStaleCmd(dir, opts);
+  });
+
+buildOptions(
+  plan
+    .command('build <workdir>')
+    .description('validate the packet, then (vo ‖ record) → render → share → publish')
+    .option('--strict', 'treat plan warnings as errors')
+)
+  .action(async (workdir, opts) => {
+    const wd = resolve(workdir);
+    const code = await runPlanValidate(wd, { strict: !!opts.strict });
+    if (code !== 0) {
+      // An invalid plan is an authoring problem, not a render problem: it must
+      // never cost a recording or a voiceover run.
+      if (code !== 2) console.error('Build stopped: nothing was recorded and no voiceover was generated.');
+      process.exit(code);
+    }
+    await buildWorkdir(wd, opts);
+  });
+
+// `spool reliability` — the local half of the R6.3 reliability baseline. Record,
+// render and publish happen on this machine and the CLI does not phone home, so the
+// success rate of the three operations that make a plan exist is read from the local
+// journal. See docs/PLAN-SPOOLS-RELIABILITY.md.
+program
+  .command('reliability [dir]')
+  .description('success rate of record/render/publish/read against the targets (exit 0 met, 1 breached, 2 no data)')
+  .option('--json', 'machine-readable output')
+  .option('--since <window>', 'only attempts since then: 24h, 7d, 2w, or an ISO date')
+  .action(async (dir, opts) => {
+    const { reliabilityCmd } = await import(join(root, 'src/reliability/cmd.mjs'));
+    process.exitCode = await reliabilityCmd({ dir, json: !!opts.json, since: opts.since });
+  });
+
+// `spool gate` — the implementation gate. A Plan Spool is only a proposal until
+// something acts on the decision: these commands are what an agent (and a pull
+// request) ask before implementation starts. See CONTRACTS.md "Implementation gate".
+const gate = program
+  .command('gate')
+  .description('implementation gate: may this work start without an approved plan?');
+
+// Options every gate command shares: which plan, what the work touches, and how the
+// verdict is recorded.
+const gateOptions = (cmd) =>
+  cmd
+    .option('--plan <target>', 'the active plan: a workdir, watch URL or spool id (default: spool.config.json, else the only plan workdir)')
+    .option('--paths <paths...>', 'repo-relative paths this work touches (declare them before the code exists)')
+    .option('--label <labels...>', 'labels on this work, for the high-risk definition')
+    .option('--category <categories...>', 'task categories for this work, for the high-risk definition')
+    .option('--base <ref>', 'compare against this ref instead of the working tree')
+    .option('--policy <policy>', 'raise the policy for this run: off | advisory | high_risk_required | required')
+    .option('--bypass', 'proceed without an approved plan (needs --reason; always audited)')
+    .option('--reason <reason>', 'why this work starts without an approved plan')
+    .option('--host <url>', 'override the host to read the plan status from')
+    .option('--json', 'machine-readable output');
+
+const gateOpts = (opts, extra = {}) => ({
+  plan: opts.plan,
+  paths: opts.paths,
+  labels: opts.label,
+  categories: opts.category,
+  base: opts.base,
+  policy: opts.policy,
+  bypass: !!opts.bypass,
+  reason: opts.reason,
+  host: opts.host,
+  json: !!opts.json,
+  ...extra,
+});
+
+gateOptions(
+  gate
+    .command('check')
+    .description('may implementation start? exit 0 allowed, 1 blocked, 2 the check could not run')
+    .option('--command <command>', 'name the command being gated, so the explanation names it too')
+    .option('--pr [numberOrUrl]', 'classify risk from a PR\'s labels and files (no value: the current branch\'s PR)')
+).action(async (opts) => {
+  const { gateCheckCmd } = await import(join(root, 'src/gate/cmd.mjs'));
+  process.exitCode = await gateCheckCmd(gateOpts(opts, { command: opts.command, pr: opts.pr }));
+});
+
+gateOptions(
+  gate
+    .command('run')
+    .description('check the gate, then run the command (blocked: the command never runs)')
+    .argument('<command...>', 'the command to gate, after `--`')
+).action(async (argv, opts) => {
+  const { gateRunCmd } = await import(join(root, 'src/gate/cmd.mjs'));
+  process.exitCode = await gateRunCmd(argv, gateOpts(opts));
+});
+
+gate
+  .command('policy')
+  .description('print the policy in force here, every source that set it, and the high-risk definition')
+  .option('--policy <policy>', 'resolve as if this were passed to a check')
+  .option('--json', 'machine-readable output')
+  .action(async (opts) => {
+    const { gatePolicyCmd } = await import(join(root, 'src/gate/cmd.mjs'));
+    process.exitCode = await gatePolicyCmd({ policy: opts.policy, json: !!opts.json });
+  });
+
+gateOptions(
+  gate
+    .command('status')
+    .description('publish the verdict as a GitHub commit status (spool/plan-gate) on a PR')
+    .option('--pr [numberOrUrl]', 'the pull request (no value: the current branch\'s PR)')
+).action(async (opts) => {
+  const { gateStatusCmd } = await import(join(root, 'src/gate/cmd.mjs'));
+  process.exitCode = await gateStatusCmd(gateOpts(opts, { pr: opts.pr }));
+});
+
+// --- spool pilot (R6.1) ----------------------------------------------------
+// The dogfood harness. It reads what the product already recorded — the plan payload,
+// the event log, the revision lineage — and joins it to the roster in
+// docs/pilot/scenarios.json. It emits no events of its own (see docs/PILOT.md).
+const pilot = program
+  .command('pilot')
+  .description('dogfood pilot: collect plan → decision → proof chains and measure them');
+
+pilot
+  .command('collect')
+  .description('build the pilot dataset from ./spool into pilot/dataset.json (exit 1 when coverage is short)')
+  .option('--offline', 'do not read the host: local packets only')
+  .option('--host <url>', 'override the host to read plans from')
+  .option('--token <token>', 'override the token the event log and lineage are read with')
+  .option('--json', 'print the dataset instead of the dashboard')
+  .action(async (opts) => {
+    const { pilotCollectCmd } = await import(join(root, 'src/pilot/cmd.mjs'));
+    process.exitCode = await pilotCollectCmd(opts);
+  });
+
+pilot
+  .command('report [dataset]')
+  .description('read a collected dataset back as the dashboard')
+  .option('--json', 'print the dataset itself')
+  .action(async (dataset, opts) => {
+    const { pilotReportCmd } = await import(join(root, 'src/pilot/cmd.mjs'));
+    process.exitCode = await pilotReportCmd(dataset, opts);
+  });
+
+pilot
+  .command('scenarios')
+  .description('the scenario checklist: which real work runs as which of the four shapes')
+  .option('--json', 'machine-readable output')
+  .action(async (opts) => {
+    const { pilotScenariosCmd } = await import(join(root, 'src/pilot/cmd.mjs'));
+    process.exitCode = await pilotScenariosCmd(opts);
+  });
+
+pilot
+  .command('synthesize')
+  .description('score the assumption register against the dataset: retained, changed, removed (R6.2)')
+  .option('--json', 'print the synthesis as JSON')
+  .action(async (opts) => {
+    const { pilotSynthesizeCmd } = await import(join(root, 'src/pilot/cmd.mjs'));
+    process.exitCode = await pilotSynthesizeCmd(opts);
   });
 
 program
   .command('setup')
-  .description('save installation preferences to ~/.spool.json (browser, target, engine, bg, format)')
+  .description('save installation preferences to ~/.spool.json (browser, target, engine, host)')
   .option('--browser <browser>', 'chromium | chrome | edge (Playwright launch channel)')
   .option('--target <target>', 'default record target: browser | os')
   .option('--engine <engine>', 'default VO engine: auto | openai | hosted | local')
-  .option('--bg <bg>', 'default render background name')
-  .option('--format <format>', 'default render format: wide | vertical')
   .option('--host <host>', 'publish host origin')
   .option('--yes', 'write flags without prompting (unspecified keys keep current values)')
   .option('--show', 'print the effective config (token masked) and exit')
@@ -398,6 +828,43 @@ program
       console.error(`[setup] ${(e && e.message) || e}`);
       process.exit(1);
     }
+  });
+
+// `spool mcp` — the agent interaction layer (CONTRACTS.md "Agent event stream",
+// "Blocking comments"). `serve` is the MCP server a live agent calls; `watch` is the
+// daemon that pokes an agent that is not live, because an MCP tool cannot wake one.
+const mcp = program.command('mcp').description('the MCP server and the wake daemon (see mcp/README.md)');
+
+mcp
+  .command('serve')
+  .description('run the stdio MCP server (configure it with `claude mcp add spool -- spool mcp serve`)')
+  .action(async () => {
+    const { serveCommand } = await import(join(root, 'mcp/src/cli.mjs'));
+    await serveCommand();
+  });
+
+mcp
+  .command('watch')
+  .description('follow the event stream and wake an agent when a decision or a comment lands')
+  .option('--on <command>', 'shell command to run per event; the event arrives on stdin and in $SPOOL_EVENT')
+  .option('--plan <spoolId>', 'restrict to one plan')
+  .option('--reset', 'forget the stored cursor first')
+  .option('--once', 'deliver one page and exit')
+  .option('--host <url>', 'override the host')
+  .option('--token <token>', 'override the token')
+  .action(async (opts) => {
+    const { watchCommand } = await import(join(root, 'mcp/src/cli.mjs'));
+    process.exitCode = await watchCommand(opts);
+  });
+
+mcp
+  .command('status')
+  .description('print the host, the token state and where the events cursor is stored')
+  .option('--host <url>', 'override the host')
+  .option('--token <token>', 'override the token')
+  .action(async (opts) => {
+    const { statusCommand } = await import(join(root, 'mcp/src/cli.mjs'));
+    process.exitCode = await statusCommand(opts);
   });
 
 program
@@ -429,9 +896,9 @@ if (process.argv.length <= 2) {
         'video, AI voiceover, word-synced captions, one shareable link.',
         '',
         'Get started:',
-        '  1. spool login                 connect this machine (opens your browser)',
-        '  2. spool init my-demo          scaffold a walkthrough, or `spool live` to drive one',
-        '  3. spool doctor                check your environment',
+        '  1. spool init                  set this machine and repo up (checks, login, GitHub App)',
+        '  2. spool live spool/my-demo --url http://localhost:3000   record a walkthrough',
+        '  3. spool doctor                re-check your environment any time',
       ].join('\n')
     );
     process.exit(0);

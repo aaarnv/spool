@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "TODO: one sentence saying what this work is for.",
+  "currentState": [
+    {
+      "claim": "TODO: what exists today that makes the work necessary.",
+      "evidence": ["ev-1"]
+    }
+  ],
+  "outcome": "TODO: what is true after the work that is not true now.",
+  "approach": [
+    {
+      "id": "data",
+      "summary": "TODO: the first implementation step, in plain language.",
+      "chapterId": "approach",
+      "evidence": ["ev-1"]
+    }
+  ],
+  "alternatives": [],
+  "noAlternativesReason": "TODO: state why no other approach was credible, or replace this with alternatives.",
+  "assumptions": ["TODO: what is taken as given, and would change the plan if wrong."],
+  "risks": ["TODO: what is uncertain, and what it costs when it goes wrong."],
+  "decision": {
+    "type": "approval",
+    "prompt": "TODO: the exact action the reviewer must take.",
+    "options": ["approve", "redirect", "ask-question"]
+  },
+  "links": {
+    "task": null,
+    "repo": null,
+    "branch": null,
+    "commit": null,
+    "pr": null,
+    "issue": null
+  },
+  "chapters": [
+    { "id": "context", "title": "What exists today" },
+    { "id": "outcome", "title": "What changes" },
+    { "id": "approach", "title": "How" },
+    { "id": "risks", "title": "What could go wrong" },
+    { "id": "decision", "title": "What we need from you" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "kind": "evidence",
+  "items": [
+    {
+      "id": "ev-askpanel",
+      "kind": "file",
+      "label": "Existing AskPanel implementation",
+      "ref": "web/app/l/[id]/AskPanel.tsx",
+      "revision": null,
+      "chapterIds": ["context"]
+    },
+    {
+      "id": "ev-schema",
+      "kind": "file",
+      "label": "Drizzle schema the comment tables extend",
+      "ref": "web/db/schema.ts",
+      "revision": null,
+      "chapterIds": ["approach"]
+    }
+  ]
+}

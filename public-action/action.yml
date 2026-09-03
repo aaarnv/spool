@@ -1,0 +1,119 @@
+name: Spool
+description: >
+  Connect a GitHub Actions runner to Spool. Always writes the runner's Spool
+  credential. In cli mode it also installs the public spool CLI and the toolchain a
+  recording needs; in notify mode it asks spoolkit.dev to generate the video and
+  installs nothing.
+author: Spool
+branding:
+  icon: video
+  color: purple
+
+inputs:
+  token:
+    description: >
+      Spool token (spk_...), normally the SPOOL_TOKEN repo secret. Mint one at
+      https://spoolkit.dev/dashboard.
+    required: true
+  host:
+    description: Spool origin to talk to. Override only for a self-hosted deployment.
+    required: false
+    default: https://spoolkit.dev
+  mode:
+    description: >
+      "notify" asks the host to generate the video server side and installs nothing.
+      "cli" installs the spool CLI so a job on this runner can record and render.
+    required: false
+    default: cli
+  event:
+    description: 'notify mode: what happened, e.g. "pull_request.merged".'
+    required: false
+    default: ""
+  payload:
+    description: 'notify mode: a JSON object describing the event for the generator.'
+    required: false
+    default: "{}"
+  cli-version:
+    description: 'cli mode: npm version range for @spoolkit/cli.'
+    required: false
+    default: latest
+  install-chromium:
+    description: 'cli mode: install the Playwright chromium the recorder drives.'
+    required: false
+    default: "true"
+  install-ffmpeg:
+    description: 'cli mode: install ffmpeg, which the renderer calls.'
+    required: false
+    default: "true"
+  render-concurrency:
+    description: >
+      Value for SPOOL_RENDER_CONCURRENCY on this job. A CI runner has far less memory
+      than a laptop, so the default caps parallel render work at 2.
+    required: false
+    default: "2"
+
+outputs:
+  id:
+    description: 'notify mode: the reserved spool id.'
+    value: ${{ steps.dispatch.outputs.id }}
+  url:
+    description: 'notify mode: the watch link for the spool being generated.'
+    value: ${{ steps.dispatch.outputs.url }}
+  job-id:
+    description: 'notify mode: the render job id, for polling.'
+    value: ${{ steps.dispatch.outputs.job-id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Connect this runner to Spool
+      shell: bash
+      env:
+        SPOOL_TOKEN: ${{ inputs.token }}
+        SPOOL_HOST: ${{ inputs.host }}
+        SPOOL_MODE: ${{ inputs.mode }}
+        SPOOL_RENDER_CONCURRENCY_INPUT: ${{ inputs.render-concurrency }}
+      run: node "${{ github.action_path }}/scripts/connect.mjs"
+
+    - name: Ask Spool to generate the video
+      id: dispatch
+      if: inputs.mode == 'notify'
+      shell: bash
+      env:
+        SPOOL_TOKEN: ${{ inputs.token }}
+        SPOOL_HOST: ${{ inputs.host }}
+        SPOOL_EVENT: ${{ inputs.event }}
+        SPOOL_PAYLOAD: ${{ inputs.payload }}
+        SPOOL_REPOSITORY: ${{ github.repository }}
+        SPOOL_REF: ${{ github.ref }}
+        SPOOL_SHA: ${{ github.sha }}
+        SPOOL_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: node "${{ github.action_path }}/scripts/dispatch.mjs"
+
+    - name: Set up node 20
+      if: inputs.mode == 'cli'
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Install the spool CLI
+      if: inputs.mode == 'cli'
+      shell: bash
+      env:
+        CLI_VERSION: ${{ inputs.cli-version }}
+      run: npm install --global --no-fund --no-audit "@spoolkit/cli@${CLI_VERSION}"
+
+    - name: Install ffmpeg
+      if: inputs.mode == 'cli' && inputs.install-ffmpeg == 'true'
+      shell: bash
+      run: command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg; }
+
+    - name: Install chromium
+      if: inputs.mode == 'cli' && inputs.install-chromium == 'true'
+      shell: bash
+      # Drive the playwright the CLI itself depends on: a `npx playwright` would fetch
+      # the newest release, whose browser revision the installed CLI may not accept.
+      run: |
+        pw="$(npm root -g)/@spoolkit/cli/node_modules/playwright/cli.js"
+        if [ -f "$pw" ]; then node "$pw" install --with-deps chromium
+        else npx --yes playwright install --with-deps chromium; fi

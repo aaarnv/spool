@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Let a coach dismiss a coaching card for good.",
+  "currentState": [
+    {
+      "claim": "A dismissed card comes back on the next page load, because dismissal lives in component state.",
+      "evidence": ["ev-card"],
+      "chapterId": "context"
+    }
+  ],
+  "outcome": "A card a coach dismisses stays dismissed, on every device and after a re-login.",
+  "approach": [
+    {
+      "id": "record",
+      "summary": "Store one dismissal row per coach and card, written when the coach dismisses it.",
+      "chapterId": "approach",
+      "evidence": ["ev-card"]
+    },
+    {
+      "id": "filter",
+      "summary": "Filter dismissed cards out of the coaching feed query.",
+      "chapterId": "approach"
+    },
+    {
+      "id": "undo",
+      "summary": "Offer an undo for ten seconds, so a mis-click is not permanent.",
+      "chapterId": "approach"
+    }
+  ],
+  "alternatives": [],
+  "noAlternativesReason": "No credible alternative: the feed already reads per-coach state, so a dismissal row is the same shape as the data beside it.",
+  "assumptions": [
+    "A dismissal is per coach, not per team: two coaches on one team dismiss independently."
+  ],
+  "risks": [
+    {
+      "claim": "A coach who dismisses every card sees an empty feed and no way back.",
+      "evidence": ["ev-feed"],
+      "chapterId": "risks"
+    },
+    "The feed query gains a join on the dashboard's slowest page."
+  ],
+  "decision": {
+    "type": "approval",
+    "prompt": "Approve storing dismissals per coach, with a ten-second undo.",
+    "options": ["approve", "redirect", "ask-question"],
+    "evidence": ["ev-card"]
+  },
+  "links": {
+    "task": "SPL-101",
+    "repo": "acme/coach",
+    "branch": "feat/dismiss-pill",
+    "commit": "4f21ab9",
+    "pr": null
+  }
+}

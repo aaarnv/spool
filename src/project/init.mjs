@@ -25,7 +25,7 @@ const seedScaffold = () => ({ _instructions: SEED_INSTRUCTIONS, ops: [] });
 
 // Detect the current repo's GitHub owner/name via gh. Owner/name lowercased
 // (GitHub is case-insensitive). Any failure → a clear "run inside a repo" error.
-async function detectRepo() {
+export async function detectRepo() {
   await run("gh", ["--version"]).catch(() => {
     throw new Error("gh CLI not found on PATH — install it and `gh auth login` first");
   });
@@ -55,15 +55,16 @@ function knowledgeSummaryLine(knowledge) {
     : `  knowledge.json  overview ${knowledge.overview ? "yes" : "no"}, ${subsystemCount} subsystem(s), ${termCount} term(s), ${recordingTopics.length} recording topic(s), ${decisionCount} decision(s)`;
 }
 
-// Bare `spool init`: scaffold spool/project/ (no --apply) or POST the authored seed
-// ops to the project knowledge store (--apply). Slugged `init <slug>` is unrelated.
+// The knowledge-seed half of `spool init`: scaffold spool/project/ or POST the authored
+// seed ops (--apply). Bare `spool init` is onboarding now and calls scaffoldProject itself.
 export async function initProject({ apply } = {}) {
   return apply ? applyProject() : scaffoldProject();
 }
 
 // Fetch the current store as a read-only reference and write the seed ops file the
 // agent authors. Refuses to overwrite an ops file that already has authored ops.
-async function scaffoldProject() {
+// `quiet` suppresses the next-steps block when onboarding prints its own line.
+export async function scaffoldProject({ quiet = false } = {}) {
   const { owner, name } = await detectRepo();
   const workdir = resolve(process.cwd(), "spool", "project");
   const opsPath = join(workdir, "knowledge-ops.json");
@@ -86,7 +87,7 @@ async function scaffoldProject() {
   await writeFile(join(workdir, "knowledge.json"), JSON.stringify(knowledge, null, 2) + "\n");
   await writeFile(opsPath, JSON.stringify(seedScaffold(), null, 2) + "\n");
 
-  console.log(
+  if (!quiet) console.log(
     [
       `Scaffolded spool/project for ${owner}/${name}`,
       `${knowledgeSummaryLine(knowledge)}  (read-only reference)`,

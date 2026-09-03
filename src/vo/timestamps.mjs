@@ -36,8 +36,19 @@ export function chunksToWords(chunks) {
 
 // Shared OpenAI POST: retry once on 429/5xx with backoff; any other non-2xx
 // throws with the response body. Also used by tts.mjs for the speech call.
+//
+// A dropped connection retries on the same budget. It used to throw straight out, and
+// an authoring gate counts that as a failed draft: two reset sockets in a row retired
+// a job with "not valid JSON: fetch failed", which is neither true nor actionable.
 export async function openaiFetch(url, opts, attempt = 0) {
-  const res = await fetch(url, opts);
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (e) {
+    if (attempt >= 1) throw e;
+    await sleep(1500 * (attempt + 1));
+    return openaiFetch(url, opts, attempt + 1);
+  }
   if (res.ok) return res;
   const body = await res.text().catch(() => '');
   if ((res.status === 429 || res.status >= 500) && attempt < 1) {

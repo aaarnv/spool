@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "kind": "plan",
+  "goal": "Decide what \"better dismissals\" means before any of it is built.",
+  "currentState": [
+    {
+      "claim": "Coaches dismiss the same card repeatedly, and support reads that two different ways.",
+      "evidence": [
+        "ev-tickets"
+      ],
+      "chapterId": "context"
+    }
+  ],
+  "outcome": "One reading is chosen, so the work that follows answers the complaint people actually have.",
+  "approach": [
+    {
+      "id": "chosen-reading",
+      "summary": "Build whichever reading you pick below, and nothing else in this round.",
+      "chapterId": "approach"
+    }
+  ],
+  "alternatives": [
+    {
+      "id": "sticky",
+      "summary": "Sticky: the card never returns.",
+      "tradeoffs": [
+        "A mis-click is permanent."
+      ]
+    },
+    {
+      "id": "snooze",
+      "summary": "Snooze: the card returns after a week.",
+      "tradeoffs": [
+        "The repeats return, a week apart."
+      ]
+    }
+  ],
+  "assumptions": [
+    "The complaint is about repetition, not bad cards."
+  ],
+  "risks": [
+    {
+      "claim": "The tickets never say which reading people mean.",
+      "evidence": [
+        "ev-tickets"
+      ],
+      "chapterId": "risks"
+    },
+    "Whichever we build becomes the expectation."
+  ],
+  "decision": {
+    "type": "selection",
+    "prompt": "Choose sticky dismissals or a one-week snooze.",
+    "options": [
+      "alternative:sticky",
+      "alternative:snooze",
+      "ask-question",
+      "needs-input"
+    ],
+    "evidence": [
+      "ev-tickets"
+    ]
+  },
+  "links": {
+    "task": "SPL-103",
+    "repo": "acme/coach",
+    "branch": "spike/dismissal-shape",
+    "commit": "b7e40aa",
+    "pr": null
+  }
+}
