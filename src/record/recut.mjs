@@ -22,15 +22,10 @@ function carryNarration(steps, previous) {
 /**
  * Recut `workdir` in place.
  *
- * Ops apply to the cut already on disk, so a second `spool recut` stacks on the first
- * instead of replacing it. Re-deriving the boundaries from signals.jsonl is opt-in
- * (`fromSignals`, or a `minStep` that asks for a different fold) because it throws
- * away every hand edit made since the take.
- *
- * Returns `{ steps, previous, timeline, rederived }` and, unless `dryRun`, has
- * rewritten timeline.json with the previous cut saved as timeline.prev.json.
+ * Returns `{ steps, previous, timeline }` and, unless `dryRun`, has rewritten
+ * timeline.json with the previous cut saved beside it as timeline.prev.json.
  */
-export async function recutWorkdir(workdir, { minStep = null, ops = [], dryRun = false, fromSignals = false } = {}) {
+export async function recutWorkdir(workdir, { minStep = MIN_STEP_S, ops = [], dryRun = false } = {}) {
   workdir = path.resolve(workdir);
   const signalsPath = path.join(workdir, SIGNALS_FILE);
   const timelinePath = path.join(workdir, 'timeline.json');
@@ -46,21 +41,15 @@ export async function recutWorkdir(workdir, { minStep = null, ops = [], dryRun =
   const timeline = JSON.parse(await readFile(timelinePath, 'utf8'));
   const previous = timeline.steps || [];
 
-  // A take with no cut yet has nothing to stack on, so it always starts from signals.
-  const rederived = fromSignals || minStep != null || !previous.length;
-  const base = rederived
-    ? inferSteps(signals, { total: timeline.total, minStep: minStep ?? MIN_STEP_S })
-    : previous.map((s) => ({ ...s, clicks: [...(s.clicks || [])] }));
-  const cut = applyCutOps(base, ops);
-  // Names are the only handle a re-derived cut shares with the one it replaces.
-  const steps = rederived ? carryNarration(cut, previous) : cut;
+  const inferred = inferSteps(signals, { total: timeline.total, minStep });
+  const steps = carryNarration(applyCutOps(inferred, ops), previous);
 
   const next = { ...timeline, steps };
   if (!dryRun) {
     await writeFile(path.join(workdir, 'timeline.prev.json'), JSON.stringify(timeline, null, 2) + '\n');
     await writeFile(timelinePath, JSON.stringify(next, null, 2) + '\n');
   }
-  return { steps, previous, timeline: next, rederived };
+  return { steps, previous, timeline: next };
 }
 
 export function formatCut(steps, { previous } = {}) {

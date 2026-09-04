@@ -255,8 +255,7 @@ program
 program
   .command('recut <workdir>')
   .description('re-derive step boundaries from the take\'s signal log (no re-record)')
-  .option('--min-step <seconds>', 're-derive from signals, folding a cut closer than this into the one before it', parseFloat)
-  .option('--from-signals', 're-derive the boundaries from signals.jsonl, discarding earlier recut edits')
+  .option('--min-step <seconds>', 'fold a cut closer than this into the one before it', parseFloat)
   .option('--merge <step>', 'merge a step into the one before it (repeatable)', collect, [])
   .option('--split <step@seconds>', 'split a step at a time on the take clock (repeatable)', collect, [])
   .option('--drop <step>', 'drop a step; its footage never reaches the output (repeatable)', collect, [])
@@ -275,12 +274,10 @@ program
         ...(Number.isFinite(opts.minStep) ? { minStep: opts.minStep } : {}),
         ops: parseCutOps(opts),
         dryRun: !!opts.dryRun,
-        fromSignals: !!opts.fromSignals,
       });
       if (opts.json) console.log(JSON.stringify(result, null, 2));
       else {
         console.log(formatCut(result.steps, { previous: result.previous }));
-        console.log(result.rederived ? 'baseline: re-derived from signals.jsonl' : 'baseline: the cut on disk (edits stack)');
         console.log(
           opts.dryRun
             ? '\n(dry run — timeline.json unchanged)'
@@ -819,7 +816,7 @@ program
   .description('save installation preferences to ~/.spool.json (browser, target, engine, host)')
   .option('--browser <browser>', 'chromium | chrome | edge (Playwright launch channel)')
   .option('--target <target>', 'default record target: browser | os')
-  .option('--engine <engine>', 'default VO engine: auto | openrouter | openai | hosted | fish | local')
+  .option('--engine <engine>', 'default VO engine: auto | openrouter | openai | hosted | local')
   .option('--host <host>', 'publish host origin')
   .option('--yes', 'write flags without prompting (unspecified keys keep current values)')
   .option('--show', 'print the effective config (token masked) and exit')

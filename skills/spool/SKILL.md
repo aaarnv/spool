@@ -169,17 +169,13 @@ spool recut spool/<slug> --merge 2            # fold step 2 into step 1
 spool recut spool/<slug> --split 1@8.5        # cut step 1 in two at 8.5s
 spool recut spool/<slug> --drop 3             # remove a step; its footage never renders
 spool recut spool/<slug> --name '0=open-the-ledger' --narrate '0=Here is the ledger.'
-spool recut spool/<slug> --chapter 2=approach
-spool recut spool/<slug> --min-step 4          # re-derive from signals, dropping earlier edits
+spool recut spool/<slug> --chapter 2=approach --min-step 4
 ```
 
 Flags are repeatable and apply left to right, each naming a step by its index in the list as it
-stands when that flag runs. Each command starts from the cut on disk, so running `spool recut`
-twice stacks both edits. `--min-step` and `--from-signals` are the exceptions: they re-derive the
-boundaries from `signals.jsonl` and discard the hand edits before them, so run them first.
-`--dry-run` first is the cheap habit. The previous cut is kept as
-`timeline.prev.json`. Narration is carried across a re-derivation by step NAME, so renumbering does
-not lose a voice line; a step you split leaves its narration on the first half. Re-render with
+stands when that flag runs. `--dry-run` first is the cheap habit. The previous cut is kept as
+`timeline.prev.json`. Narration is carried across by step NAME, so renumbering does not lose a
+voice line; a step you split leaves its narration on the first half. Re-render with
 `spool render spool/<slug>` (or `spool finish`, which re-voices only what changed).
 
 This is why dead air is not a re-record. Your own thinking time between tool calls still lands in

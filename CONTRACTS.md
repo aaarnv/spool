@@ -2123,10 +2123,6 @@ folds and never loses its name. Steps carry `source` so a reader can see where a
 came from. Windows slice the video from each step's own `start`, so a dropped step leaves
 a hole in the take and its footage never reaches the output.
 
-`spool recut` applies its ops to the cut already in timeline.json, so consecutive runs
-stack. `--from-signals` (and `--min-step`, which asks for a different fold) re-derives the
-boundaries from this log instead, discarding the hand edits made since the take.
-
 ## share/ bundle (spool share → any consuming agent)
 
 The agent-consumable artifact. `spool share <workdir>` (auto-run at the
