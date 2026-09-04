@@ -28,6 +28,21 @@ export function renderRecapContext(raw) {
   return lines.join('\n');
 }
 
+// Repo chrome that shows up as a top-level path segment but is never a project area.
+const NON_AREA_SEGMENTS = new Set([
+  'license', 'licence', 'readme', 'changelog', 'contributing', 'contributors', 'codeowners',
+  'notice', 'authors', 'security', 'makefile', 'dockerfile', 'node_modules', 'dist', 'build',
+  'out', 'coverage', 'vendor', 'target',
+]);
+
+/** Whether a path segment can name a project area: a directory, never a file or repo chrome. */
+export function isAreaSegment(segment) {
+  const value = typeof segment === 'string' ? segment.trim() : '';
+  if (!value || value.startsWith('.')) return false;
+  if (/\.[A-Za-z0-9]{1,10}$/.test(value)) return false;
+  return !NON_AREA_SEGMENTS.has(value.toLowerCase());
+}
+
 function globMatches(pattern, path) {
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
   return new RegExp(`^${escaped}$`, 'i').test(path);
@@ -41,7 +56,7 @@ export function deriveUnderstanding({ pr, beats, context: raw }) {
   if (!matched.length && files.length) {
     const generic = new Set(['src', 'app', 'lib', 'web', 'packages', 'test', 'tests']);
     const segments = files.map((path) => path.split('/').filter(Boolean)).filter(Boolean);
-    const candidate = segments.map((parts) => generic.has(parts[0]) ? parts[1] : parts[0]).find((part) => part && !generic.has(part));
+    const candidate = segments.map((parts) => generic.has(parts[0]) ? parts[1] : parts[0]).find((part) => part && !generic.has(part) && isAreaSegment(part));
     if (candidate) suggestions.push({ name: candidate.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), summary: `Changes affecting the ${candidate} part of the repository.` });
   }
   const narration = (index) => take(beats?.[index]?.narration, 600);

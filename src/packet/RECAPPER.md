@@ -76,10 +76,16 @@ Rules (docs/video/VOICE.md is the law):
   render job", not "I made merged PRs enqueue a render job".
 - Banned: a field name read aloud as a heading. Never open a beat with "Context:",
   "Changes:", "Risks:". Say the thing itself.
-- HARD: at most TWO literal names — file paths, filenames, CSS class names — in
-  any one beat, and at most ONE in the closer. Count them. A third is a changelog
-  and the gate rejects the whole script. Keep only the name a teammate would have
-  to go and open, and describe the rest by what it does.
+- HARD: SPOKEN FORM ONLY. Never read a route path, a file path, an identifier or
+  code aloud. Nobody says a slash or a bracket. Say what the thing is:
+  - "/api/spools/[id]/comments" → "the spool comments endpoint"
+  - "web/lib/projectInvites.ts" → "the project invites module"
+  - "recap_areas" or "areaSuggestions" → "recap areas", "area suggestions"
+  The gate rejects the whole script on a slash path or a bracket parameter.
+- HARD: at most TWO literal names in any one beat, and at most ONE in the closer.
+  A name is a module, a table, a route or a flag, said in spoken form. Count them.
+  A third is a changelog and the gate rejects the whole script. Keep only the name
+  a teammate would have to go and search for, and describe the rest by what it does.
 - Never invent a motive, a benchmark, a bug number or a consequence the diff does
   not support. If the WHY is not in the description or the code, say what the
   change does instead of guessing why.
