@@ -35,6 +35,7 @@ const EXPECTED = [
   'plan_request_decision',
   'plan_revise',
   'implementation_start',
+  'list_comments',
   'proof_submit',
   'status_report',
 ];

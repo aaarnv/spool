@@ -8,6 +8,7 @@ import { buildWindows } from "../render/retime.mjs";
 import { planDigest, writeSharePlan } from "../plan/plan.mjs";
 import { replyDigest, writeShareReply } from "../plan/reply.mjs";
 import { chapterField, chapterRanges } from "../plan/chapters.mjs";
+import { openComments } from "../plan/comments.mjs";
 
 const exec = promisify(execFile);
 const FFMPEG = process.env.FFMPEG || "ffmpeg";
@@ -418,6 +419,19 @@ export async function readSpool(input) {
       `  [${mmss(s.start)}–${mmss(s.end)}] ${s.name}: ${s.narration}` +
         ` (clicks: ${n}, frame: ${s.frame})`
     );
+  }
+
+  // What people said about this spool, and where. Read from the host, because the
+  // thread keeps moving after the bundle was written; a bundle with no published url,
+  // or an unreachable host, prints nothing rather than failing the digest.
+  const comments = await openComments(spool.url);
+  if (comments.length) {
+    lines.push("");
+    lines.push(`open comments (${comments.length}):`);
+    for (const c of comments) {
+      lines.push(`  [${c.at}] ${c.author}: ${c.body}`);
+      lines.push(`    id: ${c.id}`);
+    }
   }
 
   // Console summary + first 5 error lines, read from the bundle's own log.

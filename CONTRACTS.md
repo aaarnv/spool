@@ -627,6 +627,54 @@ wrong. `resume` is the only verb that starts anywhere but `awaiting_decision`, w
 Lifecycle: `awaiting_decision → approved | redirected | needs_input | parked | rejected`,
 and `parked → awaiting_decision`. Deleting a spool cascades its plan rows away.
 
+### Comments on any spool (`plan_questions` on `spools`, migration 0033)
+
+A comment is a timestamped NOTE on any spool — a walkthrough, a recap, a plan. It shares
+the question tables, which key on `spools(id)`, so one thread shape serves both surfaces.
+A comment carries no `revision_id`, and that is what keeps it a note: `blockingCommentsFor`
+matches on the revision it is checking, so a comment can never gate work. Blocking stays a
+plan property.
+
+| Method + path | Auth | Body / returns |
+|---|---|---|
+| `GET /api/spools/{id}/comments` | anyone who can open the spool | `{ spoolId, actor, canWrite, comments: [...] }` |
+| `POST /api/spools/{id}/comments` | the owner, their agents, the project's members | body `{ body, anchor }`; returns `{ ok, commentId, anchor, at }` |
+| `POST /api/spools/{id}/comments/{commentId}/replies` | same writers | body `{ body }`; returns `{ ok, replyId, status, answers, at }` |
+| `POST /api/spools/{id}/comments/{commentId}/resolve` | same writers, and the author or the owner side | `{ ok, commentId, status }` |
+
+**Anchors.** Two shapes, because a spool that is not a plan has no packet to point into:
+
+```jsonc
+{ "type": "range", "start": 12.5, "end": 24 }   // seconds on the final.mp4 clock
+{ "type": "general" }                           // the spool, not a moment of it
+```
+
+They resolve to the same `{ type, chapterId, start, end, label, target, missing }` a plan
+anchor does, so `label` reads `1:03–1:15` and `start` is what the player seeks to.
+
+**Who may write.** The spool's owner and their `spk_` tokens, plus the members of the
+spool's project — one GitHub repository, `(repo_owner, repo_name)`. The owner invites an
+address through `/api/projects/members`; the row grants nothing until somebody signs in
+holding that address verified. A link holder and an anonymous visitor read the thread and
+cannot add to it.
+
+| Method + path | Auth | Body / returns |
+|---|---|---|
+| `GET /api/projects/members?owner=&repo=` | the project owner | `{ members: [{ id, email, active, role }] }` |
+| `POST /api/projects/members` | the project owner | body `{ owner, repo, email }`; returns `{ ok, member }` |
+| `DELETE /api/projects/members?id=` | the project owner | `{ ok }` |
+
+**For agents.** `spool read` prints an `open comments` block (the time as `mm:ss`, who,
+what, and the id), and the MCP server has `list_comments(spoolId)`. Reply with
+`answer_question` and record that you read one with `ack_comment`; both take a comment id,
+and both accept a non-plan spool. An ack on a comment reports an empty `blockedBy`,
+because a comment never blocked. "Open" here means not closed: a comment somebody replied
+to is still a note about the work.
+
+The `/api/plans/{spoolId}/questions/{questionId}/...` reply, resolve and ack paths accept
+a non-plan spool id and act on its comment thread, so an agent that already knows them
+keeps working on every spool.
+
 ### Timestamped questions (`plan_questions`, `plan_question_replies`)
 
 A question is about ONE moment of a proposal, so it carries an **anchor** and the

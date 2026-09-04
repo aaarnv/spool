@@ -253,6 +253,47 @@ export function toolTable() {
     },
 
     {
+      name: 'list_comments',
+      title: 'Read the comments on a spool',
+      description:
+        'Every open comment on ONE spool (GET /api/spools/{spoolId}/comments), walkthroughs and recaps included, not ' +
+        'only plans. A comment is a NOTE anchored to a moment of the video: it tells you what a person noticed and ' +
+        'where, and it never blocks you — that rule belongs to a plan, and gate_check is still the only thing that ' +
+        'answers "may I proceed?". Reply with answer_question, and record that you read one with ack_comment; both ' +
+        'take the comment id this returns.',
+      inputSchema: { spoolId: z.string().min(1).describe('the spool id, from its watch url /l/<id>') },
+      async handler(ctx, args) {
+        const res = await call(ctx.cfg, {
+          path: `/api/spools/${encodeURIComponent(args.spoolId)}/comments`,
+          signal: ctx.signal,
+        });
+        if (!res.ok) return refusal('list_comments', res);
+        // Everything that is not closed. A note somebody replied to is still a note,
+        // which is the same rule the `spool read` digest follows.
+        const comments = (res.data?.comments ?? []).filter((c) => c.status === 'open' || c.status === 'answered');
+        const json = {
+          spoolId: args.spoolId,
+          canWrite: res.data?.canWrite ?? false,
+          comments: comments.map((c) => ({
+            id: c.id,
+            at: c.anchor?.label ?? 'the spool',
+            start: c.anchor?.start ?? null,
+            end: c.anchor?.end ?? null,
+            author: c.author?.type ?? 'unknown',
+            body: c.body,
+            replies: (c.replies ?? []).length,
+          })),
+        };
+        const text = comments.length
+          ? [`${comments.length} open comment${comments.length === 1 ? '' : 's'}:`]
+              .concat(json.comments.map((c) => `  [${c.at}] ${c.author}: ${c.body} (id: ${c.id})`))
+              .join('\n')
+          : 'No open comments on this spool.';
+        return { text, json };
+      },
+    },
+
+    {
       name: 'gate_check',
       title: 'May I proceed?',
       description:
