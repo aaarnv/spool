@@ -10,19 +10,22 @@ is only: make the app runnable, drive a good walkthrough, run the pipeline, veri
 
 ## Install (once per machine)
 
-If `spool --help` fails, install it from the repo:
+If `spool --help` fails, install it from npm:
 
 ```bash
-git clone git@github.com:aaarnv/spool.git ~/.spool/cli
-cd ~/.spool/cli && npm install && npm link
+npm i -g @spoolkit/cli
 npx playwright install chromium
 ```
 
 Also needs node ≥ 20 and ffmpeg on PATH (macOS: `brew install ffmpeg`).
 
-The repo is PRIVATE, so this needs repo access, and so do `install.sh` and every
-`raw.githubusercontent.com` path. `@spoolkit/cli` on npm is frozen at `0.3.1` and is far
-behind this CLI, so do not install from npm. Without repo access there is no install today.
+The source is public at [github.com/aaarnv/spool](https://github.com/aaarnv/spool) under the
+Functional Source License. Clone it only to work ON the CLI, not to use it:
+
+```bash
+git clone git@github.com:aaarnv/spool.git ~/.spool/cli
+cd ~/.spool/cli && npm install && npm link
+```
 
 ## First run (once per repo)
 
@@ -272,9 +275,27 @@ path is cheaper and the recut covers the mistakes this path avoids by constructi
   `pr.json` also triggers the PR comment: watch link + step index via `gh`, so the reviewer
   gets the narrated demo inline). If you finished with `--no-publish`, run
   `spool publish <dir>` (add `--pr` when a PR exists) once you've verified the take.
+- **Put the link on the pull request.** `spool publish <dir> --pr 214` comments the watch link
+  on PR 214. Bare `--pr` with no number resolves the current branch's PR, so
+  `spool publish <dir> --pr` is the usual form. The platform posts as the Spool GitHub App and
+  edits its own comment in place; without an App installation it falls back to `gh`, which must
+  be authenticated. A failed comment never fails the publish, it just prints the URL for you to
+  post by hand.
+- **`spool finish` does it for you on a PR workdir.** A workdir holding `pr.json` (anything
+  `spool pr` scaffolded) gets the comment as part of the finish, so you do not run
+  `spool publish --pr` a second time.
+- **In CI**, the public GitHub Action installs the CLI and runs the same commands on a runner.
+  It needs a `token` input minted at spoolkit.dev/dashboard. See `public-action/action.yml`.
 - **If publish exits with a 402 upgrade message** (the free plan's published-spool limit — only
   live spools count, so drafts and failed renders are not the cause), relay that message and its
   upgrade link to the user verbatim rather than retrying the publish.
+- **To embed it rather than link it**, the watch page has a copy button for the snippet, which
+  is `<iframe src="https://spoolkit.dev/embed/<spoolId>" width="800" height="480" ...>`. The
+  embed player carries the video and the seekable chapter spine and nothing else. Offer it when
+  the destination is a doc, a wiki or a README site rather than a chat message.
+- **Watch-through numbers live at `/dashboard/analytics`**: viewers, average percent watched,
+  percent who reached the end, per spool and per repository, over a 14 day trend. Point the user
+  there when they ask whether anyone watched. There is no CLI for it.
 
 ## Project init (spool init)
 
@@ -522,6 +543,39 @@ refused on a plan workdir: the cloud worker never sees the packet.
 
 **Then stop.** Do not start implementing while the plan is `awaiting_decision`. Report the
 watch link and hand the decision to the human.
+
+Stopping is safe because a daemon wakes you when the answer lands. See "The wake daemon" below.
+
+### The wake daemon (`spool mcp watch`)
+
+A decision can take hours. Polling for it burns the session that is waiting. `spool mcp watch`
+holds the same events cursor the `await_events` MCP tool holds, long-polls the stream forever,
+and runs a command when a decision, a steer, an answer or a reply lands:
+
+```bash
+spool mcp watch --on '<a command that pokes your harness>'
+```
+
+The event arrives on stdin and in `$SPOOL_EVENT`. `--plan <spoolId>` narrows it to one plan,
+`--once` delivers a single page and exits, and `--reset` forgets the stored cursor first.
+Related: `spool mcp serve` is the stdio MCP server an agent talks to
+(`claude mcp add spool -- spool mcp serve`), and `spool mcp status` prints the host, whether a
+token is set, and where the cursor sits.
+
+Run one watch per token: two daemons sharing a cursor file each deliver only part of the stream.
+To keep it running across reboots on macOS there is a launchd installer, but it ships only in a
+clone of the repo (`ops/` is not in the npm package):
+
+```bash
+~/.spool/cli/ops/install-watch-daemon.sh   # logs to ~/.spool-mcp/watch.log
+```
+
+From an npm install, run it in the background yourself. `mcp/README.md` has the worked example
+of wiring `--on` to re-prompt a pinned agent session.
+
+**So end your turn after `plan_request_decision`.** Do not sit in a loop waiting. The daemon is
+what brings you back. Delivery is at-least-once, so a crash mid-turn can replay the last batch:
+treat a wake as "something changed, go read `plan_read`", never as the change itself.
 
 ### 7. Point the pull request at the plan
 
