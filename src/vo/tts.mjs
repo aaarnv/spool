@@ -273,7 +273,17 @@ async function openrouterSpeech(key, text, voice) {
   // A pcm body is headerless, so ffmpeg needs the rate and channel count the
   // content-type carries; anything else is a container ffmpeg sniffs for itself.
   const pcm = parsePcmType(res.headers.get('content-type'));
-  return { buf: Buffer.from(await res.arrayBuffer()), pcm };
+  const buf = Buffer.from(await res.arrayBuffer());
+  return { buf: pcm ? stripRiff(buf) : buf, pcm };
+}
+
+// Samples only: skip a leading RIFF/WAVE header through its data chunk, if there is one.
+// deepgram/flux answers its "pcm" with a streaming wav, and those header bytes read as
+// a click once ffmpeg takes the body as s16le.
+function stripRiff(body) {
+  if (body.length < 44 || body.toString('latin1', 0, 4) !== 'RIFF' || body.toString('latin1', 8, 12) !== 'WAVE') return body;
+  const data = body.indexOf('data', 12, 'latin1');
+  return data < 0 ? body : body.subarray(data + 8);
 }
 
 // "audio/pcm;rate=24000;channels=1" => { rate, channels }; null for any other type.

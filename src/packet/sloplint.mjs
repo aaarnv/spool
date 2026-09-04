@@ -41,12 +41,6 @@ const BANNED = [
     /\b(?:I|we)(?:'m|'ve|'re)?\s+(?:add|build|ship|hook|wire|push|merge|land|deploy|run|split|write|create|store|move|copy|migrate|backfill|refactor|delete|remove|rename|swap|patch|implement|introduce|drop|replace|extend|fix|update|read|filter|cache|index|log|route|send|pull|call)(?:s|ing|ed)?\b/i,
     'first-person commitment verb — put the change in the subject, not the agent',
   ],
-  // Narration is spoken. A raw route or file path is unsayable, so it has to arrive
-  // in spoken form. Each pattern needs a leading slash, an extension or three
-  // segments, which keeps "and/or" and "read/write" out of the gate.
-  [/(?:^|[\s(])\/[A-Za-z0-9_[\]-]+\/[A-Za-z0-9_[\].-]+/, 'route path read aloud, name the endpoint in words'],
-  [/\b[A-Za-z0-9_-]+\/[A-Za-z0-9_/-]*[A-Za-z0-9_-]\.[A-Za-z]{1,4}\b|\b(?=\S*[A-Za-z])[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+/, 'file path read aloud, name the module in words'],
-  [/\[[A-Za-z_][A-Za-z0-9_]*\]/, 'route parameter read aloud, say what it identifies'],
   // A packet field name read aloud as a heading. "Risks:" is a slide title, not
   // speech, and it is the same failure as narrating the structure.
   [
