@@ -10,7 +10,9 @@ const run = promisify(execFile);
 
 // Seed-oriented scaffold the agent authors to warm a project's shared knowledge
 // before any guide exists. `_instructions` is ignored server-side (never sent).
-const SEED_INSTRUCTIONS =
+// Exported because the GitHub App's automatic seed (src/project/seed.mjs) asks a model
+// for the same ops, and two copies of this prompt would drift apart.
+export const SEED_INSTRUCTIONS =
   "Seed this project's shared knowledge so future guides and recordings start warm. Survey the repo " +
   "(README, docs, code layout) and author: one set_overview; set_subsystem for each major module a reader " +
   "needs (5-15); set_term for domain vocabulary; then BOOT THE APP and verify it runs, and record what you " +
