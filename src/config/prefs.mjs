@@ -18,7 +18,7 @@ export const DEFAULTS ={ browser: "chromium", target: "browser", engine: "auto",
 export const CHOICES = {
   browser: ["chromium", "chrome", "edge"],
   target: ["browser", "os"],
-  engine: ["auto", "openai", "hosted", "local"],
+  engine: ["auto", "openrouter", "openai", "hosted", "local"],
   format: ["wide", "vertical"],
 };
 const ENV = { browser: "SPOOL_BROWSER", target: "SPOOL_TARGET", engine: "SPOOL_ENGINE", bg: "SPOOL_BG", format: "SPOOL_FORMAT" };

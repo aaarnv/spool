@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // src/vo/tts.mjs — the VO layer entry point. Turns a spool's steps.mjs narration
 // into a loudnormed wav per narrated step, plus vo/manifest.json. Word timings
-// live in ./timestamps.mjs. Default path is OpenAI (gpt-4o-mini-tts speech +
-// whisper-1 word timings); `local` is a thin fallback that shells to
+// live in ./timestamps.mjs. Default path is OpenRouter (deepgram/flux-tts speech +
+// whisper-1 word timings) then OpenAI (gpt-4o-mini-tts + whisper-1); `local` is a thin fallback that shells to
 // video-studio's vo.sh (Higgs TTS + whisper). See CONTRACTS.md for file shapes.
 import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
@@ -29,6 +29,7 @@ export const SHORT_FORM_INSTRUCTIONS =
   'Pauses: tight and deliberate, just enough to let each beat land before the next one. ' +
   'Emotion: infectious enthusiasm with warmth. Never announcer-like, never salesy, never shouty, never breathless.';
 const round2 = (x) => Math.round(x * 100) / 100;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Which register a segment is read in: an explicit `instructions` always wins.
 const registerFor = (instructions, format) =>
@@ -63,13 +64,18 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
 
   const instr = await resolveRegister(workdir, instructions, format);
   engine = await resolveEngine(engine);
-  const key = engine === 'openai' ? await resolveKey() : null;
+  // openrouter resolves an OpenAI key too: it is optional there, and only decides
+  // whether word timings run on the user's own whisper or through OpenRouter's.
+  const key = engine === 'openai' || engine === 'openrouter' ? await resolveKey() : null;
   if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
+  const orKey = engine === 'openrouter' ? await resolveOpenRouterKey() : null;
+  if (engine === 'openrouter' && !orKey) throw new Error('OPENROUTER_API_KEY not set (env, ./.env, or "openrouterKey" in ~/.spool.json)');
   const hosted = engine === 'hosted' ? await resolveHosted() : null;
   const fishKey = engine === 'fish' ? await resolveFishKey() : null;
   if (engine === 'fish' && !fishKey) throw new Error('FISH_API_KEY not set (env or "fishKey" in ~/.spool.json)');
   // Fish voices are reference ids; the OpenAI default 'alloy' means "unset" here.
   if (engine === 'fish' && (!voice || voice === 'alloy')) voice = await resolveFishVoice() || voice;
+  if (engine === 'openrouter' && (!voice || voice === 'alloy')) voice = OPENROUTER_VOICE;
 
   // One job per narrated step. TTS → loudnorm → whisper stay sequential inside a
   // job; jobs run through a bounded pool so the wall-time is ~total/CONCURRENCY.
@@ -77,7 +83,7 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
     .map((step, i) => ({ name: step.name, i, narration: (step.narration || '').trim() }))
     .filter((j) => j.narration); // un-narrated steps get no segment; index i still mirrors the steps array
 
-  const ctx = { engine, key, hosted, fishKey, voice, instr, speed, workdir, voDir };
+  const ctx = { engine, key, orKey, hosted, fishKey, voice, instr, speed, workdir, voDir };
   const CONCURRENCY = 4;
   const results = new Array(jobs.length);
   let next = 0;
@@ -100,7 +106,7 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
 // Synthesize one segment's wav + word-times into <workdir>/vo/seg_NN.{wav,words.json}.
 // ctx carries the resolved engine + credentials; job is { i, name, narration }.
 async function buildSegment(ctx, { i, name, narration }) {
-  const { engine, key, hosted, fishKey, voice, instr, speed, workdir, voDir } = ctx;
+  const { engine, key, orKey, hosted, fishKey, voice, instr, speed, workdir, voDir } = ctx;
   const nn = String(i).padStart(2, '0');
   const wavRel = `vo/seg_${nn}.wav`;
   const wordsRel = `vo/seg_${nn}.words.json`;
@@ -115,13 +121,23 @@ async function buildSegment(ctx, { i, name, narration }) {
     // Transcribe the finished (loudnormed) wav so word times are local to it.
     const words = await openaiWordTimestamps({ key, wavBuf: await readFile(wavAbs), prompt: narration });
     await writeFile(wordsAbs, JSON.stringify(words));
+  } else if (engine === 'openrouter') {
+    // Flux returns mp3 and no word timings. loudnorm decodes the mp3 into the wav
+    // the pipeline expects, then whisper transcribes that finished wav.
+    const rawPath = join(voDir, `seg_${nn}.raw.mp3`);
+    await writeFile(rawPath, await openrouterSpeech(orKey, narration, voice));
+    await loudnorm(rawPath, wavAbs, speed);
+    await rm(rawPath, { force: true });
+    await writeFile(wordsAbs, JSON.stringify(await openrouterWords({ key, orKey, wavAbs, narration })));
   } else if (engine === 'hosted') {
-    const rawPath = join(voDir, `seg_${nn}.raw.wav`);
-    const { audio, words } = await hostedSpeech(hosted, narration, voice, instr);
+    // `format` says which container the server sent (mp3 once it runs on OpenRouter);
+    // older servers omit it and always send wav.
+    const { audio, words, format } = await hostedSpeech(hosted, narration, voice, instr);
+    const rawPath = join(voDir, `seg_${nn}.raw.${format === 'mp3' ? 'mp3' : 'wav'}`);
     await writeFile(rawPath, Buffer.from(audio, 'base64'));
     await loudnorm(rawPath, wavAbs, speed);
     await rm(rawPath, { force: true });
-    // Server timings are on the raw wav; atempo scales time linearly, so /speed keeps them true.
+    // Server timings are on the raw audio; atempo scales time linearly, so /speed keeps them true.
     const scaled = speed !== 1 ? words.map((w) => ({ word: w.word, start: round2(w.start / speed), end: round2(w.end / speed) })) : words;
     await writeFile(wordsAbs, JSON.stringify(scaled));
   } else if (engine === 'fish') {
@@ -148,14 +164,17 @@ export async function synthesizeSegment({ workdir, i, name, narration, engine, v
   await mkdir(voDir, { recursive: true });
   const instr = await resolveRegister(workdir, instructions, format);
   engine = await resolveEngine(engine);
-  const key = engine === 'openai' ? await resolveKey() : null;
+  const key = engine === 'openai' || engine === 'openrouter' ? await resolveKey() : null;
   if (engine === 'openai' && !key) throw new Error('OPENAI_API_KEY not set (env, ./.env, or "openaiKey" in ~/.spool.json)');
+  const orKey = engine === 'openrouter' ? await resolveOpenRouterKey() : null;
+  if (engine === 'openrouter' && !orKey) throw new Error('OPENROUTER_API_KEY not set (env, ./.env, or "openrouterKey" in ~/.spool.json)');
   const hosted = engine === 'hosted' ? await resolveHosted() : null;
   const fishKey = engine === 'fish' ? await resolveFishKey() : null;
   if (engine === 'fish' && !fishKey) throw new Error('FISH_API_KEY not set (env or "fishKey" in ~/.spool.json)');
   // Fish voices are reference ids; the OpenAI default 'alloy' means "unset" here.
   if (engine === 'fish' && (!voice || voice === 'alloy')) voice = await resolveFishVoice() || voice;
-  return buildSegment({ engine, key, hosted, fishKey, voice, instr, speed, workdir, voDir }, { i, name, narration: (narration || '').trim() });
+  if (engine === 'openrouter' && (!voice || voice === 'alloy')) voice = OPENROUTER_VOICE;
+  return buildSegment({ engine, key, orKey, hosted, fishKey, voice, instr, speed, workdir, voDir }, { i, name, narration: (narration || '').trim() });
 }
 
 // --- OpenAI TTS ------------------------------------------------------------
@@ -171,20 +190,23 @@ async function openaiSpeech(key, text, voice, instructions) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-// Resolve an OpenAI key from env, the target project's .env, then ~/.spool.json.
+// Resolve a provider key from env, the target project's .env, then ~/.spool.json.
 // Returns null when none is set (the caller decides whether that's fatal).
-async function resolveKey() {
-  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+async function resolveProviderKey(envVar, cfgKey) {
+  if (process.env[envVar]) return process.env[envVar];
   try {
-    const m = (await readFile(join(process.cwd(), '.env'), 'utf8')).match(/^\s*OPENAI_API_KEY\s*=\s*(.+)$/m);
+    const m = (await readFile(join(process.cwd(), '.env'), 'utf8')).match(new RegExp(`^\\s*${envVar}\\s*=\\s*(.+)$`, 'm'));
     if (m) return m[1].trim().replace(/^["']|["']$/g, '');
   } catch { /* try next source */ }
   try {
     const cfg = JSON.parse(await readFile(join(homedir(), '.spool.json'), 'utf8'));
-    if (cfg.openaiKey) return cfg.openaiKey;
+    if (cfg[cfgKey]) return cfg[cfgKey];
   } catch { /* no key anywhere */ }
   return null;
 }
+
+const resolveKey = () => resolveProviderKey('OPENAI_API_KEY', 'openaiKey');
+const resolveOpenRouterKey = () => resolveProviderKey('OPENROUTER_API_KEY', 'openrouterKey');
 
 // Resolve hosted VO {host, token} from env, then ~/.spool.json; null if incomplete.
 async function resolveHosted() {
@@ -200,18 +222,84 @@ async function resolveHosted() {
   return host && token ? { host: host.replace(/\/$/, ''), token } : null;
 }
 
-// Pick the engine: explicit wins; else env/prefs (unless "auto"); else a local key
-// → openai; else hosted config → hosted.
+// Pick the engine: explicit wins; else env/prefs (unless "auto"); else an OpenRouter
+// key → openrouter; else a local OpenAI key → openai; else hosted config → hosted.
 async function resolveEngine(explicit) {
   if (explicit) return explicit;
   const pref = await resolveEnginePref();
   if (pref) return pref;
+  if (await resolveOpenRouterKey()) return 'openrouter';
   if (await resolveKey()) return 'openai';
   if (await resolveHosted()) return 'hosted';
   throw new Error(
-    'no VO engine available — set OPENAI_API_KEY (env, ./.env, or "openaiKey" in ~/.spool.json), ' +
-      'add host+token to ~/.spool.json for hosted voice, or pass --engine local with SPOOL_VO_SH'
+    'no VO engine available — set OPENROUTER_API_KEY or OPENAI_API_KEY (env, ./.env, or ' +
+      '"openrouterKey"/"openaiKey" in ~/.spool.json), add host+token to ~/.spool.json for ' +
+      'hosted voice, or pass --engine local with SPOOL_VO_SH'
   );
+}
+
+// --- OpenRouter TTS (OpenAI-compatible speech + transcription) --------------
+
+// deepgram/flux-tts:free voices are flux-<name>-en, all English: alexis bree brittany brooke
+// bruce cliff cole colin conor donovan drew elise gemma haley hannah heather jack kai kelsey kit maeve marcelo marcus meena meghan miles naveen paige priya rufus sean sharon sienna tanner wade wes.
+const OPENROUTER_MODEL = process.env.SPOOL_TTS_MODEL || 'deepgram/flux-tts:free';
+const OPENROUTER_VOICE = process.env.SPOOL_TTS_VOICE || 'flux-drew-en';
+const OPENROUTER_STT_MODEL = process.env.SPOOL_STT_MODEL || 'openai/whisper-1';
+const OPENROUTER_SPEECH_URL = 'https://openrouter.ai/api/v1/audio/speech';
+const OPENROUTER_TRANSCRIBE_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
+
+// Flux takes no style instructions and no speed; the register lives in the narration
+// itself and speed is applied downstream by loudnorm's atempo.
+async function openrouterSpeech(key, text, voice) {
+  const res = await openrouterFetch(OPENROUTER_SPEECH_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: OPENROUTER_MODEL, input: text, voice, response_format: 'mp3' }),
+  });
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// Word timings prefer the user's own OpenAI whisper; without an OpenAI key they run
+// through OpenRouter's whisper-1, which returns the same verbose_json word shape.
+async function openrouterWords({ key, orKey, wavAbs, narration }) {
+  const wavBuf = await readFile(wavAbs);
+  if (key) return openaiWordTimestamps({ key, wavBuf, prompt: narration });
+  return openaiWordTimestamps({
+    key: orKey,
+    wavBuf,
+    prompt: narration,
+    url: OPENROUTER_TRANSCRIBE_URL,
+    model: OPENROUTER_STT_MODEL,
+    send: openrouterFetch,
+  });
+}
+
+const OPENROUTER_BACKOFF_MS = [1000, 3000, 8000];
+const OPENROUTER_THROTTLE_TRIES = 5;
+
+// 5xx and network faults retry on the shared backoff. A 429 is the free tier
+// throttling rather than a verdict, so it waits Retry-After (or 5s) on its own budget.
+async function openrouterFetch(url, opts, attempt = 0, throttled = 0) {
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (e) {
+    if (attempt >= OPENROUTER_BACKOFF_MS.length) throw new Error(`openrouter unreachable: ${e.message}`);
+    await sleep(OPENROUTER_BACKOFF_MS[attempt]);
+    return openrouterFetch(url, opts, attempt + 1, throttled);
+  }
+  if (res.ok) return res;
+  const body = await res.text().catch(() => '');
+  if (res.status === 429 && throttled < OPENROUTER_THROTTLE_TRIES) {
+    const after = Number(res.headers.get('retry-after')) * 1000;
+    await sleep(Number.isFinite(after) && after > 0 ? after : 5000);
+    return openrouterFetch(url, opts, attempt, throttled + 1);
+  }
+  if (res.status >= 500 && attempt < OPENROUTER_BACKOFF_MS.length) {
+    await sleep(OPENROUTER_BACKOFF_MS[attempt]);
+    return openrouterFetch(url, opts, attempt + 1, throttled);
+  }
+  throw new Error(`openrouter ${new URL(url).pathname} -> ${res.status}: ${body.slice(0, 300)}`);
 }
 
 // --- Fish Audio TTS (character reference voices) ----------------------------
@@ -270,9 +358,7 @@ async function localWhisperWords(wavPath, prompt) {
 
 // --- hosted VO (spool web app: OpenAI without the user's own key) -----------
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// POST narration to {host}/api/vo → { audio: base64 wav, words: [{word,start,end}] }.
+// POST narration to {host}/api/vo → { audio: base64, words: [{word,start,end}], format }.
 async function hostedSpeech({ host, token }, text, voice, instructions) {
   const res = await hostedFetch(`${host}/api/vo`, {
     method: 'POST',
@@ -280,7 +366,7 @@ async function hostedSpeech({ host, token }, text, voice, instructions) {
     body: JSON.stringify({ text, voice, instructions }),
   });
   const json = await res.json();
-  return { audio: json.audio, words: json.words || [] };
+  return { audio: json.audio, words: json.words || [], format: json.format || 'wav' };
 }
 
 const HOSTED_BACKOFF_MS = [1000, 3000, 8000];
