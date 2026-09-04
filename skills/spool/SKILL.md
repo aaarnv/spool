@@ -58,10 +58,9 @@ Read the output before doing anything else:
   what turns a merged pull request into a recap. You cannot install it yourself.
 - **Step 6** scaffolds `spool/project/`. Author it next, per "Project init" below.
 
-One connection covers BOTH publishing and hosted AI voice. The voice engine auto-detects, in
-order: `OPENROUTER_API_KEY` (deepgram/flux-tts), then `OPENAI_API_KEY` (gpt-4o-mini-tts) — each
-read from env / project `.env` / `"openrouterKey"`/`"openaiKey"` in `~/.spool.json`; otherwise
-voice runs hosted through the token. `spool doctor` (add `--json` for a
+One connection covers BOTH publishing and hosted AI voice. The voice engine auto-detects: your
+own `OPENAI_API_KEY` (env / project `.env` / `"openaiKey"` in `~/.spool.json`) is used directly
+when present; otherwise voice runs hosted through the token. `spool doctor` (add `--json` for a
 machine-readable form) re-runs the step 1 checks any time.
 
 ## Choosing a path
