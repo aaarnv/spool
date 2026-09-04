@@ -239,9 +239,11 @@ Requirements: node ≥ 20, ffmpeg on PATH, and a voiceover engine. The engine au
 - **hosted (zero-key)** — just the `host` + `token` you already put in `~/.spool.json` for `spool publish`.
   Voice runs on the hosted app with no key of your own — the same dashboard token covers both
   publishing and voice (subject to a fair-use daily cap); or
+- **Fish Audio** — `FISH_API_KEY` (env or `fishKey` in `~/.spool.json`), with the reference voice in
+  `SPOOL_FISH_VOICE` or `fishVoice`. Never auto-selected: pin it to use it; or
 - **local (free)** — a `SPOOL_VO_SH` script for local TTS/whisper.
 
-They are tried in that order. Pin one with `spool setup --engine openrouter|openai|hosted|local`,
+They are tried in that order. Pin one with `spool setup --engine openrouter|openai|hosted|fish|local`,
 or `SPOOL_ENGINE` for a single run.
 
 Word timings stay on whisper: your own `OPENAI_API_KEY` when set, else `SPOOL_STT_MODEL`
