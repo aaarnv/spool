@@ -155,24 +155,6 @@ async function checkOpenAI() {
   return warn("openai-key", "not set", "hosted voice works without it; else set OPENAI_API_KEY (env, ./.env, or ~/.spool.json)");
 }
 
-// OPENROUTER_API_KEY chain: env → ./.env → ~/.spool.json openrouterKey. Never print the key.
-async function checkOpenRouter() {
-  if (process.env.OPENROUTER_API_KEY) return ok("openrouter-key", "resolved (env OPENROUTER_API_KEY)");
-  try {
-    const m = (await readFile(join(process.cwd(), ".env"), "utf8")).match(/^\s*OPENROUTER_API_KEY\s*=\s*(.+)$/m);
-    if (m && m[1].trim()) return ok("openrouter-key", "resolved (./.env)");
-  } catch {
-    /* try next source */
-  }
-  try {
-    const cfg = JSON.parse(await readFile(join(homedir(), ".spool.json"), "utf8"));
-    if (cfg.openrouterKey) return ok("openrouter-key", "resolved (~/.spool.json openrouterKey)");
-  } catch {
-    /* none */
-  }
-  return warn("openrouter-key", "not set", "the default voice engine; else voice falls back to OPENAI_API_KEY or hosted");
-}
-
 // Report the active preference profile (browser/target/engine/bg + source). When
 // browser is chrome/edge, verify that channel actually launches on this machine.
 async function checkPrefs() {
@@ -217,7 +199,6 @@ export async function runChecks() {
   const { host, token } = await resolveConf();
   results.push(await checkHost(host));
   results.push(await checkToken(host, token));
-  results.push(await checkOpenRouter());
   results.push(await checkOpenAI());
   results.push(await checkPrefs());
   const sips = await checkSips();
