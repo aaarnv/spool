@@ -1,19 +1,24 @@
 // src/vo/timestamps.mjs — per-segment word timings for the VO layer.
-// OpenAI whisper-1 (verbose_json, word granularity) is the default; the local
-// engine reuses vo.sh's chunk output, split evenly into per-word times.
+// OpenAI whisper-1 (verbose_json, word granularity) is the default; OpenRouter
+// serves the same model at the same shape, and the local engine reuses vo.sh's
+// chunk output, split evenly into per-word times.
 // Produces the [{word,start,end}] shape CONTRACTS.md requires (times local to the wav).
 const round2 = (x) => Math.round(x * 100) / 100;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+export const OPENAI_TRANSCRIBE_URL = 'https://api.openai.com/v1/audio/transcriptions';
+
 // Transcribe a segment's (loudnormed) wav into word timings local to that wav.
-export async function openaiWordTimestamps({ key, wavBuf, prompt }) {
+// `url`/`model`/`send` swap in an OpenAI-compatible host: OpenRouter serves whisper-1
+// at the same verbose_json word shape, so only the endpoint, key and retry budget differ.
+export async function openaiWordTimestamps({ key, wavBuf, prompt, url = OPENAI_TRANSCRIBE_URL, model = 'whisper-1', send = openaiFetch }) {
   const form = new FormData();
   form.append('file', new Blob([wavBuf], { type: 'audio/wav' }), 'seg.wav');
-  form.append('model', 'whisper-1');
+  form.append('model', model);
   form.append('response_format', 'verbose_json');
   form.append('timestamp_granularities[]', 'word');
   if (prompt) form.append('prompt', prompt); // bias spelling toward the known narration
-  const res = await openaiFetch('https://api.openai.com/v1/audio/transcriptions', {
+  const res = await send(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}` },
     body: form,
@@ -55,5 +60,5 @@ export async function openaiFetch(url, opts, attempt = 0) {
     await sleep(1500 * (attempt + 1));
     return openaiFetch(url, opts, attempt + 1);
   }
-  throw new Error(`OpenAI ${new URL(url).pathname} -> ${res.status}: ${body}`);
+  throw new Error(`${new URL(url).host}${new URL(url).pathname} -> ${res.status}: ${body}`);
 }

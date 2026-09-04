@@ -58,9 +58,10 @@ Read the output before doing anything else:
   what turns a merged pull request into a recap. You cannot install it yourself.
 - **Step 6** scaffolds `spool/project/`. Author it next, per "Project init" below.
 
-One connection covers BOTH publishing and hosted AI voice. The voice engine auto-detects: your
-own `OPENAI_API_KEY` (env / project `.env` / `"openaiKey"` in `~/.spool.json`) is used directly
-when present; otherwise voice runs hosted through the token. `spool doctor` (add `--json` for a
+One connection covers BOTH publishing and hosted AI voice. The voice engine auto-detects, in
+order: `OPENROUTER_API_KEY` (deepgram/flux-tts), then `OPENAI_API_KEY` (gpt-4o-mini-tts) — each
+read from env / project `.env` / `"openrouterKey"`/`"openaiKey"` in `~/.spool.json`; otherwise
+voice runs hosted through the token. `spool doctor` (add `--json` for a
 machine-readable form) re-runs the step 1 checks any time.
 
 ## Choosing a path
@@ -820,6 +821,14 @@ Through MCP:
 - `answer_question(spoolId, questionId, body)` — reply in the thread. The comment id is
   the `questionId`.
 - `ack_comment(spoolId, questionId, note)` — record that you read one.
+
+Who can leave one: the spool's owner, their agent tokens, and the members of the spool's
+project. The owner invites a member by email from the project's Settings tab, under "Who
+can comment". Clerk emails the invite; the person clicks the link, signs in, and the row
+goes from Invited to Member. An address that already has a spool account gets no email —
+Clerk will not invite a registered user — so it becomes a member at once and the owner
+copies the link across. The owner can resend an invite, which issues a new link and kills
+the old one, or revoke, which takes the access away on the next request.
 
 A comment is a NOTE, never a gate. It does not block you, `gate_check` does not change
 because of one, and only a PLAN's unacknowledged comment stops work. Read them anyway: a

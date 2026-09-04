@@ -3,8 +3,8 @@
 Every layer communicates only through these files inside a per-spool **workdir**
 (conventionally `<project>/spool/<slug>/`). If you change a format, bump it here first.
 
-> **Editing published spools** is a separate cross-component contract (CLI source
-> upload, web jobs API, Fly render worker): see [docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
+> **Editing published spools** is disabled for now (`SPOOL_EDITS_ENABLED`). Its
+> cross-component contract is kept at [docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
 
 > **Plan Spool lifecycle and permissions** — the states a plan spool holds, the legal
 > transitions, and which requester may call which endpoint in which state: see
@@ -395,7 +395,7 @@ statement, so concurrent publishes cannot both take the last slot.
 
 **A paid plan is per seat.** `billing.seats` is the subscription quantity (owner
 included, minimum 1) and the metered caps in `web/lib/limits.ts` — hosted voice per day,
-edit re-renders per month, cloud renders per month — are one seat's allowance multiplied
+cloud renders per month — are one seat's allowance multiplied
 by it. Published spools stay unlimited on a paid plan, so seats do not scale them.
 
 ### The draft lane (`POST /api/plans` → record → publish → request a decision)
@@ -660,9 +660,24 @@ cannot add to it.
 
 | Method + path | Auth | Body / returns |
 |---|---|---|
-| `GET /api/projects/members?owner=&repo=` | the project owner | `{ members: [{ id, email, active, role }] }` |
-| `POST /api/projects/members` | the project owner | body `{ owner, repo, email }`; returns `{ ok, member }` |
+| `GET /api/projects/members?owner=&repo=` | the project owner | `{ members: [{ id, email, status, active, role, invitedAt, inviteUrl }] }` |
+| `POST /api/projects/members` | the project owner | body `{ owner, repo, email }` to invite, or `{ id }` to re-send; returns `{ ok, sent, member }` |
 | `DELETE /api/projects/members?id=` | the project owner | `{ ok }` |
+
+**The invite (migration 0035).** A row moves `pending` -> `active`, or `pending` ->
+`revoked`, and never back. Inviting mints a token, writes the pending row and asks Clerk
+to email `/invite/{token}`; the web app has no mail provider of its own, and Clerk is
+already the identity for every signed-in page. The token says WHICH invite and never who
+the reader is: `/invite/{token}` redeems only when the signed-in user holds the invited
+address VERIFIED, so a forwarded link makes nobody a member. Redeeming spends the token
+in the same statement, and `claimProjectMemberships` on sign-in stays as the fallback for
+somebody who never clicks.
+
+A CHECK ties `active` to holding a `user_id`, so revoking gives the user id up and an
+access check can never pass on a membership that was taken away. Clerk refuses to invite
+an address that already has an account: those activate immediately and the answer carries
+`inviteUrl` for the owner to pass on, with `sent: false` saying no mail went out. A failed
+send is a warning, not an error — the row exists and the link works.
 
 **For agents.** `spool read` prints an `open comments` block (the time as `mm:ss`, who,
 what, and the id), and the MCP server has `list_comments(spoolId)`. Reply with

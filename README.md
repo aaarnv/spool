@@ -48,7 +48,7 @@ spool setup --show                            # print effective config (token ma
 | --- | --- | --- | --- |
 | `browser` | `chromium` \| `chrome` \| `edge` | `chromium` | recording browser (Playwright channel) |
 | `target` | `browser` \| `os` | `browser` | default `spool live` capture target |
-| `engine` | `auto` \| `openai` \| `hosted` \| `local` | `auto` | default VO engine |
+| `engine` | `auto` \| `openrouter` \| `openai` \| `hosted` \| `local` | `auto` | default VO engine |
 
 Precedence is explicit flag > env (`SPOOL_BROWSER`/`SPOOL_TARGET`/`SPOOL_ENGINE`) > prefs >
 default. `spool doctor` reports the active profile and its sources. Everything else the
@@ -229,14 +229,25 @@ console errors, or verify a claimed fix actually renders.
 
 Requirements: node ≥ 20, ffmpeg on PATH, and a voiceover engine. The engine auto-resolves:
 
-- **your own key** — `OPENAI_API_KEY` (env, the project's `.env`, or `openaiKey` in `~/.spool.json`); or
+- **OpenRouter (default)** — `OPENROUTER_API_KEY` (env, the project's `.env`, or `openrouterKey`
+  in `~/.spool.json`). Voice is `deepgram/flux-tts:free`; override with `SPOOL_TTS_MODEL` and
+  `SPOOL_TTS_VOICE` (Flux voices are `flux-<name>-en`, default `flux-drew-en`). Audio comes back
+  as lossless pcm, with mp3 as the retry for a model that refuses it. When the free tier is still
+  throttling after the retries, that one segment falls back to the OpenAI voice, else the hosted
+  voice, so a render never dies on a rate limit; or
+- **OpenAI** — `OPENAI_API_KEY` (env, the project's `.env`, or `openaiKey` in `~/.spool.json`); or
 - **hosted (zero-key)** — just the `host` + `token` you already put in `~/.spool.json` for `spool publish`.
-  Voice runs on the hosted app with no OpenAI key of your own — the same dashboard token covers both
+  Voice runs on the hosted app with no key of your own — the same dashboard token covers both
   publishing and voice (subject to a fair-use daily cap); or
 - **local (free)** — a `SPOOL_VO_SH` script for local TTS/whisper.
 
-They are tried in that order. Pin one with `spool setup --engine openai|hosted|local`, or
-`SPOOL_ENGINE` for a single run.
+They are tried in that order. Pin one with `spool setup --engine openrouter|openai|hosted|local`,
+or `SPOOL_ENGINE` for a single run.
+
+Word timings stay on whisper: your own `OPENAI_API_KEY` when set, else `SPOOL_STT_MODEL`
+(`openai/whisper-1`) through OpenRouter, else local whisper. No transcription model on OpenRouter
+is free, so that middle rung needs credits on the key; without them a free-tier key falls through
+to local whisper, which needs `~/.spool-venv` (or `SPOOL_WHISPER_PY`).
 
 Setup: `npm install && npm link` in this repo (chromium comes from Playwright's cache,
 `npx playwright install chromium` if missing).
@@ -306,6 +317,7 @@ commit.
 | `SPOOL_BG` | Override the canvas for one local render (preset name, macOS wallpaper name, or an image path). |
 | `SPOOL_FORMAT` | Force `wide` or `vertical` when a workdir has no stamp of its own. |
 | `SPOOL_ENGINE`, `SPOOL_VO_SH` | Pin the VO engine; point at a local TTS/whisper script. |
+| `SPOOL_TTS_MODEL`, `SPOOL_TTS_VOICE`, `SPOOL_STT_MODEL` | OpenRouter engine: the speech model, its voice, and the whisper model used when no `OPENAI_API_KEY` is set. |
 | `SPOOL_PLAN_VOICE`, `SPOOL_PLAN_VISUALS`, `SPOOL_PLAN_MODEL` | The plan narration profile and the model that rewrites it. |
 | `SPOOL_BROWSER`, `SPOOL_TARGET` | Playwright channel and capture target for one run (`spool setup` is the durable form). |
 | `SPOOL_V0_ENGINE` | Fall back to the Chrome rasteriser when Skia misbehaves. |
@@ -323,16 +335,11 @@ everything else is generated.
 
 ## Editing a published spool
 
-Publishing now also uploads the render sources (normalized `video.mp4`, `timeline.json`,
-`render.json`, and the `vo/` segments) alongside the final video, so a spool can be edited
-after the fact without re-recording. On the watch page the owner describes a change in
-plain language ("drop the third step", "re-record the intro narration", "speed it up 1.25x");
-that becomes a validated ops list and an `edit_jobs` row. A small always-on render worker
-(closed source, part of the hosted service) polls for jobs, pulls the sources, applies the
-ops — re-generating only changed narration segments via the same OpenAI TTS path — re-renders
-with the repo's own `renderSpool`, and overwrites the published video/bundle in Blob. Spools
-published before this feature (no sources) show as re-publish-to-edit. Full shapes:
-[docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
+Disabled for now. Plain-English edits of a published spool are off unless
+`SPOOL_EDITS_ENABLED` is set on the web app. Publishing still uploads the render sources
+(normalized `video.mp4`, `timeline.json`, `render.json`, and the `vo/` segments), and
+`spool bg <workdir> <bg>` still swaps the canvas locally with no re-render. The kept
+shapes: [docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
 
 ## Design notes
 

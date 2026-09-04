@@ -1,5 +1,8 @@
 # Spool edit pipeline — cross-component contract (v1)
 
+> **Disabled for now.** Plain-English edits of a published spool are off unless
+> `SPOOL_EDITS_ENABLED` is set. The other `edit_jobs` kinds are unaffected.
+
 Three parties: **CLI** (`spool publish` uploads sources), **web** (edit agent UI + jobs
 API on spool-web), **worker** (Fly render worker re-renders). This file is the single
 source of truth for the shapes between them. Change it only by changing all three.
@@ -187,12 +190,13 @@ screenshots). Imports the repo's own
 `src/vo/tts.mjs`, `src/render/*` as libraries — no logic duplication. Flow per job:
 download `spools/{id}/src/*` by **public URL** (`SPOOL_BLOB_BASE`, store access is public —
 no token: fixed set then each VO seg named by the manifest) → apply ops to timeline/vo
-(set_narration ⇒ re-TTS that segment via OPENAI_API_KEY + whisper words, exactly the CLI's
+(set_narration ⇒ re-TTS that segment via the auto-resolved engine — OPENROUTER_API_KEY
+first, else OPENAI_API_KEY — plus whisper words, exactly the CLI's
 openai engine path) → renderSpool (windows recompute automatically from the edited
 timeline+manifest) → regenerate the share bundle → request upload grants for the changed
 `l/{id}/*` outputs (final.mp4, frames, spool.json with steps/narration/durations rewritten
 to blob URLs, transcript, console) and PUT via the grants → PATCH done.
-Env: EDIT_WORKER_SECRET, OPENAI_API_KEY, SPOOL_HOST, SPOOL_BLOB_BASE (no standing Blob
+Env: EDIT_WORKER_SECRET, OPENROUTER_API_KEY, OPENAI_API_KEY, SPOOL_HOST, SPOOL_BLOB_BASE (no standing Blob
 token — outputs use per-job grants).
 Failure ⇒ PATCH error with a one-line reason; sources are immutable (re-edit = new job
 from the SAME originals + full ops list — jobs are not cumulative in v1; the web UI
