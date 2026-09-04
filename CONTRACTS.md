@@ -3,8 +3,8 @@
 Every layer communicates only through these files inside a per-spool **workdir**
 (conventionally `<project>/spool/<slug>/`). If you change a format, bump it here first.
 
-> **Editing published spools** is disabled for now (`SPOOL_EDITS_ENABLED`). Its
-> cross-component contract is kept at [docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
+> **Editing published spools** is a separate cross-component contract (CLI source
+> upload, web jobs API, Fly render worker): see [docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
 
 > **Plan Spool lifecycle and permissions** — the states a plan spool holds, the legal
 > transitions, and which requester may call which endpoint in which state: see
@@ -395,7 +395,7 @@ statement, so concurrent publishes cannot both take the last slot.
 
 **A paid plan is per seat.** `billing.seats` is the subscription quantity (owner
 included, minimum 1) and the metered caps in `web/lib/limits.ts` — hosted voice per day,
-cloud renders per month — are one seat's allowance multiplied
+edit re-renders per month, cloud renders per month — are one seat's allowance multiplied
 by it. Published spools stay unlimited on a paid plan, so seats do not scale them.
 
 ### The draft lane (`POST /api/plans` → record → publish → request a decision)

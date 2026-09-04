@@ -24,6 +24,7 @@ export async function printConfig(cfg) {
   console.log(`  host     ${cfg.host || "(none)"}`);
   console.log(`  token    ${mask(cfg.token)}`);
   if (cfg.openaiKey) console.log(`  openai   ${mask(cfg.openaiKey)}`);
+  if (cfg.openrouterKey) console.log(`  openrtr  ${mask(cfg.openrouterKey)}`);
 }
 
 async function promptAll(cfg) {

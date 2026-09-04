@@ -816,7 +816,7 @@ program
   .description('save installation preferences to ~/.spool.json (browser, target, engine, host)')
   .option('--browser <browser>', 'chromium | chrome | edge (Playwright launch channel)')
   .option('--target <target>', 'default record target: browser | os')
-  .option('--engine <engine>', 'default VO engine: auto | openai | hosted | local')
+  .option('--engine <engine>', 'default VO engine: auto | openrouter | openai | hosted | local')
   .option('--host <host>', 'publish host origin')
   .option('--yes', 'write flags without prompting (unspecified keys keep current values)')
   .option('--show', 'print the effective config (token masked) and exit')
