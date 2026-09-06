@@ -112,8 +112,9 @@ renderer retimes each step to fit its narration (see "Render layer inputs").
 
 ## Hosted VO API (`SPOOL_ENGINE=hosted` → `POST {host}/api/vo`)
 
-The hosted engine lets a CLI user generate voice with no OpenAI key of their own — the
-web app calls OpenAI (gpt-4o-mini-tts + whisper-1) on the server. Auth reuses the
+The hosted engine lets a CLI user generate voice with no provider key of their own — the
+server calls OpenRouter (deepgram/flux-tts speech + whisper-1 timings) when it holds an
+OpenRouter key, else OpenAI (gpt-4o-mini-tts + whisper-1). Auth reuses the
 `spool publish` bearer token (per-user `spk_` token or the legacy global token).
 
 Request: `POST {host}/api/vo`, `Authorization: Bearer <token>`, JSON body:
@@ -127,14 +128,19 @@ Request: `POST {host}/api/vo`, `Authorization: Bearer <token>`, JSON body:
 Response `200`:
 
 ```json
-{ "audio": "<base64 wav>",               // raw gpt-4o-mini-tts wav (NOT loudnormed)
-  "words": [{ "word": "Here", "start": 0.0, "end": 0.34 }],  // whisper-1 word times, local to the raw wav
+{ "audio": "<base64 wav>",               // raw TTS wav (NOT loudnormed)
+  "words": [{ "word": "Here", "start": 0.0, "end": 0.34 }],  // whisper-1 word times, local to the raw audio
+  "format": "wav",                        // container of `audio`
   "usage": { "remainingToday": 297 } }
 ```
 
-The CLI writes the wav, runs the **same local loudnorm** pass as the direct engine, and
-(when the tempo is not 1) applies `atempo` locally and scales the returned word times by
-`1/speed` — so timing truth is identical to the direct OpenAI path. Errors: `401`
+`format` is `wav` on both branches: the OpenRouter branch asks for lossless pcm and wraps
+it in a RIFF header at the rate the provider reports, so no client carries a sample rate
+and nothing is transcoded. It answers `mp3` only when a TTS model rejects pcm and the
+request falls back. The CLI writes that container, runs the **same local loudnorm** pass
+as the direct engine, and (when the tempo is not 1) applies `atempo` locally and scales
+the returned word times by `1/speed` — so timing truth is identical to a direct engine.
+Errors: `401`
 (bad/missing token), `400`/`413` (missing/oversized `text`), `429` (per-user daily cap,
 env `VO_DAILY_CAP`, default 300 — the JSON `error` carries the message), `502` (upstream
 TTS failure). Node runtime; a ~10s wav base64 is ~1–2MB, within the function body cap.
@@ -2122,6 +2128,10 @@ together than `--min-step` (default 2.5s) fold into the one before them; a marke
 folds and never loses its name. Steps carry `source` so a reader can see where a boundary
 came from. Windows slice the video from each step's own `start`, so a dropped step leaves
 a hole in the take and its footage never reaches the output.
+
+`spool recut` applies its ops to the cut already in timeline.json, so consecutive runs
+stack. `--from-signals` (and `--min-step`, which asks for a different fold) re-derives the
+boundaries from this log instead, discarding the hand edits made since the take.
 
 ## share/ bundle (spool share → any consuming agent)
 
