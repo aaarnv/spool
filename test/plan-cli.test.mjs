@@ -36,7 +36,9 @@ async function project({ git = false } = {}) {
 
 async function run(args, cwd = repo) {
   try {
-    const { stdout, stderr } = await exec(process.execPath, [cli, ...args], { cwd });
+    const { stdout, stderr } = await exec(process.execPath, [cli, ...args], {
+      cwd, env: { ...process.env, SPOOL_PUBLISH_TOKEN: 'spk_plan-cli-test' },
+    });
     return { code: 0, stdout, stderr };
   } catch (e) {
     return { code: e.code ?? 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' };

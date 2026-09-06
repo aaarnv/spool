@@ -23,6 +23,16 @@ npx playwright install chromium
 You also need `ffmpeg` on PATH (macOS: `brew install ffmpeg`) and node >= 20. Run `spool doctor`
 anytime to check your environment and get fix hints for anything missing.
 
+Creating a spool requires a Spool platform API key. Create and manage named keys at
+[Dashboard → API keys](https://spoolkit.dev/dashboard/api-keys), or run `spool login` to save one
+locally, or set `SPOOL_PUBLISH_TOKEN` in your environment (including CI). This
+applies to `live`, `record`, `vo`, `render`, `finish`, `build`, `plan build`, `share`,
+and `bg`, including runs with `--no-publish` or local voiceover. An OpenAI, Fish,
+or OpenRouter key does not replace the Spool key. The local prerequisite checks
+for a configured key without a network request; hosted operations authenticate it.
+Help, setup, diagnostics, scaffolding, plan drafting, and dry runs remain available
+without a key.
+
 `0.4.0` is the first npm release since `0.3.1`, and it ships the current CLI. The repo is
 [aaarnv/spool](https://github.com/aaarnv/spool).
 
@@ -342,6 +352,21 @@ Disabled for now. Plain-English edits of a published spool are off unless
 (normalized `video.mp4`, `timeline.json`, `render.json`, and the `vo/` segments), and
 `spool bg <workdir> <bg>` still swaps the canvas locally with no re-render. The kept
 shapes: [docs/EDIT-CONTRACT.md](./docs/EDIT-CONTRACT.md).
+
+Run `spool backgrounds` (or `--json`) to list the backgrounds installed on this
+machine. On macOS this includes iMac colors, Sonoma, available light/dark Sonoma
+variants, Tahoe, and solid colors such as `solid-space-gray`. Animated system
+wallpapers supply a still frame. Availability depends on which wallpapers macOS
+has installed; Spool does not download or bundle Apple's images.
+
+```bash
+spool backgrounds
+spool bg spool/my-feature tahoe
+spool bg spool/my-feature sonoma-dark
+SPOOL_BG=imac-purple spool render spool/my-feature
+```
+
+Only listed names are available locally. Bundled presets also work on Linux.
 
 ## Design notes
 

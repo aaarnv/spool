@@ -31,7 +31,9 @@ async function workdir(files) {
 // Run the CLI and return { code, stdout, stderr } without throwing on failure.
 async function runCli(args) {
   try {
-    const { stdout, stderr } = await exec(process.execPath, [cli, ...args], { cwd: repo });
+    const { stdout, stderr } = await exec(process.execPath, [cli, ...args], {
+      cwd: repo, env: { ...process.env, SPOOL_PUBLISH_TOKEN: 'spk_plan-workdir-test' },
+    });
     return { code: 0, stdout, stderr };
   } catch (e) {
     return { code: e.code ?? 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' };

@@ -7,6 +7,22 @@ import { fileURLToPath } from 'url';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const program = new Command();
 
+// Guard the individual media stages as well as the end-to-end commands, so
+// splitting a build into record/vo/render cannot skip the account prerequisite.
+// Scaffolding, validation, dry runs and setup remain usable before login.
+const mediaCommands = new Set(['live', 'record', 'vo', 'render', 'finish', 'build', 'share', 'bg']);
+program.hook('preAction', async (_program, command) => {
+  const isMediaCommand = command.parent === program && mediaCommands.has(command.name());
+  const isPlanBuild = command.parent?.name() === 'plan' && command.name() === 'build';
+  if (!isMediaCommand && !isPlanBuild) return;
+  const { requireSpoolToken } = await import('../src/config/require-token.mjs');
+  try {
+    await requireSpoolToken(command.opts());
+  } catch (error) {
+    program.error(error.message, { exitCode: 1, code: 'spool.authRequired' });
+  }
+});
+
 // A repeatable option: commander keeps the last value unless the collector says
 // otherwise. Used by `spool reply --verifies/--deviation/--override`, where a proof
 // names several items and each needs its own flag.
@@ -359,6 +375,23 @@ program
     }
     const { renderSpool } = await import(join(root, 'src/render/render.mjs'));
     await renderSpool({ workdir: wd, preview: !!opts.preview });
+  });
+
+program
+  .command('backgrounds')
+  .description('list bundled backgrounds and installed macOS wallpapers')
+  .option('--json', 'machine-readable background names and local source paths')
+  .action(async (opts) => {
+    const { listBackgrounds } = await import('../src/render/bg-resolve.mjs');
+    const backgrounds = await listBackgrounds();
+    if (opts.json) console.log(JSON.stringify(backgrounds, null, 2));
+    else {
+      for (const kind of ['preset', 'macos']) {
+        const names = backgrounds.filter(bg => bg.kind === kind).map(bg => bg.name);
+        console.log(`${kind === 'preset' ? 'Bundled presets' : 'Installed macOS wallpapers'}:\n  ${names.join('\n  ') || '(none)'}`);
+      }
+      console.log('\nUse: spool bg <workdir> <name>\nOr:  SPOOL_BG=<name> spool render <workdir>');
+    }
   });
 
 program

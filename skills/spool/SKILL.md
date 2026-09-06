@@ -19,6 +19,15 @@ npx playwright install chromium
 
 Also needs node ≥ 20 and ffmpeg on PATH (macOS: `brew install ffmpeg`).
 
+Before recording or building, a Spool platform API key must be configured through
+`spool login` or `SPOOL_PUBLISH_TOKEN`. This also applies to local voiceover,
+individual media stages, and `--no-publish`. Voice-provider keys alone are not enough.
+
+Run `spool backgrounds` to discover bundled presets and installed macOS wallpapers.
+When listed, `tahoe`, `sonoma-dark`, `sonoma-light`, iMac colors and `solid-*` names
+work with `spool bg <workdir> <name>` or `SPOOL_BG=<name> spool render <workdir>`.
+Animated macOS wallpapers are used as still backgrounds.
+
 The source is public at [github.com/aaarnv/spool](https://github.com/aaarnv/spool) under the
 Functional Source License. Clone it only to work ON the CLI, not to use it:
 
@@ -42,7 +51,7 @@ spool init
 Read the output before doing anything else:
 
 - **Step 1 fails** → STOP and fix what it names (node, ffmpeg, or chromium). It prints the exact
-  command for each. An `openai-key` warning is fine: hosted voice covers it, no key needed.
+  command for each. An `openai-key` warning is fine: hosted voice covers it using the Spool platform key.
 - **Step 2 says "not connected, and this is not a terminal"** → STOP and ask the human to run
   `spool login` themselves. It opens a browser to sign in and approve, and you cannot complete
   browser auth. If the human has already handed you a raw `spk_` token, write it directly and

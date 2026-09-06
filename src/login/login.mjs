@@ -12,7 +12,7 @@ async function promptToken() {
   try {
     const raw = (await rl.question("Paste your spk_ token: ")).trim();
     if (!raw.startsWith("spk_")) {
-      console.error("That doesn't look like a spool token (expected an spk_ prefix). Get one at https://spoolkit.dev/dashboard.");
+      console.error("That doesn't look like a spool token (expected an spk_ prefix). Get one at https://spoolkit.dev/dashboard/api-keys.");
       process.exit(1);
     }
     return raw;

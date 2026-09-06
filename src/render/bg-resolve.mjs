@@ -1,8 +1,8 @@
 // Background resolution: turns a `--bg` spec into an on-disk image to composite.
 // Resolution order (per the render contract):
 //   1. repo preset name  → assets/bg-<preset>.jpg (shipped gradients)
-//   2. macOS wallpaper    → /System/Library/Desktop Pictures/<Name>, converted to a
-//                           cached JPG under ~/.spool-cache/bg/ (HEIC via `sips`)
+//   2. macOS wallpaper    → installed still or video, converted to a cached JPG
+//                           under ~/.spool-cache/bg/ (sips or ffmpeg)
 //   3. filesystem path    → used as-is
 //   4. fallback           → repo DEFAULT_BG preset
 // macOS stills are resolved at RUNTIME (never shipped — they're Apple copyright) and
@@ -12,7 +12,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, copyFile } from "node:fs/promises";
+import { mkdir, readdir, stat, rename, rm } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join, dirname, resolve, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +25,12 @@ const ASSETS_DIR = join(dirname(dirname(__dirname)), "assets");
 const MAC_WALLPAPER_ROOT = "/System/Library/Desktop Pictures";
 const CACHE_DIR = join(homedir(), ".spool-cache", "bg");
 const IMAGE_EXT = new Set([".heic", ".jpg", ".jpeg", ".png", ".tiff"]);
+const VIDEO_EXT = new Set([".mov", ".mp4"]);
+const MAC_ALIASES = {
+  tahoe: 'tahoe-day',
+  'sonoma-light': 'sonoma-graphic-light-landscape',
+  'sonoma-dark': 'sonoma-graphic-dark-landscape',
+};
 
 // Wallpaper "name" ⇄ key: lowercase, spaces→dashes, extension stripped. Lets a user
 // pass "Sonoma", "sonoma", or "sonoma-horizon" interchangeably.
@@ -33,41 +40,74 @@ export const normalizeBgName = (s) =>
 const presetSource = (name) => ({ source: join(ASSETS_DIR, BG_PRESETS[name]), tag: name, kind: "preset" });
 
 // Scan the macOS wallpaper dir for full-res stills → Map<normalizedName, absPath>.
-// Top-level images + the per-wallpaper stills under .wallpapers/*/ (e.g. "Sonoma
-// Horizon.heic"). Skips .thumbnails (those are ~200px). Empty off-Mac / on error.
-export async function scanMacWallpapers() {
+// Top-level images, Solid Colors, and per-wallpaper stills/videos under .wallpapers/*/.
+// Skips thumbnails and portrait video variants. Empty off-Mac / on error.
+export async function scanMacWallpapers(root = MAC_WALLPAPER_ROOT) {
   const found = new Map();
-  if (!existsSync(MAC_WALLPAPER_ROOT)) return found;
-  const add = (file, dir) => {
-    if (!IMAGE_EXT.has(extname(file).toLowerCase())) return;
-    if (/thumbnail/i.test(file)) return; // low-res sidecar thumbnails, not usable as a canvas
+  const add = (file, dir, prefix = '') => {
+    if (!IMAGE_EXT.has(extname(file).toLowerCase()) && !VIDEO_EXT.has(extname(file).toLowerCase())) return;
+    if (/thumbnail|portrait/i.test(file)) return;
     const key = normalizeBgName(file);
-    if (!found.has(key)) found.set(key, join(dir, file));
+    if (!found.has(prefix + key)) found.set(prefix + key, join(dir, file));
   };
-  try {
-    for (const f of await readdir(MAC_WALLPAPER_ROOT)) add(f, MAC_WALLPAPER_ROOT);
-    const wpRoot = join(MAC_WALLPAPER_ROOT, ".wallpapers");
-    if (existsSync(wpRoot)) {
-      for (const entry of await readdir(wpRoot, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        const sub = join(wpRoot, entry.name);
-        for (const f of await readdir(sub)) add(f, sub);
-      }
+  // One unreadable folder must not hide unrelated wallpapers. Sort for stable
+  // duplicate resolution and ignore directories that happen to have image suffixes.
+  const entries = async (dir) => {
+    try { return (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name)); }
+    catch { return []; }
+  };
+  const scan = async (dir, prefix = '') => {
+    for (const entry of await entries(dir)) {
+      if (entry.isFile() || entry.isSymbolicLink()) add(entry.name, dir, prefix);
     }
-  } catch {
-    /* permission/IO race — return whatever we gathered */
+  };
+  await scan(root);
+  await scan(join(root, 'Solid Colors'), 'solid-');
+  const wpRoot = join(root, '.wallpapers');
+  for (const entry of await entries(wpRoot)) {
+    if (entry.isDirectory()) await scan(join(wpRoot, entry.name));
+  }
+  for (const [alias, name] of Object.entries(MAC_ALIASES)) {
+    if (found.has(name) && !found.has(alias)) found.set(alias, found.get(name));
   }
   return found;
 }
 
+export async function listBackgrounds() {
+  return [
+    ...Object.keys(BG_PRESETS).map(name => ({ name, ...presetSource(name) })),
+    ...[...await scanMacWallpapers()].sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, source]) => ({ name, source, kind: 'macos' })),
+  ];
+}
+
 // Convert/normalize a source image to a cached JPG (downscaled to ≤3840 wide — the
 // canvas is 1920px and cover-cropped, so more is wasted bytes). Cached by key so the
-// (slow) HEIC decode runs once. Requires `sips` (macOS only; only reached on a Mac).
+// (slow) HEIC decode runs once. Video frame extraction uses ffmpeg. The source
+// fingerprint invalidates the cache after OS updates; atomic writes avoid partial
+// JPEGs when multiple recordings request the same wallpaper concurrently.
 async function toCachedJpg(key, srcPath) {
   await mkdir(CACHE_DIR, { recursive: true });
-  const dest = join(CACHE_DIR, `${key}.jpg`);
+  const info = await stat(srcPath);
+  const version = createHash('sha256').update(`${srcPath}:${info.size}:${info.mtimeMs}`).digest('hex').slice(0, 12);
+  const dest = join(CACHE_DIR, `${key}-${version}.jpg`);
   if (existsSync(dest)) return dest;
-  await exec("sips", ["-s", "format", "jpeg", "-Z", "3840", srcPath, "--out", dest]);
+  const temporary = join(CACHE_DIR, `${key}-${randomUUID()}.jpg`);
+  try {
+    if (VIDEO_EXT.has(extname(srcPath).toLowerCase())) {
+      // Installed animated wallpapers become a still canvas, never an animation
+      // competing with the demo. Frame zero is available even for short assets.
+      await exec(process.env.FFMPEG || 'ffmpeg', [
+        '-y', '-loglevel', 'error', '-i', srcPath, '-frames:v', '1',
+        '-vf', "scale=w='min(3840,iw)':h=-2", '-q:v', '2', temporary,
+      ]);
+    } else {
+      await exec("sips", ["-s", "format", "jpeg", "-Z", "3840", srcPath, "--out", temporary]);
+    }
+    await rename(temporary, dest);
+  } finally {
+    await rm(temporary, { force: true });
+  }
   return dest;
 }
 
