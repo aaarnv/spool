@@ -14,7 +14,6 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cursorInitScript, drainCursorTrack, makeHelpers } from './cursor.js';
 import { CHAPTER_IDS, chapterField, isChapterId } from '../plan/chapters.mjs';
-import { CHANGE_FILE, changeTemplate, gitSource, validateChange } from '../change/change.mjs';
 import { resolveLaunchChannel } from '../config/prefs.mjs';
 import { createSignalRecorder, serializeSignals, inferSteps } from './signals.mjs';
 import { SIGNALS_FILE } from './recut.mjs';
@@ -338,96 +337,6 @@ export async function liveSession({ workdir, url, title, format, auth, headed = 
     return { status: 200, body: { ok: true, marker: sig.name, at: sig.t, url: page.url(), ...(warning ? { warning } : {}) } };
   }
 
-  // The intent behind the take, saved beside it in change.json: what was asked, what
-  // the agent set out to deliver, and any clarification that lands mid-drive. Merges
-  // into an existing record, and refuses a merge that would not validate.
-  async function doIntent(p) {
-    if (p.request == null && p.interpretation == null && p.clarification == null) {
-      return { status: 400, body: { ok: false, error: 'send at least one of request, interpretation, clarification' } };
-    }
-    const file = path.join(dir, CHANGE_FILE);
-    let doc;
-    if (existsSync(file)) {
-      try { doc = JSON.parse(await readFile(file, 'utf8')); } catch (e) {
-        return { status: 400, body: { ok: false, error: `${CHANGE_FILE} is not valid JSON: ${e.message}` } };
-      }
-    } else {
-      doc = changeTemplate({ source: await gitSource(dir) });
-    }
-    if (!doc.intent || typeof doc.intent !== 'object' || Array.isArray(doc.intent)) {
-      doc.intent = { request: null, interpretation: null, clarifications: [] };
-    }
-    if (!Array.isArray(doc.intent.clarifications)) doc.intent.clarifications = [];
-
-    const at = new Date().toISOString();
-    // Before the first step the request is the ask as given; after it, it is something
-    // learned on the way, and the record has to say which.
-    const capturedWhen = steps.length || current ? 'during' : 'before';
-    const saved = [];
-
-    if (p.request != null) {
-      const r = p.request;
-      if (typeof r !== 'object' || typeof r.text !== 'string' || !r.text.trim()) {
-        return { status: 400, body: { ok: false, error: 'request.text is required: the ask, verbatim' } };
-      }
-      doc.intent.request = {
-        text: r.text.trim(),
-        source: r.source ?? 'user',
-        ref: typeof r.ref === 'string' && r.ref.trim() ? r.ref.trim() : null,
-        capturedAt: at,
-        capturedWhen,
-      };
-      saved.push('request');
-    }
-
-    if (p.interpretation != null) {
-      const it = p.interpretation;
-      if (typeof it !== 'object' || typeof it.outcome !== 'string' || !it.outcome.trim()) {
-        return { status: 400, body: { ok: false, error: 'interpretation.outcome is required: what you set out to deliver' } };
-      }
-      doc.intent.interpretation = {
-        outcome: it.outcome.trim(),
-        constraints: (Array.isArray(it.constraints) ? it.constraints : [])
-          .filter((c) => typeof c === 'string' && c.trim())
-          .map((c) => c.trim()),
-        source: 'agent',
-      };
-      saved.push('interpretation');
-    }
-
-    let clarificationId = null;
-    if (p.clarification != null) {
-      const c = p.clarification;
-      if (typeof c !== 'object' || typeof c.text !== 'string' || !c.text.trim()) {
-        return { status: 400, body: { ok: false, error: 'clarification.text is required' } };
-      }
-      const taken = new Set(doc.intent.clarifications.map((x) => x && x.id));
-      let n = doc.intent.clarifications.length + 1;
-      while (taken.has(`c${n}`)) n++;
-      clarificationId = typeof c.id === 'string' && c.id.trim() ? c.id.trim() : `c${n}`;
-      // Clarifications append. Nothing here rewrites earlier text; a correction
-      // names what it supersedes and both stay readable.
-      doc.intent.clarifications.push({
-        id: clarificationId,
-        text: c.text.trim(),
-        source: c.source ?? 'user',
-        at,
-        supersedes: typeof c.supersedes === 'string' && c.supersedes.trim() ? c.supersedes.trim() : null,
-      });
-      saved.push(`clarification ${clarificationId}`);
-    }
-
-    const res = validateChange(doc);
-    if (!res.ok) {
-      return {
-        status: 400,
-        body: { ok: false, error: res.errors.map((e) => `${e.path}: ${e.message}`).join('; ') },
-      };
-    }
-    await writeFile(file, JSON.stringify(doc, null, 2) + '\n');
-    return { status: 200, body: { ok: true, saved, capturedWhen, ...(clarificationId ? { clarification: clarificationId } : {}), file } };
-  }
-
   // Failure forensics: screenshot + recent telemetry (+ candidates on locator-ish
   // errors), and a failures[] entry for session-notes.md. Must never throw.
   let jsFails = 0;
@@ -609,10 +518,6 @@ export async function liveSession({ workdir, url, title, format, auth, headed = 
       const r = await serialize(() => doMarker(payload));
       return sendJson(res, r.status, r.body);
     }
-    if (req.method === 'POST' && u.pathname === '/intent') {
-      const r = await serialize(() => doIntent(payload));
-      return sendJson(res, r.status, r.body);
-    }
     if (req.method === 'POST' && u.pathname === '/js') {
       const r = await serialize(() => doJs(payload));
       return sendJson(res, r.status, r.body);
@@ -638,7 +543,6 @@ export async function liveSession({ workdir, url, title, format, auth, headed = 
   errln(`  js:     curl -sX POST 127.0.0.1:${port}/js     -d '{"code":"await h.click(\\"#id\\")"}'`);
   errln(`  marker: curl -sX POST 127.0.0.1:${port}/marker -d '{"name":"open-inbox","narration":"..."}'`);
   errln(`  step:   curl -sX POST 127.0.0.1:${port}/step   -d '{"name":"open","narration":"..."}'  (brackets the work; markers do not)`);
-  errln(`  intent: curl -sX POST 127.0.0.1:${port}/intent -d '{"request":{"text":"what was asked","source":"user"}}'`);
   errln(`  end:    curl -sX POST 127.0.0.1:${port}/end`);
   return done;
 }
