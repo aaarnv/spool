@@ -6,6 +6,7 @@ import { join, resolve, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildWindows } from "../render/retime.mjs";
 import { planDigest, writeSharePlan } from "../plan/plan.mjs";
+import { MAX_REQUEST_TEXT, changeDigest, writeShareChange } from "../change/change.mjs";
 import { replyDigest, writeShareReply } from "../plan/reply.mjs";
 import { chapterField, chapterRanges } from "../plan/chapters.mjs";
 import { openComments } from "../plan/comments.mjs";
@@ -190,6 +191,29 @@ async function buildRecapSummary(dir) {
   };
 }
 
+// The request a change record falls back to when it states none of its own. Only a
+// `spool pr` workdir has pr.json, and a pull request never creates a record by itself.
+async function prRequest(dir) {
+  const path = join(dir, "pr.json");
+  if (!existsSync(path)) return null;
+  let info;
+  try {
+    info = await readJson(path);
+  } catch {
+    return null;
+  }
+  const body = [info.title, info.body].filter((s) => typeof s === "string" && s.trim()).join("\n\n").trim();
+  if (!body) return null;
+  const capped = body.length > MAX_REQUEST_TEXT ? body.slice(0, MAX_REQUEST_TEXT - 1).trimEnd() + "\u2026" : body;
+  return {
+    text: capped,
+    source: "pr",
+    ref: info.url ?? null,
+    capturedAt: new Date().toISOString(),
+    capturedWhen: "publish",
+  };
+}
+
 /**
  * Write the agent-consumable share/ bundle for a spool workdir.
  * See CONTRACTS.md "share/ bundle".
@@ -314,6 +338,11 @@ export async function shareSpool(workdir) {
   // published plan that does not validate is worse than no plan.
   const plan = await writeSharePlan(dir, shareDir);
 
+  // Change record (optional): the intent behind the work and the delivered result,
+  // published inline on spool.json so the watch page needs no second fetch. Throws
+  // on an invalid record, for the same reason the plan does.
+  const change = await writeShareChange(dir, shareDir, steps, { fallbackRequest: await prRequest(dir) });
+
   // Reply (optional, roadmap R4.2): the lineage that ties this recording back to one
   // moment of a parent plan. It rides in the bundle so a reply works on a published
   // link — a consumer follows the parent from the blob, not from the local workdir.
@@ -339,6 +368,7 @@ export async function shareSpool(workdir) {
     steps,
     ...(pr ? { pr } : {}),
     ...(plan ? { plan } : {}),
+    ...(change ? { change } : {}),
     ...(recap ? { recap } : {}),
     ...(reply ? { reply } : {}),
     console: {
@@ -357,7 +387,7 @@ export async function shareSpool(workdir) {
   await writeFile(join(shareDir, "transcript.txt"), transcript + (transcript ? "\n" : ""));
 
   console.log(
-    `[share] wrote ${shareDir} (${steps.length} steps, ${errors.length} console errors${plan ? ", plan packet" : ""}${
+    `[share] wrote ${shareDir} (${steps.length} steps, ${errors.length} console errors${plan ? ", plan packet" : ""}${change ? ", change record" : ""}${
       reply ? `, ${reply.replyKind} reply to ${reply.parent.spoolId}` : ""
     })`
   );
@@ -395,6 +425,12 @@ export async function readSpool(input) {
   lines.push(`duration: ${spool.duration}s${spool.rate && spool.rate !== 1 ? ` (${spool.rate}x)` : ""}`);
   lines.push(`voice:    ${spool.voice?.voice ?? "?"} (${spool.voice?.engine ?? "?"})`);
   lines.push("");
+  // The change record leads the body: what was asked for, and what was delivered
+  // against it, is the frame a reader needs before any per-step narration.
+  if (spool.change) {
+    lines.push(changeDigest(spool.change));
+    lines.push("");
+  }
   // Plan Spool: the packet is what a receiving agent acts on, so it leads the
   // digest — before the per-step narration it would otherwise have to infer from.
   if (spool.plan?.file && existsSync(join(shareDir, spool.plan.file))) {

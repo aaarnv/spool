@@ -709,6 +709,61 @@ buildOptions(
     await buildWorkdir(wd, opts);
   });
 
+// `spool change` is the change record namespace. A workdir holding change.json
+// carries the intent behind the work and the delivered result; `spool share`
+// validates it and publishes it inline. See CONTRACTS.md "Change record".
+const change = program
+  .command('change')
+  .description('change record: scaffold and check the intent + result a spool carries (change.json)');
+
+change
+  .command('init <workdir>')
+  .description('scaffold <workdir>/change.json with the source revision filled in')
+  .action(async (workdir) => {
+    const { initChange } = await import(join(root, 'src/change/change.mjs'));
+    const dir = resolve(workdir);
+    mkdirSync(dir, { recursive: true });
+    try {
+      const { path, source } = await initChange(dir);
+      const at = source.repo || source.commit ? ` (${source.repo ?? '?'}@${source.commit ?? '?'}${source.dirty ? ', plus uncommitted changes' : ''})` : '';
+      console.log(`Created ${path}${at}`);
+      console.log('Next:');
+      console.log('  1. Save the ask verbatim in intent.request, or POST /intent during `spool live`.');
+      console.log('  2. After the drive, write result.outcomes with a status and the evidence behind each one.');
+      console.log(`  3. spool change validate ${workdir}`);
+    } catch (e) {
+      console.error(`[change init] ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+change
+  .command('validate [workdir]')
+  .description('check change.json (exit 0 valid, 1 invalid, 2 no change record here)')
+  .option('--json', 'machine-readable diagnostics')
+  .action(async (workdir, opts) => {
+    const { readChange, CHANGE_FILE } = await import(join(root, 'src/change/change.mjs'));
+    const { formatDiagnostics } = await import(join(root, 'src/plan/schema.mjs'));
+    const dir = resolve(workdir || '.');
+    const record = await readChange(dir);
+    if (opts.json) {
+      const exit = !record.present ? 2 : record.ok ? 0 : 1;
+      console.log(JSON.stringify({ ok: record.ok && record.present, dir, present: record.present, exit, errors: record.errors, warnings: record.warnings }, null, 2));
+      process.exit(exit);
+    }
+    console.log(`change  ${dir}`);
+    if (!record.present) {
+      console.log(`  no ${CHANGE_FILE} here: this spool carries no change record.`);
+      console.log(`  Fix: run \`spool change init ${workdir || '.'}\`, or record one with POST /intent during \`spool live\`.`);
+      process.exit(2);
+    }
+    if (record.errors.length || record.warnings.length) console.log(formatDiagnostics(record));
+    console.log(record.ok
+      ? `valid: 0 error(s), ${record.warnings.length} warning(s).`
+      : `invalid: ${record.errors.length} error(s), ${record.warnings.length} warning(s). Contract: CONTRACTS.md "Change record".`);
+    process.exit(record.ok ? 0 : 1);
+  });
+
 // `spool reliability` — the local half of the R6.3 reliability baseline. Record,
 // render and publish happen on this machine and the CLI does not phone home, so the
 // success rate of the three operations that make a plan exist is read from the local
