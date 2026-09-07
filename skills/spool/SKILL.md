@@ -144,6 +144,59 @@ no re-record. See "Recut".
    re-running `spool build` on it gives a clean take.
 5. **Verify + report** (same as below).
 
+## Save the intent (change.json)
+
+A spool can carry one **change record**: what was asked, what you set out to deliver, and
+what you actually delivered. It shows as one line above the video that expands to the whole
+record. Save one whenever you are demoing work somebody asked for. It costs two curls.
+
+**Send the ask first.** Make `/intent` the FIRST call of the session, before any `/step` or
+`/marker`, so the record says the request came in before the work started:
+
+```bash
+curl -sX POST localhost:$P/intent -H 'content-type: application/json' -d '{
+  "request": { "text": "bring the corner radius back on cards and buttons", "source": "user" },
+  "interpretation": { "outcome": "restore the radius token on every rounded surface",
+                      "constraints": ["keep borders and shadows off", "no new tests"] }
+}'
+```
+
+- `request.text` is the ask VERBATIM, up to 1200 chars. Quote it. Do not summarize it.
+- `request.source` is `user` when those are their words. A request you reconstructed from a
+  ticket or a diff is `inferred`, and the page renders it as your inference, never as theirs.
+- `interpretation` is always yours: what you set out to deliver, and the constraints you held.
+- A correction mid-drive is a clarification. It appends, and nothing rewrites earlier text:
+
+```bash
+curl -sX POST localhost:$P/intent -d '{"clarification":{"text":"radius only, not borders","source":"user"}}'
+```
+
+Outside a live session, `spool change init spool/<slug>` writes the same file with the source
+revision filled in from git.
+
+**Fill the result after the drive, before you share.** Edit `change.json`: write
+`result.summary`, one `result.outcomes` entry per claim, and the `evidence` each claim rests on.
+
+- `status` is `verified`, `partial`, `unmet` or `unchecked`.
+- **`verified` needs evidence.** Cite at least one evidence id, or `spool share` refuses it.
+- **`unchecked` is an honest answer.** Use it for anything you did not look at. Never claim
+  `verified` to make the record look finished, and never claim it for the user.
+- `source` on an outcome says who says so: `user`, `agent` or `inferred`.
+- `step`, on an outcome or an evidence item, names a recorded step, so the panel seeks there.
+- `test` evidence must carry `detail` saying what ran and its scope.
+- What you did not deliver goes in `deviations`. What you could not check goes in `unknowns`.
+
+**Never paste a transcript or a prompt.** The record has no field for either, and it is
+published. Evidence is REFERENCED: a url, or `path#L12-L40`. Every text field other than the
+request is capped at 600 chars.
+
+```bash
+spool change validate spool/<slug>      # 0 valid, 1 invalid, 2 no record here
+```
+
+`spool share` runs the same validator again and fails on a record that would lie. `spool read`
+prints the record above the steps.
+
 ## Change the background without re-rendering
 
 Every render writes `layers/fg.webm` beside `final.mp4`: the whole composite except the
