@@ -97,7 +97,9 @@ export function validateChange(doc, { stepNames = null } = {}) {
 
   // A text field the record quotes: present, a string, and inside its cap.
   const checkText = (value, path, { required = true, max = MAX_TEXT } = {}) => {
-    if (value === undefined || value === null) {
+    // An optional field left empty means "not stated", the same as null, and both
+    // normalize to null. A required one still refuses an empty string.
+    if (value === undefined || value === null || (!required && value === '')) {
       if (required) error(path, 'required', `${path} is required and must be a non-empty string`);
       return;
     }
@@ -421,9 +423,8 @@ export function buildShareChange(doc, steps = []) {
   // published from a workdir whose cut was changed after the record was written.
   const anchor = (value) => {
     const name = text(value);
-    if (!name) return {};
-    const w = window.get(name);
-    return { step: name, ...(w ? { start: w.start, end: w.end } : {}) };
+    const w = name ? window.get(name) : null;
+    return { step: name || null, window: w ? { start: w.start, end: w.end } : null };
   };
 
   const intent = isObject(doc.intent) ? doc.intent : {};
@@ -466,15 +467,20 @@ export function buildShareChange(doc, steps = []) {
       summary: capped(result.summary, MAX_TEXT),
       outcomes: list(result.outcomes)
         .filter(isObject)
-        .map((o) => ({
-          id: text(o.id),
-          claim: capped(o.claim, MAX_TEXT),
-          status: o.status,
-          source: o.source,
-          evidence: list(o.evidence).filter(isText).map((e) => text(e)),
-          step: null,
-          ...anchor(o.step),
-        })),
+        .map((o) => {
+          const at = anchor(o.step);
+          return {
+            id: text(o.id),
+            claim: capped(o.claim, MAX_TEXT),
+            status: o.status,
+            source: o.source,
+            // Deduped: citing one id twice says nothing, and the server's stored copy
+            // dedupes, so the two normalized copies have to agree here.
+            evidence: [...new Set(list(o.evidence).filter(isText).map((e) => text(e)))],
+            step: at.step,
+            ...(at.window ?? {}),
+          };
+        }),
       deviations: list(result.deviations)
         .filter(isObject)
         .map((d) => ({ outcome: text(d.outcome) || null, note: capped(d.note, MAX_TEXT) })),
@@ -482,15 +488,20 @@ export function buildShareChange(doc, steps = []) {
     },
     evidence: list(doc.evidence)
       .filter(isObject)
-      .map((e) => ({
-        id: text(e.id),
-        type: e.type,
-        label: capped(e.label, MAX_TEXT),
-        ref: capped(e.ref, MAX_TEXT),
-        detail: capped(e.detail, MAX_TEXT),
-        step: null,
-        ...anchor(e.step),
-      })),
+      .map((e) => {
+        const at = anchor(e.step);
+        // Key order follows the authored schema, with start and end appended, because
+        // this document and the server's rewritten copy are meant to be the same bytes.
+        return {
+          id: text(e.id),
+          type: e.type,
+          label: capped(e.label, MAX_TEXT),
+          step: at.step,
+          ref: capped(e.ref, MAX_TEXT),
+          detail: capped(e.detail, MAX_TEXT),
+          ...(at.window ?? {}),
+        };
+      }),
     source: {
       repo: text(source.repo) || null,
       commit: text(source.commit) || null,
@@ -571,9 +582,7 @@ export async function gitSource(cwd = process.cwd()) {
   const [remote, commit, status] = await Promise.all([
     git(cwd, ['remote', 'get-url', 'origin']),
     git(cwd, ['rev-parse', '--short=10', 'HEAD']),
-    // Untracked files are not uncommitted work on the recorded tree, and they never
-    // reach the diff below, so they must not make a clean tree read as dirty.
-    git(cwd, ['status', '--porcelain', '--untracked-files=no']),
+    git(cwd, ['status', '--porcelain']),
   ]);
   const dirty = !!status && status.trim().length > 0;
   let fingerprint = null;
@@ -581,7 +590,7 @@ export async function gitSource(cwd = process.cwd()) {
     // 64MB: a working diff can be large, and a failed read must degrade to null
     // rather than throw away the rest of the source block.
     const diff = await git(cwd, ['diff', 'HEAD'], { maxBuffer: 64 * 1024 * 1024 });
-    if (diff !== null && diff.length) fingerprint = createHash('sha256').update(diff).digest('hex');
+    if (diff !== null) fingerprint = createHash('sha256').update(diff).digest('hex');
   }
   return { repo: repoSlug(remote && remote.trim()), commit: commit ? commit.trim() : null, dirty, fingerprint };
 }
