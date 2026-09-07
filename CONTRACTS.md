@@ -221,7 +221,6 @@ Endpoints (JSON in/out; page ops are serialized so requests can't interleave):
 |---|---|---|
 | `POST /step` | `{ name, narration, zoom?, chapterId? }` | `{ ok, index, name, chapterId?, url }` — closes the previous step (250ms settle) and opens a new one. **`narration` is required** (the renderer fits the window to it). `zoom` defaults to `"none"`; pass `{selector}` to frame the thing the narration is about (resolved to a box at step close, and to `"none"` if it does not resolve), `{x,y[,scale]}` for capture-pixel coords, or `"auto"` to aim at this step's clicks. |
 | `POST /js` | `{ code }` | `{ ok, result?, error?, url }` — runs `code` as the body of `async (page, h) => { … }` with the session `page` and the `h` helpers in scope. An error returns `ok:false` and does **not** kill the session (fix the selector and retry). Only successful snippets enter the snapshot. |
-| `POST /intent` | `{ request?: {text, source, ref}, interpretation?: {outcome, constraints}, clarification?: {text, source, supersedes} }` | `{ ok, saved, capturedWhen, clarification?, file }`. Writes the change record beside the take. Merges into `change.json` in the session dir, creating it from the template (with the git source revision) when it is missing. Stamps `capturedAt` and `capturedWhen`: `before` when no step has opened yet, `during` after one has. A merge that would not validate is refused with 400 and nothing is written. See "Change record". |
 | `GET /status` | — | `{ ok, url, elapsed, completed, current }` — current step index/name, elapsed seconds, url. |
 | `POST /end` | `{ discard? }` | `{ ok, dir, steps, total }` — closes the final step (settle first), stops recording, finalizes the outputs below, then the server exits. `discard:true` throws the take away and exits. |
 
@@ -2147,7 +2146,6 @@ spool/<slug>/share/
 ├── console.jsonl      # copied from the workdir
 ├── plan.json          # Plan Spools only (see "Plan Spools")
 ├── evidence.json      # Plan Spools only
-├── change.json        # spools carrying a change record (see "Change record")
 └── reply.json         # reply spools only (see "Replies")
 ```
 
@@ -2189,12 +2187,6 @@ On a Plan Spool, `kind` is `"plan"` and a `plan` object carries the packet summa
 watch page renders (goal, outcome, approach, alternatives, assumptions, risks, decision,
 evidence, links). The mutable decision status is never stamped into this immutable file:
 `spool read --plan` and the watch page read it from the host.
-
-A spool carrying a **change record** has a `change` object holding the whole normalized
-record (what was asked, what was delivered, the evidence, the source revision). It is
-inline rather than a file pointer so the watch page renders it without a second fetch;
-`share/change.json` holds the identical document. `kind` is unaffected: a change record
-never makes a spool a plan. See "Change record".
 
 `steps[].chapterId` is copied from `timeline.json` unchanged (Plan Spools only, additive);
 `spool read` prints a `chapters:` block with the range each chapter runs in. See "Plan
@@ -2267,132 +2259,6 @@ before they shipped still renders. The semantic packet itself lands in `plan.jso
 (roadmap R1.1); the block never carries the mutable decision status. `/api/publish`
 reads the ids to emit the lifecycle events in `docs/PLAN-SPOOLS-ANALYTICS.md`; a bundle
 without them publishes exactly as before.
-
-## Change record (change.json → share/change.json → spool.change)
-
-An ordinary spool can carry one **change record**: the intent behind the work, the
-delivered result with honest statuses, the evidence behind each claim, and the source
-revision it was built from. It is authored in the workdir as `change.json`, validated by
-`spool share`, copied to `share/change.json`, and stamped inline on `spool.json` as
-`spool.change`. The server validates it again at publish and rewrites `spool.json` with
-the normalized copy.
-
-The record never changes what a spool IS. `kind` stays `spool` (or `recap`, or `proof`),
-there is no second blob fetch on the watch page, and no link to `plan.json`. A spool with
-no `change.json` records, shares, publishes, reads and plays exactly as before.
-
-`src/change/change.mjs` is the single source of truth for this section, and
-`web/lib/change.ts` mirrors it rule for rule and code for code.
-
-### change.json v1 (authored, workdir)
-
-```json
-{
-  "version": 1,
-  "kind": "change",
-  "intent": {
-    "request": {
-      "text": "verbatim excerpt of what was asked",
-      "source": "user | issue | pr | inferred",
-      "ref": "https://... or null",
-      "capturedAt": "2026-09-07T03:10:00Z",
-      "capturedWhen": "before | during | publish"
-    },
-    "interpretation": {
-      "outcome": "what the agent set out to deliver, one or two sentences",
-      "constraints": ["keep borders and shadows off", "no new tests"],
-      "source": "agent"
-    },
-    "clarifications": [
-      { "id": "c1", "text": "radius only, not borders", "source": "user", "at": "2026-09-07T03:14:00Z", "supersedes": null }
-    ]
-  },
-  "result": {
-    "summary": "one paragraph: what changed and why it matters",
-    "outcomes": [
-      { "id": "o1", "claim": "cards, buttons and pills are rounded again", "status": "verified", "source": "user", "evidence": ["e1", "e2"], "step": "landing" }
-    ],
-    "deviations": [ { "outcome": "o1", "note": "the docs sidebar stripe stayed off" } ],
-    "unknowns": ["vertical format was not re-rendered"]
-  },
-  "evidence": [
-    { "id": "e1", "type": "ui", "label": "landing page after the change", "step": "landing", "ref": null, "detail": null },
-    { "id": "e2", "type": "test", "label": "next build", "step": null, "ref": null, "detail": "tsc --noEmit and next build, web/ only" }
-  ],
-  "source": { "repo": "aaarnv/spool-web", "commit": "d68610b", "dirty": false, "fingerprint": null },
-  "supersedesSpoolId": null
-}
-```
-
-### Rules
-
-Every check reports `{ path, code, message }`, the same diagnostics shape the plan
-validator uses, so `formatDiagnostics` prints both.
-
-- `version` must be `1`; `kind` must be `"change"`.
-- `intent` is optional, and `intent.request` may be `null` (the panel then reads "intent
-  not recorded"). `request.source` is one of `user | issue | pr | inferred`;
-  `capturedWhen` is one of `before | during | publish`; `capturedAt` is ISO 8601.
-- `interpretation.source` is always `"agent"`. `constraints` holds at most 12 items.
-- `clarifications` holds at most 25 items, ids are unique, and `supersedes` must name an
-  EARLIER clarification id. Clarifications append. Nothing rewrites earlier text.
-- `result` is optional. `outcomes` holds at most 50 items with unique ids; `status` is one
-  of `verified | partial | unmet | unchecked`; `source` is one of `user | agent |
-  inferred`; every id in `evidence` must exist in `evidence[]`.
-- **A `verified` outcome needs at least one evidence id.** A claim nobody checked must not
-  read like one somebody did, so the validator refuses it. `unchecked` is the honest
-  answer for anything nobody looked at.
-- `step`, on an outcome or an evidence item, must name a recorded step. The CLI checks it
-  against `timeline.json`, the server against `spool.steps[].name`. It is skipped when the
-  workdir has not been recorded yet.
-- `deviations` holds at most 25 items; `outcome`, when present, must be an outcome id.
-- `evidence` holds at most 50 items with unique ids; `type` is one of `ui | diff | test |
-  diagram`; a `test` item REQUIRES `detail` saying what ran and its scope.
-- `source.commit` is a 7 to 40 character hex sha or null, `dirty` is a boolean, and
-  `fingerprint` is the sha256 of `git diff HEAD` when the tree is dirty, else null. A
-  commit with `dirty: true` renders as "commit X plus uncommitted changes".
-- `supersedesSpoolId` is a published spool id or null. The server refuses it unless that
-  spool exists and has the same owner, and the watch page then shows "re-records <link>".
-  The predecessor keeps its media and its comments.
-- **Text caps.** `request.text` 1200 chars, every other text field 600. They are privacy,
-  not layout: the record has no transcript field and no prompt field, and `ref` values are
-  references (a url, or `path#Lx-Ly`), never contents. Unknown keys are dropped from the
-  normalized copy on both sides.
-
-### share/change.json and spool.change (published copy)
-
-The normalized document above, with one addition per outcome and evidence item that names
-a step: `start` and `end` on the OUTPUT clock, copied from the matching `spool.steps`
-entry. The watch page seeks without a lookup, and the value is already retimed. Nothing
-else is derived, and `spool.change` is this whole document.
-
-Every declared key is present in the normalized copy, so a renderer never branches on
-absence: `intent.request` is the object or `null`, `intent.interpretation` is the object
-or `null`, and every list is an array.
-
-### Where a request comes from
-
-Three ways, and nothing else:
-
-1. **`POST /intent`** on the live control server, before or during the drive (above).
-2. **`spool change init <workdir>`**, which scaffolds the file with `source` filled from
-   git, then the agent edits it.
-3. **The pull request body**, when `spool pr` scaffolded the workdir. `spool share` fills
-   `intent.request` from the PR title and body with `source: "pr"` and `capturedWhen:
-   "publish"`, and ONLY when `change.json` exists and states no request of its own. A pull
-   request never creates a record on its own.
-
-### `spool change`
-
-```bash
-spool change init spool/<slug>          # scaffold change.json; refuses to overwrite
-spool change validate spool/<slug>      # 0 valid, 1 invalid, 2 no record here
-```
-
-`init` refuses to overwrite because a record is appended to across a session. `validate`
-prints one diagnostic per field path, and `--json` gives the same as
-`{ ok, dir, present, exit, errors, warnings }`. `spool share` runs the same validator and
-fails with the same diagnostics: a published record that does not validate would lie.
 
 ## Plan Spools (plan.json, evidence.json, share/plan.json)
 
