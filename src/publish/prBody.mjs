@@ -8,7 +8,6 @@ export const ORIGINAL_START = "<!-- spool:original -->";
 export const ORIGINAL_END = "<!-- spool:original:end -->";
 export const BODY_MAX = 65536;
 const CHAPTER_ROWS = 12;
-const RECORD_ATTRIBUTION = "Description by [Spool](https://spoolkit.dev), from the change record the agent saved on its spool.";
 
 const clean = (s) => String(s ?? "").replace(/\r\n/g, "\n").trim();
 const mmss = (sec) => {
@@ -42,28 +41,25 @@ export function spliceRegion(body, region) {
   return [before, region, after].filter(Boolean).join("\n\n").slice(0, BODY_MAX);
 }
 
-function preserved(original) {
-  if (!original) return [];
-  return ["<details>", "<summary>The description this pull request opened with</summary>", "", ORIGINAL_START, original, ORIGINAL_END, "", "</details>"];
-}
+/** Only a claim nobody stood behind gets a word; a verified one reads as plain fact. */
+const STATUS_SUFFIX = { partial: " (partial)", unmet: " (not done)", unchecked: " (not verified)" };
 
-function requestLines(change) {
+/** The opening paragraph: the ask in its own words, else what the agent set out to do. */
+function whyParagraph(change) {
   const r = change.intent?.request;
-  if (!r || r.source === "pr") return [];
-  const text = clean(r.text);
-  if (!text) return [];
-  if (r.source === "user") return [`> ${text.replace(/\n+/g, " ")}`];
-  if (r.source === "issue") return [`From the issue: ${text}`];
-  return [`Inferred by the agent: ${text}`];
+  const request = r && r.source !== "pr" ? clean(r.text).replace(/\n+/g, " ") : "";
+  if (request) return r.source === "user" ? `> ${request}` : request;
+  return clean(change.intent?.interpretation?.outcome ?? "");
 }
 
-function outcomeLine(o, change, card) {
-  const labels = new Map((change.evidence || []).map((e) => [e.id, e.label]));
-  const parts = [clean(o.claim), o.status];
-  if (o.step && typeof o.start === "number") parts.push(`[${mmss(o.start)}](${watchAt(card.url, o.start)})`);
-  const cited = (o.evidence || []).map((id) => labels.get(id)).filter(Boolean);
-  if (cited.length) parts.push(cited.join(", "));
-  return `- ${parts.join(" · ")}`;
+function outcomeLine(o, card) {
+  const link = o.step && typeof o.start === "number" ? ` [${mmss(o.start)}](${watchAt(card.url, o.start)})` : "";
+  return `- ${clean(o.claim)}${STATUS_SUFFIX[o.status] ?? ""}${link}`;
+}
+
+function preservedShort(original) {
+  if (!original) return [];
+  return ["<details>", "<summary>Original description</summary>", "", ORIGINAL_START, original, ORIGINAL_END, "", "</details>"];
 }
 
 /** The before/after pairs a served change record carries. Only URL halves count. */
@@ -73,56 +69,37 @@ export function pairsOf(change) {
     .map((e) => ({ label: e.label, before: e.before, after: e.after }));
 }
 
-/** The region written from the change record. `card` is the published spool. */
+/** The region written from the change record: why, changes, screenshots, testing. */
 export function recordRegion({ change, card, original }) {
-  const why = [...requestLines(change), clean(change.intent?.interpretation?.outcome ?? "")].filter(Boolean);
-  const summary = clean(change.result?.summary ?? "");
+  const why = whyParagraph(change);
   const outcomes = change.result?.outcomes || [];
-  const worth = [
-    ...(change.result?.deviations || []).map((d) => `- Done differently: ${clean(d.note)}`),
-    ...(change.result?.unknowns || []).map((u) => `- Not checked: ${clean(u)}`),
-  ];
-  const runtime = card.duration && card.duration > 0 ? ` · ${mmss(card.duration)}, narrated` : "";
-  const chapterRows = card.chapters.length
-    ? [
-        "",
-        "<details>",
-        `<summary>Chapters (${card.chapters.length})</summary>`,
-        "",
-        ...card.chapters.slice(0, CHAPTER_ROWS).map((c) => `- [${mmss(c.start)}](${watchAt(card.url, c.start)}) ${c.name}`),
-        "",
-        "</details>",
-      ]
-    : [];
-  const pairRows = card.pairs.length
-    ? [
-        "### Before / after",
-        "",
-        ...card.pairs.flatMap((p) => [
-          `**${clean(p.label)}**`,
-          "",
-          "| Before | After |",
-          "|---|---|",
-          `| ![${clean(p.label)}, before](${p.before}) | ![${clean(p.label)}, after](${p.after}) |`,
-          "",
-        ]),
-      ]
-    : [];
+  const summary = clean(change.result?.summary ?? "");
+  const changes = outcomes.length ? outcomes.map((o) => outcomeLine(o, card)) : summary ? [summary] : [];
+  const tests = (change.evidence || []).filter((e) => e.type === "test").map((e) => `- ${clean(e.detail || e.label)}`);
+  const deviations = (change.result?.deviations || []).map((d) => `- ${clean(d.note)}`);
+  const unknowns = (change.result?.unknowns || []).map((u) => `- ${clean(u)}`);
+  const pairRows = card.pairs.flatMap((p) => [
+    ...(card.pairs.length > 1 ? [`**${clean(p.label)}**`, ""] : []),
+    "| Before | After |",
+    "|---|---|",
+    `| ![${clean(p.label)}, before](${p.before}) | ![${clean(p.label)}, after](${p.after}) |`,
+    "",
+  ]);
+  const runtime = card.duration && card.duration > 0 ? `, ${mmss(card.duration)}` : "";
+  const chapters = card.chapters.slice(0, CHAPTER_ROWS).map((c) => `[${c.name}](${watchAt(card.url, c.start)})`);
+  const walkthrough = [`[Walkthrough${runtime}](${card.url})`, ...chapters].join(" · ");
+
   const lines = [
     BODY_START,
-    ...(card.poster ? [`[![${card.title}](${card.poster})](${card.url})`, ""] : []),
-    `**[Watch: ${card.title}](${card.url})**${runtime}`,
-    ...chapterRows,
+    ...(why ? [why, ""] : []),
+    ...(changes.length ? ["### Changes", "", ...changes, ""] : []),
+    ...(pairRows.length ? ["### Before / after", "", ...pairRows] : []),
+    ...(tests.length ? ["### Testing", "", ...tests, ""] : []),
+    ...(deviations.length ? ["### Deviations", "", ...deviations, ""] : []),
+    ...(unknowns.length ? ["### Not verified", "", ...unknowns, ""] : []),
+    walkthrough,
     "",
-    ...(why.length ? ["### Why", "", why.join("\n\n"), ""] : []),
-    ...(summary || outcomes.length
-      ? ["### What changed", "", ...(summary ? [summary, ""] : []), ...outcomes.map((o) => outcomeLine(o, change, card)), ""]
-      : []),
-    ...pairRows,
-    ...(worth.length ? ["### Worth knowing", "", ...worth, ""] : []),
-    ...preserved(original),
-    "",
-    `<sub>${RECORD_ATTRIBUTION}</sub>`,
+    ...preservedShort(original),
     BODY_END,
   ];
   return lines.join("\n").replace(/\n{3,}/g, "\n\n");

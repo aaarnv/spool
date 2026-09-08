@@ -2419,15 +2419,19 @@ Three ways, and nothing else:
 `gh pr edit`, before it posts the watch-link comment. The body is fenced between
 `<!-- spool:pr-body -->` and `<!-- spool:pr-body:end -->`; the fence is replaced whole on
 every write and text outside it is never touched. The description a person wrote before
-the first write moves inside the fence under `<!-- spool:original -->`, collapsed, and
-survives every later write. Sections, in order: the watch card (poster, link, chapters),
-Why (the request unless its source is `pr`, then the interpretation outcome), What changed
-(`result.summary`, then one line per outcome: claim · status · deep link · evidence
-labels), Before / after (one two-column image table per `compare` item), Worth knowing
-(deviations as "Done differently", unknowns as "Not checked"). `src/publish/prBody.mjs`
-and `web/lib/prBody.ts` produce the same bytes for the same record; the App's merge-time
-write uses the record when the recap carries one and only falls back to a model summary
-of the diff when it does not.
+the first write moves inside the fence under `<!-- spool:original -->`, collapsed as
+"Original description", and survives every later write. The shape follows a hand-written
+description: one opening paragraph (the request in the user's words as a quote, an inferred
+request as plain text, else the interpretation outcome), then `### Changes` (one bullet per
+outcome, a deep link when it names a step, and a suffix only when the status is not
+`verified`: partial, not done, not verified; with no outcomes, `result.summary`), `### Before
+/ after` (one image table per `compare` item, labelled only when there are several),
+`### Testing` (the `detail` of every `test` item), `### Deviations`, `### Not verified`
+(unknowns), then one line linking the walkthrough and its chapters. Sections with nothing
+to say are left out. No poster, no attribution. `src/publish/prBody.mjs` and
+`web/lib/prBody.ts` produce the same bytes for the same record; the App's merge-time write
+uses the record when the recap carries one and only falls back to a model summary of the
+diff when it does not.
 
 ### `spool change`
 

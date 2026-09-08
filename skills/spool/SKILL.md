@@ -193,10 +193,11 @@ curl -sX POST localhost:$P/shot -d '{"name":"nav","state":"after","label":"Top n
 - Outside a live session: `spool change shot spool/<slug> nav --before old.png --after new.png`.
 
 **The pull request description writes itself from the record.** `spool publish spool/<slug>
---pr <number|url>` composes the PR body from `change.json`: Why (the request and your
-reading), What changed (each outcome with its status and a deep link), Before / after (the
-pairs), Worth knowing (deviations and unknowns), then the watch card. No model reads the
-diff. Whatever a person already wrote in the body is kept, collapsed, inside the fenced
+--pr <number|url>` composes the PR body from `change.json`: the request as the opening
+paragraph, Changes (one bullet per outcome, with a deep link), Before / after (the pairs),
+Testing (the detail of each test evidence item), Deviations, Not verified (unknowns), then
+one line linking the walkthrough. No model reads the diff. Write the record for a reader:
+short claims, test details that say what ran. Whatever a person already wrote in the body is kept, collapsed, inside the fenced
 region. So fill the record before you publish with `--pr`: the body is only as good as it.
 
 **Fill the result after the drive, before you share.** Edit `change.json`: write
