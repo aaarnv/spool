@@ -452,7 +452,15 @@ export async function liveSession({ workdir, url, title, format, auth, headed = 
     const file = path.join(dir, rel);
     await mkdir(path.dirname(file), { recursive: true });
     try {
-      if (p.selector) await page.locator(p.selector).first().screenshot({ path: file });
+      if (p.selector) {
+        // Clip the element's box: an element screenshot waits for it to hold still,
+        // and a page with motion behind it never does.
+        const target = page.locator(p.selector).first();
+        await target.scrollIntoViewIfNeeded();
+        const box = await target.boundingBox();
+        if (!box) throw new Error(`${p.selector} matched nothing visible`);
+        await page.screenshot({ path: file, clip: box });
+      }
       else await page.screenshot({ path: file, fullPage: p.fullPage === true });
     } catch (e) {
       return { status: 400, body: { ok: false, error: `screenshot failed: ${e.message}` } };

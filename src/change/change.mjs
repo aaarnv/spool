@@ -50,7 +50,7 @@ export const MAX_EVIDENCE = 50;
 export const MAX_COMPARE = 20;
 export const MAX_ID = 40;
 // A screenshot pair is published as-is, so the cap is the one a reviewer waits on.
-export const MAX_SHOT_BYTES = 2 * 1024 * 1024;
+export const MAX_SHOT_BYTES = 6 * 1024 * 1024;
 // A backstop, not a budget: every field is capped on its own, so an honest record is
 // orders of magnitude under this. It exists so nothing pathological reaches a publish.
 export const MAX_DOC_BYTES = 256 * 1024;

@@ -2359,7 +2359,7 @@ validator uses, so `formatDiagnostics` prints both.
   `^shots/[a-z0-9][a-z0-9._-]{0,60}\.png$`, in the workdir copy relative to the workdir and
   in `share/change.json` relative to `share/`. Anything else is refused with `evidence
   "<id>".before must be a png under shots/`. A record holds at most 20 `compare` items,
-  inside the 50 the whole list gets, and each PNG is at most 2MB. `spool share` refuses a
+  inside the 50 the whole list gets, and each PNG is at most 6MB. `spool share` refuses a
   record whose PNG is missing or oversize, with the same "the published copy would lie"
   wording an invalid record gets, and copies every named PNG to `share/shots/<basename>`.
   A `verified` outcome citing a `compare` item is evidenced, like any other type.
