@@ -343,7 +343,7 @@ async function publishSpoolInner(workdir, opts = {}, ctx = { attempts: 1 }) {
     }
     throw new Error(`publish failed: ${res.status} ${res.statusText} ${await res.text().catch(() => "")}`);
   }
-  const { id, url, uploads, previewUrl, knowledge, plan: planReceipt, reply: replyReceipt } = await res.json();
+  const { id, url, uploads, previewUrl, change: servedChange, knowledge, plan: planReceipt, reply: replyReceipt } = await res.json();
 
   // One grant per big binary: published final.mp4/frames (l/<id>/*) plus source
   // video.mp4 + seg wavs (spools/<id>/src/*) when the spool was published editable.
@@ -393,7 +393,7 @@ async function publishSpoolInner(workdir, opts = {}, ctx = { attempts: 1 }) {
       console.error(`[publish] PR comment (App): ${viaApp.action}${viaApp.url ? ` ${viaApp.url}` : ""}`);
     } else {
       if (viaApp?.reason) console.error(`[publish] PR comment: the App did not post (${viaApp.reason}) — using gh`);
-      await commentOnPR(url, spool, opts.pr, previewUrl).catch((e) =>
+      await commentOnPR(url, spool, opts.pr, previewUrl, servedChange).catch((e) =>
         console.error(`[publish] PR comment failed: ${e.message}\n[publish] post it manually: ${url}`),
       );
     }
@@ -421,24 +421,46 @@ export async function announceViaApp({ host, token, id }) {
 
 // Post the watch link as a PR comment via gh. pr === true ⇒ gh resolves the
 // current branch's PR; a number/URL targets one explicitly. Never fails publish.
-export async function commentOnPR(url, spool, pr, previewUrl) {
+export async function commentOnPR(url, spool, pr, previewUrl, servedChange = null) {
   await run("gh", ["--version"]).catch(() => {
     throw new Error("gh CLI not found on PATH");
   });
 
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   // A vertical PR spool is a recap, not a guided reading; it gets its own comment.
-  const body = !spool.pr
+  const card = !spool.pr
     ? walkthroughBody(url, spool, previewUrl, mmss)
     : spool.format === "vertical"
       ? recapBody(url, spool, previewUrl, mmss)
       : guideBody(url, spool, previewUrl, mmss);
+  const body = withCompares(card, servedChange);
 
   const args = ["pr", "comment"];
   if (pr !== true) args.push(String(pr));
   args.push("--body", body);
   const { stdout } = await run("gh", args);
   console.error(`[publish] PR comment: ${stdout.trim() || "posted"}`);
+}
+
+// The before/after pairs the served change record carries, one two-column image table
+// each, placed above the footer. The halves are blob URLs only in the server's copy.
+export function compareSection(change) {
+  const pairs = (change?.evidence || []).filter(
+    (e) => e.type === "compare" && /^https?:\/\//.test(e.before || "") && /^https?:\/\//.test(e.after || ""),
+  );
+  if (!pairs.length) return [];
+  const lines = ["", "**Before / after**"];
+  for (const e of pairs) {
+    lines.push("", `**${e.label}**`, "", "| Before | After |", "|---|---|", `| ![${e.label}, before](${e.before}) | ![${e.label}, after](${e.after}) |`);
+  }
+  return lines;
+}
+
+function withCompares(card, change) {
+  const section = compareSection(change);
+  if (!section.length) return card;
+  const at = card.lastIndexOf("\n\n<sub>");
+  return at < 0 ? card + section.join("\n") : card.slice(0, at) + section.join("\n") + card.slice(at);
 }
 
 // Shared shape of every PR comment: heading, optional inline preview, watch line, a
