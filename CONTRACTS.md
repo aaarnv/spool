@@ -2413,6 +2413,22 @@ Three ways, and nothing else:
    "publish"`, and ONLY when `change.json` exists and states no request of its own. A pull
    request never creates a record on its own.
 
+### The pull request description
+
+`spool publish <dir> --pr <n|url>` writes the PR body from the served change record through
+`gh pr edit`, before it posts the watch-link comment. The body is fenced between
+`<!-- spool:pr-body -->` and `<!-- spool:pr-body:end -->`; the fence is replaced whole on
+every write and text outside it is never touched. The description a person wrote before
+the first write moves inside the fence under `<!-- spool:original -->`, collapsed, and
+survives every later write. Sections, in order: the watch card (poster, link, chapters),
+Why (the request unless its source is `pr`, then the interpretation outcome), What changed
+(`result.summary`, then one line per outcome: claim · status · deep link · evidence
+labels), Before / after (one two-column image table per `compare` item), Worth knowing
+(deviations as "Done differently", unknowns as "Not checked"). `src/publish/prBody.mjs`
+and `web/lib/prBody.ts` produce the same bytes for the same record; the App's merge-time
+write uses the record when the recap carries one and only falls back to a model summary
+of the diff when it does not.
+
 ### `spool change`
 
 ```bash

@@ -1,12 +1,13 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { DEFAULT_HOST } from "../config/prefs.mjs";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { observe } from "../reliability/journal.mjs";
 import { withRetry } from "../reliability/retry.mjs";
+import { composeRecordBody, pairsOf } from "./prBody.mjs";
 
 const run = promisify(execFile);
 
@@ -343,7 +344,7 @@ async function publishSpoolInner(workdir, opts = {}, ctx = { attempts: 1 }) {
     }
     throw new Error(`publish failed: ${res.status} ${res.statusText} ${await res.text().catch(() => "")}`);
   }
-  const { id, url, uploads, previewUrl, change: servedChange, knowledge, plan: planReceipt, reply: replyReceipt } = await res.json();
+  const { id, url, uploads, previewUrl, change: servedChange, poster, knowledge, plan: planReceipt, reply: replyReceipt } = await res.json();
 
   // One grant per big binary: published final.mp4/frames (l/<id>/*) plus source
   // video.mp4 + seg wavs (spools/<id>/src/*) when the spool was published editable.
@@ -388,6 +389,13 @@ async function publishSpoolInner(workdir, opts = {}, ctx = { attempts: 1 }) {
   // The spool is published and published.json is written, so a failed comment is not a
   // failed publish; print the link so it can be posted by hand (CI asserts it separately).
   if (opts.pr) {
+    // The description comes first and from the record: the agent already said what was
+    // asked and what it delivered, so no model reads the diff to guess at it.
+    if (servedChange) {
+      await writePrDescription(opts.pr, { url, spool, poster, change: servedChange }).catch((e) =>
+        console.error(`[publish] PR description failed: ${e.message}`),
+      );
+    }
     const viaApp = await announceViaApp({ host, token, id });
     if (viaApp?.posted || viaApp?.action === "skipped") {
       console.error(`[publish] PR comment (App): ${viaApp.action}${viaApp.url ? ` ${viaApp.url}` : ""}`);
@@ -417,6 +425,38 @@ export async function announceViaApp({ host, token, id }) {
   } catch {
     return null;
   }
+}
+
+// Write the pull request's description from the change record, through gh. The fenced
+// region is replaced whole; whatever a person wrote is kept, collapsed, inside it.
+export async function writePrDescription(pr, { url, spool, poster, change }) {
+  await run("gh", ["--version"]).catch(() => {
+    throw new Error("gh CLI not found on PATH");
+  });
+  const target = pr === true ? [] : [String(pr)];
+  const { stdout } = await run("gh", ["pr", "view", ...target, "--json", "body,url", "-q", "."]);
+  const view = JSON.parse(stdout);
+  const card = {
+    url,
+    title: spool.title || "spool",
+    poster: poster ?? null,
+    duration: spool.duration ?? null,
+    chapters: (spool.steps || []).filter((s) => s.name && Number.isFinite(s.start)).slice(0, 24).map((s) => ({ name: s.name, start: Math.max(0, s.start) })),
+    pairs: pairsOf(change),
+  };
+  const body = composeRecordBody({ current: view.body, change, card });
+  if (body.trim() === String(view.body || "").trim()) {
+    console.error("[publish] PR description: unchanged");
+    return;
+  }
+  const file = join(tmpdir(), `spool-pr-body-${process.pid}.md`);
+  await writeFile(file, body);
+  try {
+    await run("gh", ["pr", "edit", ...target, "--body-file", file]);
+  } finally {
+    await rm(file, { force: true });
+  }
+  console.error(`[publish] PR description: written (${view.url})`);
 }
 
 // Post the watch link as a PR comment via gh. pr === true ⇒ gh resolves the
