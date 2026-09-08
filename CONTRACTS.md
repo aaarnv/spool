@@ -28,6 +28,7 @@ spool/<slug>/
 ├── signals.jsonl        # what the session did, on the video clock (the cut is derived from this)
 ├── timeline.prev.json   # written by `spool recut` (the cut it replaced)
 ├── keyframes/step_NN.png # written by `spool live` (one per step; scripted path uses share/frames)
+├── shots/<name>-<state>.png # written by `POST /shot` and `spool change shot` (compare evidence)
 ├── video.mp4            # written by `spool render` (normalize pass, CFR 30fps H264)
 ├── final.mp4            # written by `spool render` (the deliverable)
 ├── plan.json            # Plan Spools only: the semantic plan (see "Plan Spools")
@@ -222,6 +223,7 @@ Endpoints (JSON in/out; page ops are serialized so requests can't interleave):
 | `POST /step` | `{ name, narration, zoom?, chapterId? }` | `{ ok, index, name, chapterId?, url }` — closes the previous step (250ms settle) and opens a new one. **`narration` is required** (the renderer fits the window to it). `zoom` defaults to `"none"`; pass `{selector}` to frame the thing the narration is about (resolved to a box at step close, and to `"none"` if it does not resolve), `{x,y[,scale]}` for capture-pixel coords, or `"auto"` to aim at this step's clicks. |
 | `POST /js` | `{ code }` | `{ ok, result?, error?, url }` — runs `code` as the body of `async (page, h) => { … }` with the session `page` and the `h` helpers in scope. An error returns `ok:false` and does **not** kill the session (fix the selector and retry). Only successful snippets enter the snapshot. |
 | `POST /intent` | `{ request?: {text, source, ref}, interpretation?: {outcome, constraints}, clarification?: {text, source, supersedes} }` | `{ ok, saved, capturedWhen, clarification?, file }`. Writes the change record beside the take. Merges into `change.json` in the session dir, creating it from the template (with the git source revision) when it is missing. Stamps `capturedAt` and `capturedWhen`: `before` when no step has opened yet, `during` after one has. A merge that would not validate is refused with 400 and nothing is written. See "Change record". |
+| `POST /shot` | `{ name, state, label?, selector?, fullPage?, step? }` | `{ ok, file, evidence, pending }`. Writes `shots/<name>-<state>.png` in the session dir with `page.screenshot`, overwriting a previous take of the same half. `name` matches `[a-z0-9][a-z0-9-]{0,40}`; `state` is `before` or `after`; `selector` shoots that element only; `fullPage` defaults to false; `step` defaults to the open step's name. It is a capture, not an action: nothing reaches `signals.jsonl`, `steps.mjs` or the take. Once BOTH halves exist it upserts the `compare` evidence item `shot-<name>` in `change.json`, and `pending` names the half still missing until then. A record that would not validate is refused with 400. See "Change record". |
 | `GET /status` | — | `{ ok, url, elapsed, completed, current }` — current step index/name, elapsed seconds, url. |
 | `POST /end` | `{ discard? }` | `{ ok, dir, steps, total }` — closes the final step (settle first), stops recording, finalizes the outputs below, then the server exits. `discard:true` throws the take away and exits. |
 
@@ -2148,6 +2150,7 @@ spool/<slug>/share/
 ├── plan.json          # Plan Spools only (see "Plan Spools")
 ├── evidence.json      # Plan Spools only
 ├── change.json        # spools carrying a change record (see "Change record")
+├── shots/<name>-<state>.png # one per compare evidence half, copied from the workdir
 └── reply.json         # reply spools only (see "Replies")
 ```
 
@@ -2317,7 +2320,8 @@ no `change.json` records, shares, publishes, reads and plays exactly as before.
   },
   "evidence": [
     { "id": "e1", "type": "ui", "label": "landing page after the change", "step": "landing", "ref": null, "detail": null },
-    { "id": "e2", "type": "test", "label": "next build", "step": null, "ref": null, "detail": "tsc --noEmit and next build, web/ only" }
+    { "id": "e2", "type": "test", "label": "next build", "step": null, "ref": null, "detail": "tsc --noEmit and next build, web/ only" },
+    { "id": "shot-nav", "type": "compare", "label": "Top nav, seven links to four", "before": "shots/nav-before.png", "after": "shots/nav-after.png", "step": "open-docs", "ref": null, "detail": null }
   ],
   "source": { "repo": "aaarnv/spool-web", "commit": "d68610b", "dirty": false, "fingerprint": null },
   "supersedesSpoolId": null
@@ -2348,7 +2352,17 @@ validator uses, so `formatDiagnostics` prints both.
 - `deviations` holds at most 25 items; `outcome`, when present, must be an outcome id.
   `unknowns` holds at most 25 items.
 - `evidence` holds at most 50 items with unique ids; `type` is one of `ui | diff | test |
-  diagram`; a `test` item REQUIRES `detail` saying what ran and its scope.
+  diagram | compare`; a `test` item REQUIRES `detail` saying what ran and its scope.
+- **`compare` is a pair of screenshots: the UI as it was, and as it is now.** `before` and
+  `after` are both REQUIRED on a `compare` item, and carried only by one: every other type
+  normalizes them to `null`, so a renderer never branches on absence. Both must match
+  `^shots/[a-z0-9][a-z0-9._-]{0,60}\.png$`, in the workdir copy relative to the workdir and
+  in `share/change.json` relative to `share/`. Anything else is refused with `evidence
+  "<id>".before must be a png under shots/`. A record holds at most 20 `compare` items,
+  inside the 50 the whole list gets, and each PNG is at most 2MB. `spool share` refuses a
+  record whose PNG is missing or oversize, with the same "the published copy would lie"
+  wording an invalid record gets, and copies every named PNG to `share/shots/<basename>`.
+  A `verified` outcome citing a `compare` item is evidenced, like any other type.
 - Every id (clarification, outcome, evidence) is at most 40 characters. An id is an
   anchor other fields point at, so it has to survive being read back.
 - `source.commit` is a 7 to 40 character hex sha or null, `dirty` is a boolean, and
@@ -2377,6 +2391,12 @@ else is derived, and `spool.change` is this whole document.
 `start` and `end` are non-negative finite numbers, and they ride only on an item that
 also has a `step`. An item with no step carries neither, rather than carrying nulls.
 
+Evidence keys are emitted in this order, so the CLI copy and the server's rewritten copy
+are the same bytes: `id, type, label, step, ref, detail, before, after`, then `start` and
+`end`. In the SERVED copy (`spool.change` on the blob) `before` and `after` are absolute
+blob urls the server wrote, one grant per half at `l/<id>/shots/<basename>`. Same rule as
+`step.frame`: the CLI never writes a url, and the server never trusts one.
+
 Every declared key is present in the normalized copy, so a renderer never branches on
 absence: `intent.request` is the object or `null`, `intent.interpretation` is the object
 or `null`, and every list is an array.
@@ -2398,9 +2418,14 @@ Three ways, and nothing else:
 ```bash
 spool change init spool/<slug>          # scaffold change.json; refuses to overwrite
 spool change validate spool/<slug>      # 0 valid, 1 invalid, 2 no record here
+spool change shot spool/<slug> nav --before old.png --after new.png --label "Top nav"
 ```
 
-`init` refuses to overwrite because a record is appended to across a session. `validate`
+`shot` copies each given PNG to `<workdir>/shots/<name>-<state>.png` and upserts the
+`compare` item `shot-<name>`, under the same rule `POST /shot` follows: the item is written
+only once BOTH halves are on disk, and one call may carry one half. It refreshes the paths
+on a re-shoot and keeps whatever a person wrote on the item, so an edited label or detail
+survives. `init` refuses to overwrite because a record is appended to across a session. `validate`
 prints one diagnostic per field path, and `--json` gives the same as
 `{ ok, dir, present, exit, errors, warnings }`. `spool share` runs the same validator and
 fails with the same diagnostics: a published record that does not validate would lie.

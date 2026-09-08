@@ -14,7 +14,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cursorInitScript, drainCursorTrack, makeHelpers } from './cursor.js';
 import { CHAPTER_IDS, chapterField, isChapterId } from '../plan/chapters.mjs';
-import { CHANGE_FILE, changeTemplate, gitSource, validateChange } from '../change/change.mjs';
+import { CHANGE_FILE, MAX_TEXT, SHOT_NAME_RE, SHOT_STATES, changeTemplate, gitSource, shotPath, upsertShot, validateChange } from '../change/change.mjs';
 import { resolveLaunchChannel } from '../config/prefs.mjs';
 import { createSignalRecorder, serializeSignals, inferSteps } from './signals.mjs';
 import { SIGNALS_FILE } from './recut.mjs';
@@ -428,6 +428,46 @@ export async function liveSession({ workdir, url, title, format, auth, headed = 
     return { status: 200, body: { ok: true, saved, capturedWhen, ...(clarificationId ? { clarification: clarificationId } : {}), file } };
   }
 
+  // One half of a before/after pair, saved beside the take in shots/. It is a capture,
+  // not an action: nothing reaches signals.jsonl, steps.mjs or the take.
+  async function doShot(p) {
+    const name = typeof p.name === 'string' ? p.name.trim() : '';
+    if (!SHOT_NAME_RE.test(name)) {
+      return { status: 400, body: { ok: false, error: 'name is required: lower-case letters, digits and dashes, up to 41 characters' } };
+    }
+    if (!SHOT_STATES.includes(p.state)) {
+      return { status: 400, body: { ok: false, error: `state is required: one of ${SHOT_STATES.join(', ')}` } };
+    }
+    if (p.label != null && (typeof p.label !== 'string' || p.label.length > MAX_TEXT)) {
+      return { status: 400, body: { ok: false, error: `label must be a string of at most ${MAX_TEXT} characters` } };
+    }
+    if (p.selector != null && (typeof p.selector !== 'string' || !p.selector.trim())) {
+      return { status: 400, body: { ok: false, error: 'selector must be a non-empty string when given' } };
+    }
+    if (p.step != null && typeof p.step !== 'string') {
+      return { status: 400, body: { ok: false, error: 'step must be a string naming a step when given' } };
+    }
+
+    const rel = shotPath(name, p.state);
+    const file = path.join(dir, rel);
+    await mkdir(path.dirname(file), { recursive: true });
+    try {
+      if (p.selector) await page.locator(p.selector).first().screenshot({ path: file });
+      else await page.screenshot({ path: file, fullPage: p.fullPage === true });
+    } catch (e) {
+      return { status: 400, body: { ok: false, error: `screenshot failed: ${e.message}` } };
+    }
+
+    // An open step is the moment this shot belongs to, unless the caller names another.
+    const step = p.step != null ? p.step.trim() : current ? current.name : null;
+    try {
+      const saved = await upsertShot(dir, { name, label: p.label ?? null, step: step || null });
+      return { status: 200, body: { ok: true, file, evidence: saved.evidence, pending: saved.pending } };
+    } catch (e) {
+      return { status: 400, body: { ok: false, error: e.message } };
+    }
+  }
+
   // Failure forensics: screenshot + recent telemetry (+ candidates on locator-ish
   // errors), and a failures[] entry for session-notes.md. Must never throw.
   let jsFails = 0;
@@ -613,6 +653,10 @@ export async function liveSession({ workdir, url, title, format, auth, headed = 
       const r = await serialize(() => doIntent(payload));
       return sendJson(res, r.status, r.body);
     }
+    if (req.method === 'POST' && u.pathname === '/shot') {
+      const r = await serialize(() => doShot(payload));
+      return sendJson(res, r.status, r.body);
+    }
     if (req.method === 'POST' && u.pathname === '/js') {
       const r = await serialize(() => doJs(payload));
       return sendJson(res, r.status, r.body);
@@ -639,6 +683,7 @@ export async function liveSession({ workdir, url, title, format, auth, headed = 
   errln(`  marker: curl -sX POST 127.0.0.1:${port}/marker -d '{"name":"open-inbox","narration":"..."}'`);
   errln(`  step:   curl -sX POST 127.0.0.1:${port}/step   -d '{"name":"open","narration":"..."}'  (brackets the work; markers do not)`);
   errln(`  intent: curl -sX POST 127.0.0.1:${port}/intent -d '{"request":{"text":"what was asked","source":"user"}}'`);
+  errln(`  shot:   curl -sX POST 127.0.0.1:${port}/shot   -d '{"name":"nav","state":"before"}'  (the after half writes the compare evidence)`);
   errln(`  end:    curl -sX POST 127.0.0.1:${port}/end`);
   return done;
 }
