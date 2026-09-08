@@ -582,7 +582,9 @@ export async function gitSource(cwd = process.cwd()) {
   const [remote, commit, status] = await Promise.all([
     git(cwd, ['remote', 'get-url', 'origin']),
     git(cwd, ['rev-parse', '--short=10', 'HEAD']),
-    git(cwd, ['status', '--porcelain']),
+    // Untracked files are not uncommitted work on the recorded tree, and they never
+    // reach the diff below, so they must not make a clean tree read as dirty.
+    git(cwd, ['status', '--porcelain', '--untracked-files=no']),
   ]);
   const dirty = !!status && status.trim().length > 0;
   let fingerprint = null;
@@ -590,7 +592,7 @@ export async function gitSource(cwd = process.cwd()) {
     // 64MB: a working diff can be large, and a failed read must degrade to null
     // rather than throw away the rest of the source block.
     const diff = await git(cwd, ['diff', 'HEAD'], { maxBuffer: 64 * 1024 * 1024 });
-    if (diff !== null) fingerprint = createHash('sha256').update(diff).digest('hex');
+    if (diff !== null && diff.length) fingerprint = createHash('sha256').update(diff).digest('hex');
   }
   return { repo: repoSlug(remote && remote.trim()), commit: commit ? commit.trim() : null, dirty, fingerprint };
 }
