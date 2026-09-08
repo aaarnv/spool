@@ -871,6 +871,10 @@ you need. Use this instead of parsing the MP4 — the `share/` bundle (auto-writ
 `spool build`) exists exactly so agents can review each other's demos, verify claimed
 fixes, and file bugs from the captured `console.jsonl`.
 
+Given only a watch link, fetch the page and read its `<link rel="alternate"
+type="application/json">`: it points at that spool's `spool.json` on the blob store, and
+`console.jsonl` sits beside it under the same prefix. The page itself shows no such links.
+
 ## Comments on any spool
 
 Anybody on the project can pin a comment to a moment of any spool you publish, not just a
