@@ -33,7 +33,9 @@ for a configured key without a network request; hosted operations authenticate i
 Help, setup, diagnostics, scaffolding, plan drafting, and dry runs remain available
 without a key.
 
-`0.4.0` is the first npm release since `0.3.1`, and it ships the current CLI. The repo is
+`0.5.0` adds the change record's before/after screenshots (`POST /shot` in a live session,
+`spool change shot` outside one, a slider on the watch page) and writes the pull request
+description from the record when you publish with `--pr`. The repo is
 [aaarnv/spool](https://github.com/aaarnv/spool).
 
 To work on spool itself, install from a clone instead:
