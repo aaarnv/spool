@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -733,41 +733,6 @@ change
       console.log(`  3. spool change validate ${workdir}`);
     } catch (e) {
       console.error(`[change init] ${e.message}`);
-      process.exit(1);
-    }
-  });
-
-change
-  .command('shot <workdir> <name>')
-  .description('file a before/after screenshot pair as compare evidence (shots/<name>-<state>.png)')
-  .option('--before <png>', 'the UI as it was')
-  .option('--after <png>', 'the UI as it is now')
-  .option('--label <text>', 'what the pair shows; defaults to the name')
-  .option('--step <name>', 'the recorded step the pair belongs to')
-  .action(async (workdir, name, opts) => {
-    const { shotPath, upsertShot } = await import(join(root, 'src/change/change.mjs'));
-    const dir = resolve(workdir);
-    const given = ['before', 'after'].filter((s) => opts[s]);
-    if (!given.length) {
-      console.error('[change shot] give at least one of --before <png> or --after <png>');
-      process.exit(1);
-    }
-    try {
-      const written = [];
-      for (const state of given) {
-        const src = resolve(opts[state]);
-        if (!existsSync(src)) throw new Error(`${src} does not exist`);
-        const rel = shotPath(name, state);
-        mkdirSync(dirname(join(dir, rel)), { recursive: true });
-        copyFileSync(src, join(dir, rel));
-        written.push(rel);
-      }
-      const saved = await upsertShot(dir, { name, label: opts.label ?? null, step: opts.step ?? null });
-      console.log(saved.pending
-        ? `wrote ${written.join(', ')}. Waiting on the ${saved.pending} half.`
-        : `wrote ${written.join(', ')}. Pair complete: evidence ${saved.evidence} in ${saved.file}.`);
-    } catch (e) {
-      console.error(`[change shot] ${e.message}`);
       process.exit(1);
     }
   });

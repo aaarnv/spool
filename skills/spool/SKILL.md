@@ -174,24 +174,6 @@ curl -sX POST localhost:$P/intent -d '{"clarification":{"text":"radius only, not
 Outside a live session, `spool change init spool/<slug>` writes the same file with the source
 revision filled in from git.
 
-### Before and after screenshots
-
-A `compare` evidence item carries two screenshots of the same thing: the UI as it was, and
-as it is now. Shoot the BEFORE half against the old build, so it is real. Three ways to get
-one, cheapest first: `page.goto` a `git worktree add` of the merge base running on another
-port, shoot before you apply the change, or shoot with the flag off.
-
-```bash
-curl -sX POST localhost:$P/shot -d '{"name":"nav","state":"before"}'
-curl -sX POST localhost:$P/shot -d '{"name":"nav","state":"after","label":"Top nav, seven links to four"}'
-```
-
-- `name` is lower case letters, digits and dashes. `selector` shoots one element,
-  `fullPage:true` shoots the whole page, and `step` defaults to the open step.
-- The pair becomes evidence `shot-<name>` once BOTH halves exist. Cite that id from the
-  outcome it proves, the same as any other evidence.
-- Outside a live session: `spool change shot spool/<slug> nav --before old.png --after new.png`.
-
 **Fill the result after the drive, before you share.** Edit `change.json`: write
 `result.summary`, one `result.outcomes` entry per claim, and the `evidence` each claim rests on.
 

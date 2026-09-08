@@ -16,7 +16,7 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { formatDiagnostics } from '../plan/schema.mjs';
@@ -34,8 +34,7 @@ export const CAPTURED_WHEN = ['before', 'during', 'publish'];
 export const STATEMENT_SOURCES = ['user', 'agent', 'inferred'];
 /** The proof vocabulary plus `unchecked`, which is an honest answer rather than a silence. */
 export const OUTCOME_STATUSES = ['verified', 'partial', 'unmet', 'unchecked'];
-/** `compare` is the one type that carries a pair of screenshots, the UI before and after. */
-export const EVIDENCE_TYPES = ['ui', 'diff', 'test', 'diagram', 'compare'];
+export const EVIDENCE_TYPES = ['ui', 'diff', 'test', 'diagram'];
 
 // Caps are privacy, not layout: a record must not become a place a transcript is
 // pasted. The request gets more room because it is quoted verbatim.
@@ -47,22 +46,13 @@ export const MAX_OUTCOMES = 50;
 export const MAX_DEVIATIONS = 25;
 export const MAX_UNKNOWNS = 25;
 export const MAX_EVIDENCE = 50;
-export const MAX_COMPARE = 20;
 export const MAX_ID = 40;
-// A screenshot pair is published as-is, so the cap is the one a reviewer waits on.
-export const MAX_SHOT_BYTES = 2 * 1024 * 1024;
 // A backstop, not a budget: every field is capped on its own, so an honest record is
 // orders of magnitude under this. It exists so nothing pathological reaches a publish.
 export const MAX_DOC_BYTES = 256 * 1024;
 
 const SPOOL_ID_RE = /^[A-Za-z0-9_-]{16,}$/;
 const COMMIT_RE = /^[0-9a-f]{7,40}$/;
-/** The directory a screenshot pair lives in, in the workdir and in the bundle alike. */
-export const SHOTS_DIR = 'shots';
-export const SHOT_NAME_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
-export const SHOT_STATES = ['before', 'after'];
-// A path, never a url: the CLI never writes a url here and the server never trusts one.
-export const SHOT_PATH_RE = /^shots\/[a-z0-9][a-z0-9._-]{0,60}\.png$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -232,7 +222,6 @@ export function validateChange(doc, { stepNames = null } = {}) {
   } else {
     const items = list(doc.evidence);
     if (items.length > MAX_EVIDENCE) error('evidence', 'too-many', `at most ${MAX_EVIDENCE} evidence items (got ${items.length})`);
-    let compares = 0;
     items.forEach((e, i) => {
       const at = `evidence[${i}]`;
       if (!isObject(e)) return error(at, 'invalid-type', `${at} must be an object`);
@@ -251,20 +240,7 @@ export function validateChange(doc, { stepNames = null } = {}) {
       if (e.type === 'test' && !isText(e.detail)) {
         error(`${at}.detail`, 'required', `evidence "${id || i}" is a test, so it must say what ran and its scope, for example "tsc --noEmit and next build, web/ only"`);
       }
-      // Both halves, or it is not a comparison. The paths are checked as strings here;
-      // `spool share` is where the files themselves are checked.
-      if (e.type === 'compare') {
-        compares++;
-        for (const half of SHOT_STATES) {
-          const value = e[half];
-          const where = `${at}.${half}`;
-          const message = `evidence "${id || i}".${half} must be a png under ${SHOTS_DIR}/`;
-          if (value === undefined || value === null || value === '') error(where, 'required', message);
-          else if (typeof value !== 'string' || !SHOT_PATH_RE.test(value)) error(where, 'invalid-path', message);
-        }
-      }
     });
-    if (compares > MAX_COMPARE) error('evidence', 'too-many-compare', `at most ${MAX_COMPARE} compare items (got ${compares})`);
   }
 
   // ---- result --------------------------------------------------------------
@@ -523,9 +499,6 @@ export function buildShareChange(doc, steps = []) {
           step: at.step,
           ref: capped(e.ref, MAX_TEXT),
           detail: capped(e.detail, MAX_TEXT),
-          // Null on every other type, so a renderer never branches on absence.
-          before: e.type === 'compare' ? text(e.before) || null : null,
-          after: e.type === 'compare' ? text(e.after) || null : null,
           ...(at.window ?? {}),
         };
       }),
@@ -537,39 +510,6 @@ export function buildShareChange(doc, steps = []) {
     },
     supersedesSpoolId: text(doc.supersedesSpoolId) || null,
   };
-}
-
-/**
- * Copy every screenshot a compare item names into share/shots/, keeping the basename
- * so the path in the published copy does not move. Checks every file first: a record
- * that names a screenshot nobody can load is refused before a byte is copied.
- */
-async function copyShots(workdir, shareDir, doc) {
-  const dir = resolve(workdir);
-  const wanted = new Map();
-  for (const e of list(doc.evidence)) {
-    if (!isObject(e) || e.type !== 'compare') continue;
-    for (const half of SHOT_STATES) {
-      const rel = text(e[half]);
-      if (rel && !wanted.has(rel)) wanted.set(rel, text(e.id));
-    }
-  }
-  if (!wanted.size) return [];
-  for (const [rel, id] of wanted) {
-    const from = join(dir, rel);
-    let bytes;
-    try {
-      bytes = (await stat(from)).size;
-    } catch {
-      throw new Error(`share: evidence "${id}" names ${rel}, which is not in ${dir}, so the published copy would lie`);
-    }
-    if (bytes > MAX_SHOT_BYTES) {
-      throw new Error(`share: evidence "${id}" names ${rel}, which is ${bytes} bytes against a cap of ${MAX_SHOT_BYTES}, so the published copy would lie`);
-    }
-  }
-  await mkdir(join(shareDir, SHOTS_DIR), { recursive: true });
-  for (const rel of wanted.keys()) await copyFile(join(dir, rel), join(shareDir, rel));
-  return [...wanted.keys()];
 }
 
 /**
@@ -591,7 +531,6 @@ export async function writeShareChange(workdir, shareDir, steps = [], { fallback
     doc.intent = { ...(isObject(doc.intent) ? doc.intent : {}), request: fallbackRequest };
   }
   const shareChange = buildShareChange(doc, steps);
-  await copyShots(workdir, shareDir, shareChange);
   await writeFile(join(shareDir, CHANGE_FILE), JSON.stringify(shareChange, null, 2) + '\n');
   return shareChange;
 }
@@ -674,63 +613,6 @@ export async function initChange(workdir, { cwd = process.cwd() } = {}) {
   return { path, change: doc, source };
 }
 
-/** Where one half of a screenshot pair lives, relative to the workdir and the bundle. */
-export function shotPath(name, state) {
-  return `${SHOTS_DIR}/${name}-${state}.png`;
-}
-
-/**
- * Upsert the `compare` evidence item for a screenshot pair, and only once BOTH halves
- * are on disk: one half is a screenshot, not a comparison. Creates change.json from the
- * template when there is none, touches no other field, and refuses a record that would
- * not validate. Returns { id, file, evidence, pending }.
- *
- * @param {string} workdir the session directory holding shots/
- * @param {{name: string, label?: string|null, step?: string|null, cwd?: string|null}} opts
- */
-export async function upsertShot(workdir, { name, label = null, step = null, cwd = null } = {}) {
-  const dir = resolve(workdir);
-  const shot = text(name);
-  if (!SHOT_NAME_RE.test(shot)) {
-    throw new Error(`shot name must be lower-case letters, digits and dashes, up to 41 characters (got ${JSON.stringify(name)})`);
-  }
-  const id = `shot-${shot}`;
-  const halves = Object.fromEntries(SHOT_STATES.map((s) => [s, shotPath(shot, s)]));
-  const missing = SHOT_STATES.filter((s) => !existsSync(join(dir, halves[s])));
-  if (missing.length) return { id, file: null, evidence: null, pending: missing[0] };
-
-  const file = join(dir, CHANGE_FILE);
-  let doc;
-  if (existsSync(file)) {
-    doc = JSON.parse(await readFile(file, 'utf8'));
-  } else {
-    doc = changeTemplate({ source: await gitSource(cwd ?? dir) });
-  }
-  if (!Array.isArray(doc.evidence)) doc.evidence = [];
-  const index = doc.evidence.findIndex((e) => isObject(e) && text(e.id) === id);
-  const prev = index >= 0 ? doc.evidence[index] : null;
-  // A second take of the same pair refreshes the paths and keeps whatever a person
-  // wrote on the item: a re-shoot must not silently drop an edited label or detail.
-  const item = {
-    ...(prev ?? {}),
-    id,
-    type: 'compare',
-    label: text(label) || text(prev?.label) || shot.replace(/-/g, ' '),
-    before: halves.before,
-    after: halves.after,
-    step: text(step) || text(prev?.step) || null,
-    ref: prev?.ref ?? null,
-    detail: prev?.detail ?? null,
-  };
-  if (index >= 0) doc.evidence[index] = item;
-  else doc.evidence.push(item);
-
-  const res = validateChange(doc);
-  if (!res.ok) throw new Error(res.errors.map((e) => `${e.path}: ${e.message}`).join('; '));
-  await writeFile(file, JSON.stringify(doc, null, 2) + '\n');
-  return { id, file, evidence: id, pending: null };
-}
-
 // ---------------------------------------------------------------------------
 // Reading it back
 // ---------------------------------------------------------------------------
@@ -776,15 +658,6 @@ export function changeDigest(change) {
       const at = typeof o.start === 'number' ? ` [${clock(o.start)}–${clock(o.end)}]` : '';
       const cited = o.evidence?.length ? `  evidence: ${o.evidence.join(', ')}` : '';
       lines.push(`    - ${o.id} ${o.status} (${o.source})${at}: ${o.claim}${cited}`);
-    }
-  }
-  const evidence = change.evidence ?? [];
-  if (evidence.length) {
-    lines.push('  evidence:');
-    for (const e of evidence) {
-      const at = e.step ? `  step: ${e.step}` : '';
-      const pair = e.type === 'compare' ? `  before: ${e.before}  after: ${e.after}` : '';
-      lines.push(`    - ${e.id} ${e.type}  "${e.label}"${pair}${at}`);
     }
   }
   const deviations = change.result?.deviations ?? [];
