@@ -500,7 +500,7 @@ function withCompares(card, change) {
   const section = compareSection(change);
   if (!section.length) return card;
   const at = card.lastIndexOf("\n\n<sub>");
-  return at < 0 ? card + section.join("\n") : card.slice(0, at) + section.join("\n") + card.slice(at);
+  return at < 0 ? card + section.join("\n") : card.slice(0, at) + "\n" + section.join("\n") + card.slice(at);
 }
 
 // Shared shape of every PR comment: heading, optional inline preview, watch line, a
