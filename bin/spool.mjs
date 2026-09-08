@@ -196,6 +196,7 @@ async function maybeAutoPublish(wd, opts) {
 
 program
   .name('spool')
+  .version(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, '-v, --version', 'print the CLI version')
   .description('Agents record their own spools: real browser video, AI voiceover, word-synced captions.');
 
 program
