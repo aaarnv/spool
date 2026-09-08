@@ -98,7 +98,7 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
   );
   const segments = results; // jobs were built in step order → manifest stays deterministic
 
-  const manifest = { engine, voice, segments };
+  const manifest = { engine, voice: engine === 'none' ? null : voice, segments };
   await writeFile(join(voDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   return manifest;
 }
@@ -113,6 +113,13 @@ async function buildSegment(ctx, { i, name, narration }) {
   const wavAbs = join(workdir, wavRel);
   const wordsAbs = join(workdir, wordsRel);
 
+  if (engine === 'none') {
+    // No audio file: the render skips the mix and the words pace the captions.
+    const words = silentWords(narration);
+    await writeFile(wordsAbs, JSON.stringify(words));
+    const end = words.length ? words[words.length - 1].end : 0;
+    return { i, name, narration, wav: null, words: wordsRel, duration: round2(Math.max(READ_MIN_S, end + READ_TAIL_S)) };
+  }
   if (engine === 'openai') {
     const rawPath = join(voDir, `seg_${nn}.raw.wav`);
     await writeFile(rawPath, await openaiSpeech(key, narration, voice, instr));
@@ -176,6 +183,28 @@ export async function synthesizeSegment({ workdir, i, name, narration, engine, v
   if (engine === 'fish' && (!voice || voice === 'alloy')) voice = await resolveFishVoice() || voice;
   if (engine === 'openrouter' && (!voice || voice === 'alloy')) voice = OPENROUTER_VOICE;
   return buildSegment({ engine, key, orKey, hosted, fishKey, voice, instr, speed, workdir, voDir }, { i, name, narration: (narration || '').trim() });
+}
+
+// --- Silent ----------------------------------------------------------------
+// Engine "none": no voice is synthesized. The narration still becomes captions, paced
+// at reading speed, and each step's window is sized to that pace instead of to audio.
+const READ_WORD_S = 0.34; // about 175 words a minute
+const READ_PAUSE_S = 0.28; // after . , ; : ! ?
+const READ_LEAD_S = 0.3;
+const READ_TAIL_S = 0.4;
+const READ_MIN_S = 1.6;
+
+/** Word timings for a caption nobody reads aloud. Same shape as the whisper output. */
+export function silentWords(narration) {
+  const words = [];
+  let t = READ_LEAD_S;
+  for (const word of String(narration || '').split(/\s+/).filter(Boolean)) {
+    const start = t;
+    t += READ_WORD_S + Math.min(0.12, word.length * 0.01);
+    words.push({ word, start: round2(start), end: round2(t) });
+    if (/[.,;:!?]["')\]]?$/.test(word)) t += READ_PAUSE_S;
+  }
+  return words;
 }
 
 // --- OpenAI TTS ------------------------------------------------------------

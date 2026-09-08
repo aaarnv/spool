@@ -505,13 +505,13 @@ function withCompares(card, change) {
 
 // Shared shape of every PR comment: heading, optional inline preview, watch line, a
 // two-column table, footer. The variants below differ only in wording and row source.
-function commentBody({ heading, previewAlt, watchLabel = "Watch", rowLabel, rows, url, previewUrl, duration, footer }) {
+function commentBody({ heading, previewAlt, watchLabel = "Watch", rowLabel, rows, url, previewUrl, duration, narrated = true, footer }) {
   return [
     `### ${heading}`,
     "",
     // GIF preview when available: GitHub renders it inline; clicking opens the watch page.
     ...(previewUrl ? [`[![${previewAlt}](${previewUrl})](${url})`, ""] : []),
-    `**${watchLabel}:** ${url} (${Math.round(duration)}s, narrated)`,
+    `**${watchLabel}:** ${url} (${Math.round(duration)}s${narrated ? ', narrated' : ''})`,
     "",
     `| at | ${rowLabel} |`,
     "|---|---|",
@@ -527,6 +527,7 @@ function walkthroughBody(url, spool, previewUrl, mmss) {
     url,
     previewUrl,
     duration: spool.duration,
+    narrated: spool.voice?.engine !== "none",
     heading: `🎬 Walkthrough: ${spool.title || "spool"}`,
     previewAlt: "watch the walkthrough",
     rowLabel: "step",
@@ -554,6 +555,7 @@ function recapBody(url, spool, previewUrl, mmss) {
     url,
     previewUrl,
     duration: spool.duration,
+    narrated: spool.voice?.engine !== "none",
     heading: `🎬 Recap: ${spool.pr.title || spool.title || "what shipped"}`,
     previewAlt: "watch the recap",
     rowLabel: "stop",
@@ -569,6 +571,7 @@ function guideBody(url, spool, previewUrl, mmss) {
     url,
     previewUrl,
     duration: spool.duration,
+    narrated: spool.voice?.engine !== "none",
     heading: `🧭 PR guide: ${spool.pr.title || spool.title || "PR"}`,
     previewAlt: "watch the guided tour",
     watchLabel: "Watch the guided tour",

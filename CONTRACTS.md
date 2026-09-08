@@ -111,6 +111,15 @@ renderer retimes each step to fit its narration (see "Render layer inputs").
 `seg_NN.words.json`: `[{ "word": "Here's", "start": 0.0, "end": 0.31 }, ...]`
 (times are local to that segment's wav; seconds, float).
 
+**Silent takes.** Engine `none` (`--no-voice` on `vo`, `finish` and `build`, or
+`SPOOL_ENGINE=none`, or `spool setup --engine none`) synthesizes nothing: `voice` is
+`null`, every segment's `wav` is `null`, and `words` still points at a timings file, paced
+at reading speed (about 175 words a minute, a pause after punctuation). `duration` is
+that reading time, so the render sizes each step's window to it the way it would to a
+voice, and the captions play from it. The mp4 has no audio stream. `spool.json` carries
+`voice: { engine: "none", voice: null }`, and the PR comment drops the word "narrated".
+`--cloud` refuses `--no-voice`: the hosted render is always voiced.
+
 ## Hosted VO API (`SPOOL_ENGINE=hosted` → `POST {host}/api/vo`)
 
 The hosted engine lets a CLI user generate voice with no provider key of their own — the

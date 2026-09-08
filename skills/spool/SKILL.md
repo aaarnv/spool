@@ -223,6 +223,15 @@ spool change validate spool/<slug>      # 0 valid, 1 invalid, 2 no record here
 `spool share` runs the same validator again and fails on a record that would lie. `spool read`
 prints the record above the steps.
 
+## Silent spools (no voiceover)
+
+`spool finish spool/<slug> --no-voice` (also on `build` and `vo`) renders the take with no
+voice. The narration you wrote is not lost: it becomes the captions, paced at reading
+speed, and each step holds long enough to read them. Use it when a voice is wrong for the
+room, when no voice key is reachable, or for a quick check before the voiced render. The
+same take can be re-finished with a voice later. `SPOOL_ENGINE=none` or `spool setup
+--engine none` makes it the default. `--cloud` renders are always voiced.
+
 ## Change the background without re-rendering
 
 Every render writes `layers/fg.webm` beside `final.mp4`: the whole composite except the

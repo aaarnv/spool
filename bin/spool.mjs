@@ -71,6 +71,10 @@ const isRecordedSession = (wd) => {
 
 // vo → render → share on an existing live/recorded session (no re-record). Narration
 // comes from the session's steps.mjs snapshot when present (browser), else from the
+// `--no-voice` picks the silent engine for this run only; the preference and
+// SPOOL_ENGINE still decide otherwise.
+const voiceEngine = (opts) => (opts && opts.voice === false ? 'none' : undefined);
+
 // timeline's per-step narration (OS sessions have no steps.mjs — generateVO reads it).
 async function finishSession(wd, opts) {
   if (!hasCapture(wd)) {
@@ -87,7 +91,7 @@ async function finishSession(wd, opts) {
   const format = await resolveWorkdirFormat(wd);
   console.log('── spool vo');
   const t0 = Date.now();
-  await generateVO({ stepsFile: sf, workdir: wd, format });
+  await generateVO({ stepsFile: sf, workdir: wd, format, engine: voiceEngine(opts) });
   console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
   console.log('── spool render');
   await renderSpool({ workdir: wd, format });
@@ -124,7 +128,7 @@ async function buildWorkdir(wd, opts) {
   console.log('── spool vo ‖ record');
   const t0 = Date.now();
   await Promise.all([
-    generateVO({ stepsFile: sf, workdir: wd, format })
+    generateVO({ stepsFile: sf, workdir: wd, format, engine: voiceEngine(opts) })
       .then(() => console.log(`   vo done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
     record({ stepsFile: sf, workdir: wd })
       .then(() => console.log(`   record done (${((Date.now() - t0) / 1000).toFixed(1)}s)`)),
@@ -144,6 +148,10 @@ async function buildWorkdir(wd, opts) {
 async function cloudFinishCmd(wd, opts) {
   if (opts.publish === false) {
     console.error('--cloud publishes by definition (the job returns a watch link); drop --no-publish.');
+    process.exit(1);
+  }
+  if (opts.voice === false) {
+    console.error('--cloud renders are voiced on the server; drop --cloud to render a silent take here.');
     process.exit(1);
   }
   // No capture, but a packet: the platform writes the script, draws the diagrams and
@@ -250,12 +258,13 @@ program
 program
   .command('vo <workdir>')
   .description('generate voiceover segments + word timestamps')
-  .action(async (workdir) => {
+  .option('--no-voice', 'no voiceover: the narration becomes captions paced at reading speed')
+  .action(async (workdir, opts) => {
     await assertPlan(resolve(workdir), 'generating voiceover');
     const { generateVO } = await import(join(root, 'src/vo/tts.mjs'));
     const { resolveWorkdirFormat } = await import(join(root, 'src/render/render.mjs'));
     const format = await resolveWorkdirFormat(resolve(workdir));
-    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), format });
+    await generateVO({ stepsFile: stepsPath(workdir), workdir: resolve(workdir), format, engine: voiceEngine(opts) });
   });
 
 program
@@ -348,6 +357,7 @@ program
   .description('vo → render → share → publish on an existing live/recorded session (no re-record)')
   .option('--cloud', 'render on spoolkit.dev instead of this machine (vo + render + publish server-side)')
   .option('--no-publish', 'skip the automatic publish at the end')
+  .option('--no-voice', 'no voiceover: the narration becomes captions paced at reading speed')
   .action(async (workdir, opts) => {
     const wd = resolve(workdir);
     if (opts.cloud) {
@@ -580,6 +590,7 @@ program
 const buildOptions = (cmd) =>
   cmd
     .option('--no-publish', 'skip the automatic publish at the end')
+    .option('--no-voice', 'no voiceover: the narration becomes captions paced at reading speed')
     .option('--cloud', 'render on spoolkit.dev instead of this machine (vo + render + publish server-side)');
 
 buildOptions(program.command('build <workdir>').description('(vo ‖ record) → render → share → publish, end to end'))
@@ -943,7 +954,7 @@ program
   .description('save installation preferences to ~/.spool.json (browser, target, engine, host)')
   .option('--browser <browser>', 'chromium | chrome | edge (Playwright launch channel)')
   .option('--target <target>', 'default record target: browser | os')
-  .option('--engine <engine>', 'default VO engine: auto | openrouter | openai | hosted | fish | local')
+  .option('--engine <engine>', 'default VO engine: auto | openrouter | openai | hosted | fish | local | none (silent, captions only)')
   .option('--host <host>', 'publish host origin')
   .option('--yes', 'write flags without prompting (unspecified keys keep current values)')
   .option('--show', 'print the effective config (token masked) and exit')
