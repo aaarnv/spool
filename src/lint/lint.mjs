@@ -29,6 +29,18 @@ function diffPaths(text) {
   return paths;
 }
 
+// The inferred cut, when it carries narration. Null when there is no cut or none
+// of its steps says anything, which is the case the error above is written for.
+async function narratedTimelineSteps(dir) {
+  const tlPath = path.join(dir, 'timeline.json');
+  if (!existsSync(tlPath)) return null;
+  let tl;
+  try { tl = await readJsonSafe(tlPath); } catch { return null; }
+  const steps = Array.isArray(tl?.steps) ? tl.steps : [];
+  const narrated = steps.filter((s) => typeof s?.narration === 'string' && s.narration.trim()).length;
+  return narrated > 0 ? { steps: steps.length, narrated } : null;
+}
+
 /**
  * Lint a spool workdir. Every check that applies pushes a result
  * { level: 'ok'|'warn'|'error', check, msg, where } (where = workdir-relative,
@@ -63,14 +75,21 @@ export async function lintSpool(workdir) {
         // A live take with no accepted step or marker fails as "non-empty array",
         // which reads as a corrupt file rather than a session that recorded nothing.
         const emptyLive = generatedSteps && Array.isArray(mod.steps) && mod.steps.length === 0;
-        error(
-          'steps',
-          emptyLive
-            ? 'the live session accepted no steps or markers, so this take has no narration; '
-              + 'name and narrate the inferred cut with `spool recut <dir> --name <step>=<name> --narrate <step>=<text>`, or re-record'
-            : e.message,
-          'steps.mjs'
-        );
+        // A take driven with markers alone leaves steps.mjs empty on purpose: its cut and
+        // narration live in timeline.json, so that is the file that decides.
+        const narrated = emptyLive ? await narratedTimelineSteps(dir) : null;
+        if (narrated) {
+          ok('steps', `live take: ${narrated.steps} step(s) cut from the take, ${narrated.narrated} narrated (timeline.json)`, 'steps.mjs');
+        } else {
+          error(
+            'steps',
+            emptyLive
+              ? 'the live session accepted no steps or markers, so this take has no narration; '
+                + 'name and narrate the inferred cut with `spool recut <dir> --name <step>=<name> --narrate <step>=<text>`, or re-record'
+              : e.message,
+            'steps.mjs'
+          );
+        }
       }
     }
     if (stepsMod) {
