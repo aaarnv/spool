@@ -114,38 +114,44 @@ export function alignWords(wavBuf, text) {
     return runs[runs.length - 1].end;
   };
 
-  // Phrases: runs of words up to a punctuation mark, each with a proportional speech span.
+  // Phrases: runs of words up to a punctuation mark, each weighted by its words.
   // A word before a pause is drawn out; give it the extra share whisper always measures.
   const weights = words.map((w, k) => wordWeight(w) + (PHRASE_END.test(w) || k === words.length - 1 ? FINAL_BONUS : 0));
-  const W = weights.reduce((a, b) => a + b, 0);
   const phrases = [];
-  let acc = 0;
   let from = 0;
   for (let k = 0; k < words.length; k++) {
-    acc += weights[k];
     if (PHRASE_END.test(words[k]) || k === words.length - 1) {
-      phrases.push({ from, to: k + 1, s0: 0, s1: (acc / W) * T });
+      phrases.push({ from, to: k + 1, s0: 0, s1: 0, w: weights.slice(from, k + 1).reduce((a, b) => a + b, 0) });
       from = k + 1;
     }
   }
-  for (let j = 1; j < phrases.length; j++) phrases[j].s0 = phrases[j - 1].s1;
 
-  // Snap each phrase end to the nearest unclaimed pause inside a window of its own length.
+  // Place phrases in order. Each takes its share of the speech time still left, so a
+  // slow opening never drags every later boundary; then its end snaps to the nearest
+  // unclaimed pause inside a window of its own length.
   const pauses = cum.slice(1, -1);
   let nextPause = 0;
-  for (let j = 0; j < phrases.length - 1; j++) {
+  let s0 = 0;
+  let left = phrases.reduce((a, p) => a + p.w, 0);
+  for (let j = 0; j < phrases.length; j++) {
     const p = phrases[j];
-    const window = Math.max(0.15, 0.4 * (p.s1 - p.s0));
-    let best = -1;
-    for (let i = nextPause; i < pauses.length; i++) {
-      const d = Math.abs(pauses[i] - p.s1);
-      if (d <= window && (best < 0 || d < Math.abs(pauses[best] - p.s1))) best = i;
-      if (pauses[i] > p.s1 + window) break;
+    p.s0 = s0;
+    p.s1 = j === phrases.length - 1 ? T : s0 + (p.w / left) * (T - s0);
+    if (j < phrases.length - 1) {
+      const window = 0.12 + 0.3 * (p.s1 - p.s0);
+      let best = -1;
+      for (let i = nextPause; i < pauses.length; i++) {
+        const d = Math.abs(pauses[i] - p.s1);
+        if (d <= window && (best < 0 || d < Math.abs(pauses[best] - p.s1))) best = i;
+        if (pauses[i] > p.s1 + window) break;
+      }
+      if (best >= 0) {
+        p.s1 = pauses[best];
+        nextPause = best + 1;
+      }
     }
-    if (best < 0) continue;
-    p.s1 = pauses[best];
-    phrases[j + 1].s0 = pauses[best];
-    nextPause = best + 1;
+    s0 = p.s1;
+    left -= p.w;
   }
 
   const out = [];
