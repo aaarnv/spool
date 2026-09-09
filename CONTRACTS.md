@@ -126,9 +126,12 @@ voice, and the captions play from it. The mp4 has no audio stream. `spool.json` 
 
 ## Hosted VO API (`SPOOL_ENGINE=hosted` → `POST {host}/api/vo`)
 
-The hosted engine lets a CLI user generate voice with no provider key of their own — the
-server calls OpenRouter (deepgram/flux-tts speech + whisper-1 timings) when it holds an
-OpenRouter key, else OpenAI (gpt-4o-mini-tts + whisper-1). Auth reuses the
+The hosted engine lets a CLI user generate voice with no provider key of their own. The
+server speaks with the owner's cloned voice when they have one (see "Custom voice API"),
+else OpenAI (gpt-4o-mini-tts, the house voice), else OpenRouter (deepgram/flux-tts), which
+also catches an OpenAI failure so a take never dies on one provider. Word timings come
+from the aligner on every branch (`src/vo/align.mjs`, `web/lib/align.ts`): the text is
+known, so no transcription model runs and credits buy speech only. Auth reuses the
 `spool publish` bearer token (per-user `spk_` token or the legacy global token).
 
 Request: `POST {host}/api/vo`, `Authorization: Bearer <token>`, JSON body:

@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.mjs';
+import { chunksToWords, openaiFetch } from './timestamps.mjs';
 import { alignWords } from './align.mjs';
 import { resolveEnginePref } from '../config/prefs.mjs';
 import { planVoiceInstructions } from '../plan/generate.mjs';
@@ -129,22 +129,22 @@ async function buildSegment(ctx, { i, name, narration }) {
     return { i, name, narration, wav: null, words: wordsRel, duration: round2(Math.max(READ_MIN_S, end + READ_TAIL_S)) };
   }
   if (engine === 'openai') {
+    // OpenAI answers a wav; the aligner times the narration on it, so the key buys speech only.
     const rawPath = join(voDir, `seg_${nn}.raw.wav`);
-    await writeFile(rawPath, await openaiSpeech(key, narration, voice, instr));
+    const raw = await openaiSpeech(key, narration, voice, instr);
+    await writeFile(rawPath, raw);
     await loudnorm(rawPath, wavAbs, speed);
     await rm(rawPath, { force: true });
-    // Transcribe the finished (loudnormed) wav so word times are local to it.
-    const words = await openaiWordTimestamps({ key, wavBuf: await readFile(wavAbs), prompt: narration });
-    await writeFile(wordsAbs, JSON.stringify(words));
+    await writeFile(wordsAbs, JSON.stringify(atSpeed(alignWords(raw, narration), speed)));
   } else if (engine === 'openrouter') {
     // OpenRouter TTS returns no word timings. loudnorm turns whatever came back into
-    // the wav the pipeline expects, then whisper transcribes that finished wav.
+    // the wav the pipeline expects, and the aligner times the narration on that wav.
     const { buf, pcm, ext } = await openrouterAudio(ctx, narration, voice);
     const rawPath = join(voDir, `seg_${nn}.raw.${ext}`);
     await writeFile(rawPath, buf);
     await loudnorm(rawPath, wavAbs, speed, pcm);
     await rm(rawPath, { force: true });
-    await writeFile(wordsAbs, JSON.stringify(await openrouterWords({ key, orKey, wavAbs, narration })));
+    await writeFile(wordsAbs, JSON.stringify(alignWords(await readFile(wavAbs), narration)));
   } else if (engine === 'hosted') {
     // `format` says which container the server sent (mp3 once it runs on OpenRouter);
     // older servers omit it and always send wav.
@@ -365,29 +365,6 @@ async function openrouterAudio({ orKey, key, instr }, text, voice) {
   }
 }
 
-// Word timings prefer the user's own OpenAI whisper; without an OpenAI key they run
-// through OpenRouter's whisper-1, which returns the same verbose_json word shape.
-async function openrouterWords({ key, orKey, wavAbs, narration }) {
-  const wavBuf = await readFile(wavAbs);
-  if (key) return openaiWordTimestamps({ key, wavBuf, prompt: narration });
-  try {
-    return await openaiWordTimestamps({
-      key: orKey,
-      wavBuf,
-      prompt: narration,
-      url: OPENROUTER_TRANSCRIBE_URL,
-      model: OPENROUTER_STT_MODEL,
-      send: openrouterFetch,
-    });
-  } catch (e) {
-    // No transcription model on OpenRouter is free, so a credit-less key 402s here.
-    // Local whisper keeps captions working instead of retiring the take.
-    if (!existsSync(WHISPER_PY)) throw e;
-    console.warn(`[spool] openrouter transcription unavailable (${e.status || ''} ${e.message.slice(0, 70)}); using local whisper`);
-    return localWhisperWords(wavAbs, narration);
-  }
-}
-
 const OPENROUTER_BACKOFF_MS = [1000, 3000, 8000];
 const OPENROUTER_THROTTLE_TRIES = 5;
 
@@ -451,26 +428,6 @@ async function resolveFishKey() {
   return null;
 }
 
-// Word timings via local whisper (mlx). Engine-independent: it consumes the wav
-// we just made, so any TTS source gains synced captions without a cloud key.
-const WHISPER_PY = process.env.SPOOL_WHISPER_PY || join(homedir(), '.spool-venv/bin/python');
-const WHISPER_SCRIPT = `
-import mlx_whisper, json, sys
-r = mlx_whisper.transcribe(sys.argv[1], word_timestamps=True, initial_prompt=sys.argv[2], path_or_hf_repo="mlx-community/whisper-small-mlx")
-words = []
-for seg in r["segments"]:
-    for w in seg.get("words", []):
-        words.append({"word": w["word"].strip(), "start": round(w["start"], 2), "end": round(w["end"], 2)})
-print(json.dumps(words))
-`;
-
-async function localWhisperWords(wavPath, prompt) {
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const { stdout } = await promisify(execFile)(WHISPER_PY, ['-c', WHISPER_SCRIPT, wavPath, prompt || ''], { maxBuffer: 10 * 1024 * 1024 });
-  const lines = stdout.trim().split('\n');
-  return JSON.parse(lines[lines.length - 1]);
-}
 
 // --- hosted VO (spool web app: OpenAI without the user's own key) -----------
 

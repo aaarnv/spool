@@ -105,7 +105,7 @@ scripted path.
 ```
 steps.mjs (agent-authored demo script)
    │
-   ├── spool vo      →  vo/seg_NN.wav + word timestamps   OpenAI gpt-4o-mini-tts + whisper-1
+   ├── spool vo      →  vo/seg_NN.wav + word timestamps   OpenAI gpt-4o-mini-tts + aligner
    │   (in parallel)                                      (bounded concurrency pool)
    └── spool record  →  video.webm + timeline.json        Playwright recordVideo, fake cursor,
    │                                                       human-speed motion, natural timing
@@ -264,12 +264,9 @@ Requirements: node ≥ 20, ffmpeg on PATH, and a voiceover engine. The engine au
 They are tried in that order. Pin one with `spool setup --engine openrouter|openai|hosted|fish|local`,
 or `SPOOL_ENGINE` for a single run.
 
-On the OpenRouter and OpenAI engines, word timings stay on whisper: your own `OPENAI_API_KEY` when
-set, else `SPOOL_STT_MODEL` (`openai/whisper-1`) through OpenRouter, else local whisper. No
-transcription model on OpenRouter is free, so that middle rung needs credits on the key; without
-them a free-tier key falls through to local whisper, which needs `~/.spool-venv` (or
-`SPOOL_WHISPER_PY`). The fish engine, and the hosted engine whenever the server sends no timings,
-align the narration to the wav instead. They need no whisper at all.
+Word timings never touch a transcription model on any engine: the narration is known, so the
+CLI's own aligner reads the words off the wav (pauses from the audio energy, punctuation snapped
+to them, syllables sharing each phrase). A provider key buys speech and nothing else.
 
 ### Your own voice
 
@@ -355,7 +352,7 @@ commit.
 | `SPOOL_BG` | Override the canvas for one local render (preset name, macOS wallpaper name, or an image path). |
 | `SPOOL_FORMAT` | Force `wide` or `vertical` when a workdir has no stamp of its own. |
 | `SPOOL_ENGINE`, `SPOOL_VO_SH` | Pin the VO engine; point at a local TTS/whisper script. |
-| `SPOOL_TTS_MODEL`, `SPOOL_TTS_VOICE`, `SPOOL_STT_MODEL` | OpenRouter engine: the speech model, its voice, and the whisper model used when no `OPENAI_API_KEY` is set. |
+| `SPOOL_TTS_MODEL`, `SPOOL_TTS_VOICE` | OpenRouter engine: the speech model and its voice. |
 | `SPOOL_PLAN_VOICE`, `SPOOL_PLAN_VISUALS`, `SPOOL_PLAN_MODEL` | The plan narration profile and the model that rewrites it. |
 | `SPOOL_BROWSER`, `SPOOL_TARGET` | Playwright channel and capture target for one run (`spool setup` is the durable form). |
 | `SPOOL_V0_ENGINE` | Fall back to the Chrome rasteriser when Skia misbehaves. |
