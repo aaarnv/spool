@@ -245,6 +245,40 @@ program
     await login({ host: opts.host, paste: !!opts.paste });
   });
 
+// `spool voice`: your own voice for narration. The clone lives on the platform, so the
+// CLI needs the same host + token as `spool publish`, and no provider key.
+const voice = program
+  .command('voice')
+  .description('narrate spools in your own voice (record 20 seconds once)')
+  .option('--host <url>', 'override the host')
+  .option('--token <token>', 'override the token')
+  .action(async (opts) => {
+    const { showVoice } = await import(join(root, 'src/voice/voice.mjs'));
+    await showVoice(opts);
+  });
+
+voice
+  .command('clone [file]')
+  .description('read the script aloud (or pass a recording) and clone it into your voice')
+  .option('--seconds <n>', 'how long to record, 10 to 60', '20')
+  .option('--device <name>', 'microphone to record from (macOS device name)')
+  .option('--host <url>', 'override the host')
+  .option('--token <token>', 'override the token')
+  .action(async (file, opts) => {
+    const { cloneVoice } = await import(join(root, 'src/voice/voice.mjs'));
+    await cloneVoice(file, opts);
+  });
+
+voice
+  .command('remove')
+  .description('delete your voice; spools go back to the house voice')
+  .option('--host <url>', 'override the host')
+  .option('--token <token>', 'override the token')
+  .action(async (opts) => {
+    const { removeVoice } = await import(join(root, 'src/voice/voice.mjs'));
+    await removeVoice(opts);
+  });
+
 program
   .command('dry <workdir>')
   .description('drive the steps in a visible browser, without recording or VO (debug selectors/timing)')

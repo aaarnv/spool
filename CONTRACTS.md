@@ -111,6 +111,10 @@ renderer retimes each step to fit its narration (see "Render layer inputs").
 `seg_NN.words.json`: `[{ "word": "Here's", "start": 0.0, "end": 0.31 }, ...]`
 (times are local to that segment's wav; seconds, float).
 
+**Hosted voice.** On engine `hosted`, `voice` is the name the server reports it spoke
+with, not the one the CLI asked for: `custom` when the owner has cloned a voice, else the
+house voice the server picked. Every other engine reports the voice it was given.
+
 **Silent takes.** Engine `none` (`--no-voice` on `vo`, `finish` and `build`, or
 `SPOOL_ENGINE=none`, or `spool setup --engine none`) synthesizes nothing: `voice` is
 `null`, every segment's `wav` is `null`, and `words` still points at a timings file, paced
@@ -135,14 +139,27 @@ Request: `POST {host}/api/vo`, `Authorization: Bearer <token>`, JSON body:
   "instructions": "voice-direction (≤ 2000 chars)" }   // optional
 ```
 
+When the owner has cloned a voice (see "Custom voice API"), the server speaks with that
+voice instead. Nothing about the request changes; the CLI sends the same body either way.
+
 Response `200`:
 
 ```json
 { "audio": "<base64 wav>",               // raw TTS wav (NOT loudnormed)
-  "words": [{ "word": "Here", "start": 0.0, "end": 0.34 }],  // whisper-1 word times, local to the raw audio
+  "words": [{ "word": "Here", "start": 0.0, "end": 0.34 }],  // word times local to the raw audio; [] when the server has none
   "format": "wav",                        // container of `audio`
+  "voice": "custom",                      // the voice it actually spoke with
   "usage": { "remainingToday": 297 } }
 ```
+
+`voice` is `custom` for the owner's cloned voice, else the flux or OpenAI voice the server
+used. The CLI writes it to `vo/manifest.json` as the take's voice.
+
+`words` is `[]` whenever the server has no transcription: always on the custom-voice
+branch (the provider returns no timings), and on the other branches when transcription
+fails or is unavailable. The CLI then times the words itself with the aligner
+(`src/vo/align.mjs`) on the raw wav, before loudnorm, so the same `1/speed` scaling still
+applies. A missing transcription never costs the take its captions.
 
 `format` is `wav` on both branches: the OpenRouter branch asks for lossless pcm and wraps
 it in a RIFF header at the rate the provider reports, so no client carries a sample rate
@@ -154,6 +171,42 @@ Errors: `401`
 (bad/missing token), `400`/`413` (missing/oversized `text`), `429` (per-user daily cap,
 env `VO_DAILY_CAP`, default 300 — the JSON `error` carries the message), `502` (upstream
 TTS failure). Node runtime; a ~10s wav base64 is ~1–2MB, within the function body cap.
+
+The `fish` engine (a user's own `FISH_API_KEY`, no server involved) times its words the
+same way. Fish returns no word timings, and the aligner replaces the local whisper that
+engine used to shell out to, so it no longer needs `~/.spool-venv`.
+
+## Custom voice API (`spool voice` → `{host}/api/voice`)
+
+A user clones their own voice once and every spool narrates in it. The provider model is
+created and held on the server under Spool's own provider account, one voice per owner.
+Its provider id never leaves the server, and the user needs no provider key.
+
+Auth, all three methods: a dashboard session, or a `spool publish` bearer token, resolved
+to the same owner id `/api/vo` uses. `503 "custom voices are not enabled on this
+deployment"` when the deployment holds no provider key.
+
+`POST {host}/api/voice`, `multipart/form-data`:
+
+| field | required | what |
+| --- | --- | --- |
+| `sample` | yes | one audio file: webm/opus, wav, m4a, mp3 or opus, 20 KB to 15 MB |
+| `text` | no | the transcript of the clip, ≤ 1200 chars (the CLI sends the script it printed) |
+| `title` | no | ≤ 60 chars, default `"Your voice"` |
+
+An owner who already has a voice has the old model deleted first, then the new one
+created, then the row replaced. Reply `200 { "voice": { "title", "sampleBytes",
+"createdAt" } }`. Errors: `401`, `400 "sample must be an audio file"`, `413` (too large),
+`502 "voice clone failed: <provider message>"`, `503` as above.
+
+`GET` replies `200 { "voice": { "title", "sampleBytes", "createdAt" } | null }`.
+`DELETE` removes the model and the row and replies `204`, including when there was none.
+
+CLI side (`src/voice/voice.mjs`): `spool voice` prints the voice, `spool voice clone
+[file]` records or uploads the sample, `spool voice remove` deletes it. A clone with no
+file records `~/.spool/voice-sample.wav` with ffmpeg (44.1 kHz mono 16-bit) and sends the
+script as `text`. A successful clone writes `engine: "hosted"` to `~/.spool.json`, because
+the hosted engine is the only one that can reach the voice.
 
 ## timeline.json (spool record → spool render)
 
