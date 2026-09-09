@@ -37,6 +37,8 @@ const scrub = (code) => (SECRETISH.test(code) ? REDACTED : code);
 const errln = (s) => process.stderr.write(s + '\n');
 const indent = (code, n) =>
   code.replace(/^\n+/, '').replace(/\s+$/, '').split('\n').map((l) => (l.length ? ' '.repeat(n) + l : '')).join('\n');
+// Each snippet gets its own scope, so two takes that both declare `const row` still load.
+const block = (code) => `{\n${code}\n}`;
 
 function serializeConfig(config, prep) {
   const vp = config.viewport || { width: 1600, height: 900 };
@@ -47,7 +49,7 @@ function serializeConfig(config, prep) {
   // A path, never the values: the file it names is gitignored and out of every bundle.
   if (config.storageState) lines.push(`  storageState: ${JSON.stringify(config.storageState)},`);
   if (prep && prep.length) {
-    lines.push('  prep: async (page, h) => {', prep.map((c) => indent(scrub(c), 4)).join('\n'), '  },');
+    lines.push('  prep: async (page, h) => {', prep.map((c) => indent(block(scrub(c)), 4)).join('\n'), '  },');
   }
   lines.push('};');
   return lines.join('\n');
@@ -56,7 +58,7 @@ function serializeConfig(config, prep) {
 function serializeSteps(steps) {
   const body = steps.map((s) => {
     const run = s.snippets && s.snippets.length
-      ? s.snippets.map((c) => indent(scrub(c), 6)).join('\n')
+      ? s.snippets.map((c) => indent(block(scrub(c)), 6)).join('\n')
       : '      // no recorded actions';
     return ['  {', `    name: ${JSON.stringify(s.name)},`,
       ...(s.chapterId ? [`    chapterId: ${JSON.stringify(s.chapterId)},`] : []),
