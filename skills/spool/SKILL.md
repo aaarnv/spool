@@ -73,6 +73,19 @@ read from env / project `.env` / `"openrouterKey"`/`"openaiKey"` in `~/.spool.js
 voice runs hosted through the token. `spool doctor` (add `--json` for a
 machine-readable form) re-runs the step 1 checks any time.
 
+## Your own voice
+
+A human can make every spool narrate in their own voice. `spool voice clone` prints a short
+script, records twenty seconds of them reading it, and clones it on the platform. The clone
+belongs to their Spool account, so it needs no provider key of theirs, and cloning pins the VO
+engine to `hosted`. `spool voice` prints the current voice and when it was cloned;
+`spool voice remove` goes back to the house voice. A clip they already have works too:
+`spool voice clone ~/me.m4a`.
+
+**You cannot record it for them.** It needs their microphone, and it must be their own voice.
+Relay the command and let them run it. Nothing else changes: the next `spool build` or
+`spool finish` speaks in their voice with no flag from you.
+
 ## Choosing a path
 
 **Use LIVE.** It is the default: your real working session IS the take, you drive once, and the

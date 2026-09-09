@@ -11,6 +11,7 @@ import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { openaiWordTimestamps, chunksToWords, openaiFetch } from './timestamps.mjs';
+import { alignWords } from './align.mjs';
 import { resolveEnginePref } from '../config/prefs.mjs';
 import { planVoiceInstructions } from '../plan/generate.mjs';
 
@@ -30,6 +31,11 @@ export const SHORT_FORM_INSTRUCTIONS =
   'Emotion: infectious enthusiasm with warmth. Never announcer-like, never salesy, never shouty, never breathless.';
 const round2 = (x) => Math.round(x * 100) / 100;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Word times measured on the raw audio, moved onto the loudnormed wav. atempo scales
+// time linearly, so dividing by the tempo keeps every word where it is spoken.
+const atSpeed = (words, speed) =>
+  speed === 1 ? words : words.map((w) => ({ word: w.word, start: round2(w.start / speed), end: round2(w.end / speed) }));
 
 // Which register a segment is read in: an explicit `instructions` always wins.
 const registerFor = (instructions, format) =>
@@ -98,7 +104,9 @@ export async function generateVO({ stepsFile, workdir, engine, voice = 'alloy', 
   );
   const segments = results; // jobs were built in step order → manifest stays deterministic
 
-  const manifest = { engine, voice: engine === 'none' ? null : voice, segments };
+  // The hosted server picks the voice (the house one, or the owner's clone), so its
+  // reported name wins over the requested one.
+  const manifest = { engine, voice: engine === 'none' ? null : ctx.serverVoice || voice, segments };
   await writeFile(join(voDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   return manifest;
 }
@@ -140,22 +148,33 @@ async function buildSegment(ctx, { i, name, narration }) {
   } else if (engine === 'hosted') {
     // `format` says which container the server sent (mp3 once it runs on OpenRouter);
     // older servers omit it and always send wav.
-    const { audio, words, format } = await hostedSpeech(hosted, narration, voice, instr);
-    const rawPath = join(voDir, `seg_${nn}.raw.${format === 'mp3' ? 'mp3' : 'wav'}`);
-    await writeFile(rawPath, Buffer.from(audio, 'base64'));
+    const spoken = await hostedSpeech(hosted, narration, voice, instr);
+    const isWav = spoken.format !== 'mp3';
+    const raw = Buffer.from(spoken.audio, 'base64');
+    const rawPath = join(voDir, `seg_${nn}.raw.${isWav ? 'wav' : 'mp3'}`);
+    await writeFile(rawPath, raw);
     await loudnorm(rawPath, wavAbs, speed);
     await rm(rawPath, { force: true });
-    // Server timings are on the raw audio; atempo scales time linearly, so /speed keeps them true.
-    const scaled = speed !== 1 ? words.map((w) => ({ word: w.word, start: round2(w.start / speed), end: round2(w.end / speed) })) : words;
-    await writeFile(wordsAbs, JSON.stringify(scaled));
+    // A custom voice and any provider without transcription answer with no timings.
+    // Then the aligner reads them off the audio itself: the raw wav, else the finished one.
+    let words = spoken.words;
+    let onRaw = true;
+    if (!words.length) {
+      onRaw = isWav;
+      words = alignWords(isWav ? raw : await readFile(wavAbs), narration);
+    }
+    await writeFile(wordsAbs, JSON.stringify(onRaw ? atSpeed(words, speed) : words));
+    // The server names the voice it actually spoke with; the manifest reports that.
+    if (spoken.voice) ctx.serverVoice = spoken.voice;
   } else if (engine === 'fish') {
-    // Fish Audio TTS (community reference voices). `voice` carries the reference id.
-    // Fish returns no word timings, so a local whisper transcribes the finished wav.
+    // Fish Audio TTS (reference voices). `voice` carries the reference id. Fish returns
+    // no word timings, so the aligner times the narration against the wav it sent.
     const rawPath = join(voDir, `seg_${nn}.raw.wav`);
-    await writeFile(rawPath, await fishSpeech(fishKey, narration, voice));
+    const raw = await fishSpeech(fishKey, narration, voice);
+    await writeFile(rawPath, raw);
     await loudnorm(rawPath, wavAbs, speed);
     await rm(rawPath, { force: true });
-    await writeFile(wordsAbs, JSON.stringify(await localWhisperWords(wavAbs, narration)));
+    await writeFile(wordsAbs, JSON.stringify(atSpeed(alignWords(raw, narration), speed)));
   } else if (engine === 'local') {
     await localSegment(narration, voDir, nn, wordsAbs);
   } else {
@@ -455,7 +474,7 @@ async function localWhisperWords(wavPath, prompt) {
 
 // --- hosted VO (spool web app: OpenAI without the user's own key) -----------
 
-// POST narration to {host}/api/vo → { audio: base64, words: [{word,start,end}], format }.
+// POST narration to {host}/api/vo → { audio: base64, words: [{word,start,end}], format, voice }.
 async function hostedSpeech({ host, token }, text, voice, instructions) {
   const res = await hostedFetch(`${host}/api/vo`, {
     method: 'POST',
@@ -463,7 +482,7 @@ async function hostedSpeech({ host, token }, text, voice, instructions) {
     body: JSON.stringify({ text, voice, instructions }),
   });
   const json = await res.json();
-  return { audio: json.audio, words: json.words || [], format: json.format || 'wav' };
+  return { audio: json.audio, words: json.words || [], format: json.format || 'wav', voice: json.voice || null };
 }
 
 const HOSTED_BACKOFF_MS = [1000, 3000, 8000];
