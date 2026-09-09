@@ -6,7 +6,7 @@ import { readFile, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { resolveConfig } from "../publish/publish.mjs";
-import { effectivePrefs, saveConfig } from "../config/prefs.mjs";
+import { readPrefs, writePrefs } from "../config/prefs.mjs";
 import { VOICE_SCRIPT } from "./script.mjs";
 
 const SAMPLE_PATH = join(homedir(), ".spool", "voice-sample.wav");
@@ -118,14 +118,12 @@ export async function cloneVoice(file, opts = {}) {
   console.log(`Sample: ${await describeSample(path, bytes.length)}`);
 }
 
-// A cloned voice is only reachable through the hosted engine, so pin it once. It goes
-// on the key when this machine is connected, so every agent on that key gets it too.
+// A cloned voice is only reachable through the hosted engine, so pin it once.
 async function useHostedEngine() {
-  const eff = await effectivePrefs();
-  if (eff.engine.value === "hosted") return;
-  const saved = await saveConfig({ engine: "hosted" });
-  if (saved.where === "platform") console.log(`Voice engine set to hosted for key "${saved.label || "this key"}".`);
-  else console.log("Voice engine set to hosted.");
+  const prefs = await readPrefs();
+  if (prefs.engine === "hosted") return;
+  await writePrefs({ ...prefs, engine: "hosted" });
+  console.log("Voice engine set to hosted.");
 }
 
 async function describeSample(path, size) {

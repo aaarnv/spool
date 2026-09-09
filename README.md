@@ -52,15 +52,12 @@ npx playwright install chromium
 
 ### Preferences
 
-Your config belongs to your API key, not to a machine. It lives on the platform, under
-**spoolkit.dev > API keys**, so every machine and every agent that uses that key records
-the same way. `spool setup` writes it there:
+`spool setup` writes first-class defaults to `~/.spool.json` (alongside `host`/`token`):
 
 ```bash
 spool setup                                   # interactive on a TTY
 spool setup --browser chrome --engine hosted --yes   # non-interactive
 spool setup --show                            # print effective config (token masked)
-spool setup --browser chrome --local          # this machine only
 ```
 
 | Key | Values | Default | Effect |
@@ -68,18 +65,10 @@ spool setup --browser chrome --local          # this machine only
 | `browser` | `chromium` \| `chrome` \| `edge` | `chromium` | recording browser (Playwright channel) |
 | `target` | `browser` \| `os` | `browser` | default `spool live` capture target |
 | `engine` | `auto` \| `openrouter` \| `openai` \| `hosted` \| `local` | `auto` | default VO engine |
-| `bg` | preset, wallpaper, or path | none | default render background |
-| `format` | `wide` \| `vertical` | `wide` | default render format |
 
-Precedence is explicit flag > env (`SPOOL_BROWSER`/`SPOOL_TARGET`/`SPOOL_ENGINE`) > the key
-config on the platform > `~/.spool.json` > default. A flag or an env var still wins for one
-run, so a machine can always step outside the key.
-
-`spool setup` writes locally when this machine has no account, and prints how to connect
-it. `--local` forces that for a machine that has one. The CLI reads the key config once a
-run and keeps a copy in `~/.spool.json`; when the platform is unreachable it uses that copy
-and says so. `spool doctor` reports the active profile and its sources. Everything else the
-renderer decides for itself. See [Defaults](#defaults).
+Precedence is explicit flag > env (`SPOOL_BROWSER`/`SPOOL_TARGET`/`SPOOL_ENGINE`) > prefs >
+default. `spool doctor` reports the active profile and its sources. Everything else the
+renderer decides for itself — see [Defaults](#defaults).
 
 ## First run
 
@@ -273,8 +262,7 @@ Requirements: node ≥ 20, ffmpeg on PATH, and a voiceover engine. The engine au
 - **local (free)** — a `SPOOL_VO_SH` script for local TTS/whisper.
 
 They are tried in that order. Pin one with `spool setup --engine openrouter|openai|hosted|fish|local`,
-or `SPOOL_ENGINE` for a single run. The pin goes on your API key, so the machines and agents
-sharing that key all speak with the same engine. See [Preferences](#preferences).
+or `SPOOL_ENGINE` for a single run.
 
 Word timings never touch a transcription model on any engine: the narration is known, so the
 CLI's own aligner reads the words off the wav (pauses from the audio energy, punctuation snapped

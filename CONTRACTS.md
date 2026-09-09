@@ -208,53 +208,8 @@ created, then the row replaced. Reply `200 { "voice": { "title", "sampleBytes",
 CLI side (`src/voice/voice.mjs`): `spool voice` prints the voice, `spool voice clone
 [file]` records or uploads the sample, `spool voice remove` deletes it. A clone with no
 file records `~/.spool/voice-sample.wav` with ffmpeg (44.1 kHz mono 16-bit) and sends the
-script as `text`. A successful clone pins `engine: "hosted"` through the key config API
-below, because the hosted engine is the only one that can reach the voice.
-
-## Key config API (`{host}/api/config`)
-
-One config per API key. It holds what the CLI would otherwise read from a machine, so
-every machine and every agent using that key records the same way.
-
-```json
-{ "browser": "chrome", "target": "browser", "engine": "hosted", "bg": "sonoma", "format": "wide" }
-```
-
-Every field is optional and the whole config may be null. Allowed values are exactly
-`CHOICES` in `src/config/prefs.mjs`, mirrored in `web/lib/spoolConfig.ts`: `browser`
-chromium|chrome|edge, `target` browser|os, `engine`
-auto|openrouter|openai|hosted|fish|local|none, `format` wide|vertical. `bg` is free text,
-1 to 80 chars of `[A-Za-z0-9._-]` plus `/` and `~`: a preset name, a wallpaper name, or a
-path. Unknown keys are dropped. A wrong value is a `400` naming the field and its choices.
-Storage is `publish_tokens.config jsonb` (nullable, migration 0040); a new key seeds its
-config from the owner's most recent key that has one.
-
-- `GET /api/config`, bearer publish token. `200 { "config": {...} | null, "key": { "label" } }`.
-  What the CLI reads on every run.
-- `PUT /api/config`, bearer publish token, JSON body with any subset of the five fields.
-  Merges into the key's config, a field set to `null` clears it, then validates and writes.
-  `200 { "config" }`. What `spool setup` calls.
-- `PATCH /api/token/{id}`, Clerk session, same body and same merge, for the dashboard.
-  `404` when the key is not the caller's. `200 { "key": ApiKeySummary }`.
-- `GET /api/token` lists the caller's keys; each summary carries `config`.
-
-Precedence in the CLI is explicit flag > `SPOOL_*` env > key config > `~/.spool.json` >
-default. `src/config/prefs.mjs` owns it: `resolveHosted()` decides whether this machine is
-connected (`SPOOL_HOST` + `SPOOL_PUBLISH_TOKEN`, else `host` + `token` in `~/.spool.json`),
-`platformConfig()` fetches the key config once per process with a 2 s timeout, and
-`saveConfig()` writes a patch to the platform or, when there is no account or `--local` is
-passed, to the file.
-
-The reply is cached in `~/.spool.json`:
-
-```json
-{ "platform": { "at": 1788923089600, "config": { "engine": "hosted" }, "label": "laptop" } }
-```
-
-A cache under 60 s old is reused with no request. When the request fails, the cached copy
-is used whatever its age and one line goes to stderr: `[spool] platform config
-unreachable; using the last known copy`. With no cached copy the CLI falls through to
-`~/.spool.json` silently. A machine with no account makes no request and prints no line.
+script as `text`. A successful clone writes `engine: "hosted"` to `~/.spool.json`, because
+the hosted engine is the only one that can reach the voice.
 
 ## timeline.json (spool record → spool render)
 

@@ -985,12 +985,11 @@ pilot
 
 program
   .command('setup')
-  .description('save installation preferences to your API key on the platform, or to ~/.spool.json when offline')
+  .description('save installation preferences to ~/.spool.json (browser, target, engine, host)')
   .option('--browser <browser>', 'chromium | chrome | edge (Playwright launch channel)')
   .option('--target <target>', 'default record target: browser | os')
   .option('--engine <engine>', 'default VO engine: auto | openrouter | openai | hosted | fish | local | none (silent, captions only)')
   .option('--host <host>', 'publish host origin')
-  .option('--local', 'write ~/.spool.json only; leave the key config on the platform alone')
   .option('--yes', 'write flags without prompting (unspecified keys keep current values)')
   .option('--show', 'print the effective config (token masked) and exit')
   .action(async (opts) => {
