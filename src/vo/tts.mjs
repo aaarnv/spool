@@ -12,7 +12,7 @@ import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { chunksToWords, openaiFetch } from './timestamps.mjs';
 import { alignWords } from './align.mjs';
-import { resolveEnginePref } from '../config/prefs.mjs';
+import { resolveEnginePref, resolveHosted } from '../config/prefs.mjs';
 import { planVoiceInstructions } from '../plan/generate.mjs';
 
 const DEFAULT_INSTRUCTIONS =
@@ -256,20 +256,6 @@ async function resolveProviderKey(envVar, cfgKey) {
 
 const resolveKey = () => resolveProviderKey('OPENAI_API_KEY', 'openaiKey');
 const resolveOpenRouterKey = () => resolveProviderKey('OPENROUTER_API_KEY', 'openrouterKey');
-
-// Resolve hosted VO {host, token} from env, then ~/.spool.json; null if incomplete.
-async function resolveHosted() {
-  let host = process.env.SPOOL_HOST;
-  let token = process.env.SPOOL_PUBLISH_TOKEN;
-  if (!host || !token) {
-    try {
-      const cfg = JSON.parse(await readFile(join(homedir(), '.spool.json'), 'utf8'));
-      host = host || cfg.host;
-      token = token || cfg.token;
-    } catch { /* no config */ }
-  }
-  return host && token ? { host: host.replace(/\/$/, ''), token } : null;
-}
 
 // Pick the engine: explicit wins; else env/prefs (unless "auto"); else an OpenRouter
 // key → openrouter; else a local OpenAI key → openai; else hosted config → hosted.
