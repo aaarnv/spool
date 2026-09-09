@@ -33,6 +33,10 @@ for a configured key without a network request; hosted operations authenticate i
 Help, setup, diagnostics, scaffolding, plan drafting, and dry runs remain available
 without a key.
 
+`0.6.0` adds `spool voice`: clone your own voice once and every spool narrates in it, with no
+provider key. Word timings now come from the CLI's own aligner, so the fish engine needs no local
+whisper. `0.5.1` adds `spool --version` and silent spools (`--no-voice`).
+
 `0.5.0` adds the change record's before/after screenshots (`POST /shot` in a live session,
 `spool change shot` outside one, a slider on the watch page) and writes the pull request
 description from the record when you publish with `--pr`. The repo is
