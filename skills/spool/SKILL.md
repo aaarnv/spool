@@ -242,8 +242,16 @@ prints the record above the steps.
 voice. The narration you wrote is not lost: it becomes the captions, paced at reading
 speed, and each step holds long enough to read them. Use it when a voice is wrong for the
 room, when no voice key is reachable, or for a quick check before the voiced render. The
-same take can be re-finished with a voice later. `SPOOL_ENGINE=none` or `spool setup
---engine none` makes it the default. `--cloud` renders are always voiced.
+same take can be re-finished with a voice later. `SPOOL_ENGINE=none` makes it the default
+for this run. `--cloud` renders are always voiced.
+
+## Config belongs to the human
+
+The browser, target, engine, background and format come from the API key you were given.
+They live on the platform and you read them; the CLI resolves them on every run. Change one
+for a single run with a flag or a `SPOOL_*` env var, never anything durable. Do not run
+`spool setup` to change the key config unless the human asks: it writes the key that every
+other machine and agent shares.
 
 ## Change the background without re-rendering
 
