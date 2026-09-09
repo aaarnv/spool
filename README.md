@@ -250,38 +250,18 @@ Requirements: node ≥ 20, ffmpeg on PATH, and a voiceover engine. The engine au
 - **OpenAI** — `OPENAI_API_KEY` (env, the project's `.env`, or `openaiKey` in `~/.spool.json`); or
 - **hosted (zero-key)** — just the `host` + `token` you already put in `~/.spool.json` for `spool publish`.
   Voice runs on the hosted app with no key of your own — the same dashboard token covers both
-  publishing and voice (subject to a fair-use daily cap), and, once you run `spool voice clone`,
-  your own voice; or
+  publishing and voice (subject to a fair-use daily cap); or
 - **Fish Audio** — `FISH_API_KEY` (env or `fishKey` in `~/.spool.json`), with the reference voice in
-  `SPOOL_FISH_VOICE` or `fishVoice`. Never auto-selected: pin it to use it. Word timings come from
-  the aligner, so this engine needs no local whisper; or
+  `SPOOL_FISH_VOICE` or `fishVoice`. Never auto-selected: pin it to use it; or
 - **local (free)** — a `SPOOL_VO_SH` script for local TTS/whisper.
 
 They are tried in that order. Pin one with `spool setup --engine openrouter|openai|hosted|fish|local`,
 or `SPOOL_ENGINE` for a single run.
 
-On the OpenRouter and OpenAI engines, word timings stay on whisper: your own `OPENAI_API_KEY` when
-set, else `SPOOL_STT_MODEL` (`openai/whisper-1`) through OpenRouter, else local whisper. No
-transcription model on OpenRouter is free, so that middle rung needs credits on the key; without
-them a free-tier key falls through to local whisper, which needs `~/.spool-venv` (or
-`SPOOL_WHISPER_PY`). The fish engine, and the hosted engine whenever the server sends no timings,
-align the narration to the wav instead. They need no whisper at all.
-
-### Your own voice
-
-Record twenty seconds once and every spool narrates in your voice.
-
-```bash
-spool voice clone          # print the script, record you reading it, clone it
-spool voice                # what voice is set, and when it was cloned
-spool voice remove         # back to the house voice
-```
-
-`spool voice clone <file>` clones a recording you already have (wav, webm, m4a, mp3 or opus).
-`--seconds 30` reads for longer (10 to 60), `--device "<name>"` picks a microphone.
-
-The clone lives on the platform under your account, not on your machine, so cloning also pins
-the VO engine to `hosted`. You need no provider key of your own. Record only your own voice.
+Word timings stay on whisper: your own `OPENAI_API_KEY` when set, else `SPOOL_STT_MODEL`
+(`openai/whisper-1`) through OpenRouter, else local whisper. No transcription model on OpenRouter
+is free, so that middle rung needs credits on the key; without them a free-tier key falls through
+to local whisper, which needs `~/.spool-venv` (or `SPOOL_WHISPER_PY`).
 
 Setup: `npm install && npm link` in this repo (chromium comes from Playwright's cache,
 `npx playwright install chromium` if missing).
