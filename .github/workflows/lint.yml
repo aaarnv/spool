@@ -1,9 +1,5 @@
 # Lint for the CLI: every module under bin/ and src/ must parse. No install, no
-# tests, no browser; the full suite runs locally (`npm test`, see ops/cloud/README.md).
-#
-# This is the one workflow the repo keeps on purpose.
-# The web app deploys through Vercel's Git integration on merge to master, not
-# from a workflow here.
+# tests, no browser; run the full suite locally with `npm test`.
 
 name: lint
 
